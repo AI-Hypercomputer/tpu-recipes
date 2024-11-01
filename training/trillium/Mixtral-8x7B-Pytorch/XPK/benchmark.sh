@@ -12,4 +12,4 @@ python3 xpk.py workload create \
 --zone=$ZONE \
 --project=$PROJECT \
 --enable-debug-logs \
---command="bash train.sh"
+--command="bash /app/train.sh"

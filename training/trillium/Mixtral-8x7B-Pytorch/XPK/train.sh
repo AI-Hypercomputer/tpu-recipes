@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source env.sh
+source /app/env.sh
 
 # Extract the number after '-' in TPU_TYPE
 TPU_NUM=$(echo "$TPU_TYPE" | grep -oP '(?<=-)\d+')

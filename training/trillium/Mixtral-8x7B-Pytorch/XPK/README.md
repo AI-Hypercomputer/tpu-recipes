@@ -21,7 +21,7 @@ popd
 ```
 ---
 ### 3. Update and export environment variables
-Modify environment variables in `env.sh` targetting your gcloud resource and the experiment model config. Source the script for future use.
+Modify environment variables in `env.sh` targetting your gcloud resource and the experiment model config. Source the script.
 ```bash
 source env.sh
 ```
@@ -84,12 +84,12 @@ XPK End: Thu Oct 31 02:03:01 UTC 2024
 ### 6. [Optional] Metric processing
 You can use the profile 
 ```
+# this is the place we place the profile processing script
+export PROFILE_SCRIPT_PATH=../../../../utils/
 # download the profile from gcp bucket to local
 gsutil cp -r $PROFILE_LOG_DIR ./
-
-
-# feed in the xplane.pd file, e.g.,
-python utils/profile_convert.py ${PROFILE_LOG_DIR}/plugins/profile/2024_10_31_02_00_47/127.0.0.1_9012.xplane.pb
+# locate the xplane.pb file and process
+PYTHONPATH==$PROFILE_SCRIPT_PATH:$PYTHONPATH python $PROFILE_SCRIPT_PATH/profile_convert.py xplane.pb
 ```
 
 You will see output like that tells the average step time in second:
