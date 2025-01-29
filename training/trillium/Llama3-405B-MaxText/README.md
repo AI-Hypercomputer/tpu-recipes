@@ -9,11 +9,11 @@ Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/m
 ## Run Maxtext Llama3.1-405B workloads on GKE
 
 ### Test Env
-jaxlib=0.4.35
+jaxlib=0.4.36
 
-libtpu-nightly=20241028
+libtpu-nightly=20241106
 
-[maxtext](https://github.com/AI-Hypercomputer/maxtext.git)@e7292a3a572792a0d797fc8977b21d0f255729f1
+[maxtext](https://github.com/AI-Hypercomputer/maxtext.git)@5c45ca3869bd62543031d9858c61811e04d6b147
 
 ### Starting workload
 
