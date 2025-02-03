@@ -9,9 +9,9 @@ Please follow this [link](https://github.com/gclouduniverse/reproducibility/tree
 
 ## Run script
 
-1. Clone [Maxtext](https://github.com/google/maxtext) repo.
+1. Clone [Maxtext](https://github.com/AI-Hypercomputer/maxtext) repo.
 ```
-git clone https://github.com/google/maxtext.git
+git clone https://github.com/AI-Hypercomputer/maxtext.git
 ```
 
 2. Build a local docker image with default name `maxtext_base_image`.
