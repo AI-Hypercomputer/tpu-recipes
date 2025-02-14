@@ -1,7 +1,6 @@
 #!/bin/bash
 
-DOCKER_IMAGE=us-central1-docker.pkg.dev/deeplearning-images/reproducibility/pytorch-xla/llama3-70b:jan15built
-
+DOCKER_IMAGE=us-central1-docker.pkg.dev/deeplearning-images/reproducibility/pytorch-xla/llama3-70b:feb14build
 worker_id=$(curl -s "http://metadata.google.internal/computeMetadata/v1/instance/attributes/agent-worker-number" -H 'Metadata-Flavor: Google')
 
 cat >> /dev/null <<EOF
