@@ -4,9 +4,9 @@
 Please follow this [link](https://github.com/gclouduniverse/reproducibility/tree/main/Training/TPU-v5p/XPK_README.md) to create your GKE cluster with XPK
 
 ## Run Maxtext Llama2-7B workloads on GKE
-1. Clone [Maxtext](https://github.com/google/maxtext) repo
+1. Clone [Maxtext](https://github.com/AI-Hypercomputer/maxtext) repo
 ```
-git clone https://github.com/google/maxtext.git
+git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
 ```
 
