@@ -148,7 +148,7 @@ pip install -r requirements.in
 ```
 cd ~
 cd maxtext/
-bash setup.sh
+bash setup.sh JAX_VERSION=0.5.0
 ```
 
 * Install additional dependencies

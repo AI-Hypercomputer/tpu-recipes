@@ -42,14 +42,14 @@ RUN update-alternatives --install \
 RUN git clone https://github.com/AI-Hypercomputer/maxtext.git && \
 git clone https://github.com/AI-Hypercomputer/JetStream.git
 
-RUN cd maxtext/ && \
-bash setup.sh
-
 RUN cd /JetStream && \
 pip install -e .
 
 RUN cd /JetStream/benchmarks && \
 pip install -r requirements.in
+
+RUN cd maxtext/ && \
+bash setup.sh JAX_VERSION=0.5.0
 
 # Reset working directory to /workspace
 WORKDIR /workspace
