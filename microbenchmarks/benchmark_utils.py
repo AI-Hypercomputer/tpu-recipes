@@ -25,6 +25,7 @@ class BenchmarkResult:
 
   time_median: float = 0
   time_min: float = 0
+  time_fn_median: float = 0
 
 
 def get_trace(log_dir: str) -> dict[str, Any]:
@@ -154,5 +155,11 @@ def run_bench(
   if not event_matcher:
     event_matcher = re.compile(func_label)
   events = get_eligible_events(trace, event_matcher)
+  result = get_benchmark_result(events)
 
-  return get_benchmark_result(events)
+  fn_matcher = re.compile(func_label)
+  fn_events = get_eligible_events(trace, fn_matcher)
+  tmp = get_benchmark_result(fn_events)
+  result.time_fn_median = tmp.time_median
+
+  return result
