@@ -1,3 +1,4 @@
+# Run this command from the MaxText root directory using the setup described in the README.
 python3 benchmarks/benchmark_runner.py xpk \
     --project=$PROJECT \
     --zone=$ZONE \
