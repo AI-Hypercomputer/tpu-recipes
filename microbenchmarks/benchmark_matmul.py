@@ -131,7 +131,7 @@ def main():
   tflops = compute / result.time_median / 1e12
 
   print(
-      f"dtype: {dtype.__name__}, matrix Dimensions: ({m}, {n}, {k}), time taken"
+      f"dtype: {dtype.__name__}, matrix dimensions: ({m}, {n}, {k}), time taken"
       f" (median): {result.time_median * 1e3} ms, TFLOPS: {tflops}"
   )
 

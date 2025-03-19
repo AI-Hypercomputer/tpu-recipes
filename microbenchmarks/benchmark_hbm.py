@@ -125,8 +125,8 @@ def main():
   bw_gbps = (tensor_size * 2) / result.time_median / 1e9  # read + write = 2
 
   print(
-      f"Tensor size: {tensor_size / 1024**2} MB, time taken (median):"
-      f" {result.time_median * 1000:.4f} ms, bandwidth: {bw_gbps:.2f} GBps"
+      f"Tensor size (bytes): {tensor_size}, time taken (ms, median):"
+      f" {result.time_median * 1000}, bandwidth (GBps, median): {bw_gbps} "
   )
 
 
