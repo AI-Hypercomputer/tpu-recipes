@@ -132,7 +132,7 @@ def main():
 
   print(
       f"dtype: {dtype.__name__}, matrix dimensions: ({m}, {n}, {k}), time taken"
-      f" (median): {result.time_median * 1e3} ms, TFLOPS: {tflops}"
+      f" (ms, median): {result.time_median * 1e3}, TFLOPS: {tflops}"
   )
 
 
