@@ -130,7 +130,7 @@ from jetstream.core.proto import jetstream_pb2_grpc
 
 prompt = "What are the top 5 languages?"
 
-channel = grpc.insecure_channel("localhost:8888")
+channel = grpc.insecure_channel("localhost:9000")
 stub = jetstream_pb2_grpc.OrchestratorStub(channel)
 
 request = jetstream_pb2.DecodeRequest(
