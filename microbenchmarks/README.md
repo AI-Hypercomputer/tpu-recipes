@@ -55,7 +55,7 @@ python benchmark_hbm.py \
 
 Example output:
 ```
-Tensor size: 32.0 MBs, time taken (median): 0.0461 ms, bandwidth: 1454.54 GBps
+Tensor size (bytes): 33554432, time taken (ms, median): 0.049359414, bandwidth (GBps, median): 1359.5960438266143
 ```
 
 Run `python benchmark_hbm.py -h` to view the how to set the arguments.
