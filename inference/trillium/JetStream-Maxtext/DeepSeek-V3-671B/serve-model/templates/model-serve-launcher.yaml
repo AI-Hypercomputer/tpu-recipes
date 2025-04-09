@@ -1,0 +1,196 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+{{- $root := . }}
+
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: {{ .Release.Name }}
+  annotations:
+    leaderworkerset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    leaderTemplate:
+      metadata:
+        labels:
+          role: leader
+          app: {{ .Release.Name }}
+      spec:
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+          cloud.google.com/gke-tpu-topology: 8x8
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        volumes:
+          - name: shared-memory
+            emptyDir:
+              medium: "Memory"
+              sizeLimit: 250Gi
+          - name: local-ssd
+            hostPath:
+              path: /mnt/stateful_partition/kube-ephemeral-ssd
+          - name: workload-configuration
+            configMap:
+              name: "{{.Release.Name}}"
+        containers:
+        - name: pathways-proxy
+          image: "{{ .Values.job.pathways_proxy_image.repository }}:{{ .Values.job.pathways_proxy_image.tag }}"
+          args:
+          - --resource_manager_address=$(LWS_LEADER_ADDRESS):38677
+          - --server_port=38681
+          {{- with (index .Values.volumes.gcsMounts 0) }}
+          - --gcs_scratch_location=gs://{{ .bucketName }}/tmp
+          {{- end }}
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 38681
+
+        - name: pathways-rm
+          env:
+          - name: HOST_ADDRESS
+            value: "$(LWS_LEADER_ADDRESS)"
+          - name: TPU_SKIP_MDS_QUERY
+            value: "true"
+          image: "{{ .Values.job.pathways_rm_image.repository }}:{{ .Values.job.pathways_rm_image.tag }}"
+          args:
+          - --server_port=38677
+          - --node_type=resource_manager
+          - --instance_count=1
+          - --instance_type=tpuv6e:8x8
+          {{- with (index .Values.volumes.gcsMounts 0) }}
+          - --gcs_scratch_location=gs://{{ .bucketName }}/tmp
+          {{- end }}
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 38677
+
+        - name: jax-tpu
+          image: "{{ .Values.job.jax_tpu_image.repository }}:{{ .Values.job.jax_tpu_image.tag }}"
+          imagePullPolicy: Always
+          env:
+          - name: ENABLE_PATHWAYS_PERSISTENCE
+            value: "1"
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: "{{ .Values.huggingface.secretName }}"
+                key: "{{ .Values.huggingface.secretData.token }}"
+          workingDir: /workspace
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -eux
+            # Parse server configurations from values file
+            echo "MaxText configuration file:"
+            sed 's/^/| /' /etc/workload-configuration/maxtext-configuration.yaml
+            echo ""
+
+            OPTIONS=()
+            while IFS= read -r line || [[ -n "$line" ]]; do
+              # Skip empty lines and comments
+              [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+              key=$(echo "$line" | cut -d':' -f1 | tr -d '[:space:]')
+              value=$(echo "$line" | cut -d':' -f2- | sed 's/^[[:space:]]*//')
+
+              # Handle environment variable expansion
+              if [[ "$value" == \$* ]]; then
+                var_name=${value#\$}
+
+                if [[ -z "$var_name" ]]; then
+                  expanded_value="$"
+                else
+                  expanded_value="${!var_name:-$value}"
+                fi
+
+                OPTIONS+=("$key=$expanded_value")
+              else
+                OPTIONS+=("$key=$value")
+              fi
+            done < /etc/workload-configuration/maxtext-configuration.yaml
+
+            echo "===== MaxText Configuration ====="
+            echo "${OPTIONS[@]}"
+
+            python3 /maxtext/MaxText/maxengine_server.py \
+              /maxtext/MaxText/configs/base.yml \
+              "${OPTIONS[@]}"
+
+          ports:
+          - containerPort: {{ .Values.jetstream.service.ports.grpc }}
+          startupProbe:
+            httpGet:
+              path: /healthcheck
+              port: {{ .Values.jetstream.service.ports.http }}
+              scheme: HTTP
+            periodSeconds: 1
+            initialDelaySeconds: 600
+            failureThreshold: 10000
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: {{ .Values.jetstream.service.ports.http }}
+              scheme: HTTP
+            periodSeconds: 60
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: {{ .Values.jetstream.service.ports.http }}
+              scheme: HTTP
+            periodSeconds: 60
+            failureThreshold: 10
+          volumeMounts:
+            - name: shared-memory
+              mountPath: /dev/shm
+            - name: workload-configuration
+              mountPath: /etc/workload-configuration
+            - name: local-ssd
+              mountPath: {{ .Values.volumes.ssdMountPath }}
+
+        - name: jetstream-http
+          image: "{{ .Values.job.jetstream_http_image.repository }}:{{ .Values.job.jetstream_http_image.tag }}"
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 8000
+    size: 17
+
+    workerTemplate:
+      spec:
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+          cloud.google.com/gke-tpu-topology: 8x8
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: worker
+          args:
+          - --server_port=38679
+          - --resource_manager_address=$(LWS_LEADER_ADDRESS):38677
+          {{- with (index .Values.volumes.gcsMounts 0) }}
+          - --gcs_scratch_location=gs://{{ .bucketName }}/tmp
+          {{- end }}
+          image: "{{ .Values.job.pathways_rm_image.repository }}:{{ .Values.job.pathways_rm_image.tag }}"
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 38679
+          resources:
+            limits:
+              google.com/tpu: "4"
