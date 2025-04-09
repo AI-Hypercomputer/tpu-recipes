@@ -9,27 +9,17 @@ This recipe outlines the steps to benchmark [DeepSeek-V3](https://huggingface.co
 
 ## Outline
 
-- [DeepSeek R1/V3 Multi-host Inference on TPU v6e with JetStream, MaxText and Pathways on Cloud with GKE Cluster](#deepseek-r1v3-multi-host-inference-on-tpu-v6e-with-jetstream-maxtext-and-pathways-on-cloud-with-gke-cluster)
-  - [Outline](#outline)
-  - [Prerequisites](#prerequisites)
-  - [Setup your local environment](#setup-your-local-environment)
-    - [Clone the recipe](#clone-the-recipe)
-    - [Configure environment settings](#configure-environment-settings)
-  - [Create GKE Cluster with TPU v6e nodepool using xpk](#create-gke-cluster-with-tpu-v6e-nodepool-using-xpk)
-  - [Create a Cloud Storage bucket to store checkpoints and temporary files](#create-a-cloud-storage-bucket-to-store-checkpoints-and-temporary-files)
-  - [Configure a service account for access {#configure-a-service-account-for-access}](#configure-a-service-account-for-access-configure-a-service-account-for-access)
-  - [Build JetStream/MaxText container image to deploy the workload {#build-jetstream/maxtext-container-image-to-deploy-the-workload}](#build-jetstreammaxtext-container-image-to-deploy-the-workload-build-jetstreammaxtext-container-image-to-deploy-the-workload)
-    - [Create Artifact Registry repository to store Docker images](#create-artifact-registry-repository-to-store-docker-images)
-    - [Configure Docker to authenticate to Artifact Registry](#configure-docker-to-authenticate-to-artifact-registry)
-    - [Build and push the Docker container image to Artifact Registry](#build-and-push-the-docker-container-image-to-artifact-registry)
-  - [Checkpoint conversion](#checkpoint-conversion)
-    - [Convert Hugging Face checkpoint from FP8 to BF16 {#convert-hugging-face-checkpoint-from-fp8-to-bf16}](#convert-hugging-face-checkpoint-from-fp8-to-bf16-convert-hugging-face-checkpoint-from-fp8-to-bf16)
-    - [Convert Hugging Face BF16 checkpoint to MaxText compatible checkpoint](#convert-hugging-face-bf16-checkpoint-to-maxtext-compatible-checkpoint)
-  - [Deploy JetStream and Pathways](#deploy-jetstream-and-pathways)
-    - [Deploy LeaderWorkerSet (LWS) API](#deploy-leaderworkerset-lws-api)
-    - [Deploy the workload manifest](#deploy-the-workload-manifest)
-  - [Run MMLU benchmark](#run-mmlu-benchmark)
-  - [Cleanup](#cleanup)
+1. [Ensure prerequisites are met.](#prerequisites)
+2. [Setup development environment.](#setup-your-local-environment)
+3. [Provision a GKE Cluster with TPU v6e and CPU nodepools](#create-gke-cluster-with-tpu-v6e-nodepool-using-xpk)
+4. [Configure service account for access](#configure-a-service-account-for-access)  
+5. [Create container image with dependencies](#build-jetstreammaxtext-container-image-to-deploy-the-workload)  
+6. [Checkpoint conversion](#checkpoint-conversion)  
+   - Download model weights from HuggingFace  
+   - [Convert Hugging Face checkpoint from FP8 to BF16](#convert-hugging-face-checkpoint-from-fp8-to-bf16)  
+   - [Convert Hugging Face BF16 checkpoint to MaxText compatible checkpoint](#convert-hugging-face-bf16-checkpoint-to-maxtext-compatible-checkpoint)  
+7. [Deploy JetStream and Pathways](#deploy-jetstream-and-pathways)  
+8. [Run MMLU benchmark](#run-mmlu-benchmark)
 
 ## Prerequisites
 
@@ -214,7 +204,7 @@ Create a Cloud Storage bucket to store model checkpoint, Pathways temporary file
 gcloud storage buckets create gs://$GCS_BUCKET --location=$REGION
 ```
 
-## Configure a service account for access {#configure-a-service-account-for-access}
+## Configure a service account for access
 
 Configure a Kubernetes service account to act as an IAM service account. 
 
@@ -243,7 +233,7 @@ kubectl annotate serviceaccount default \
 iam.gke.io/gcp-service-account=jetstream-pathways@${PROJECT_ID}.iam.gserviceaccount.com
 ```
 
-## Build JetStream/MaxText container image to deploy the workload {#build-jetstream/maxtext-container-image-to-deploy-the-workload}
+## Build JetStream/MaxText container image to deploy the workload
 
 ### Create Artifact Registry repository to store Docker images
 
@@ -290,7 +280,7 @@ gcloud beta builds log $BUILD_ID --region=$REGION
 
 ## Checkpoint conversion
 
-### Convert Hugging Face checkpoint from FP8 to BF16 {#convert-hugging-face-checkpoint-from-fp8-to-bf16}
+### Convert Hugging Face checkpoint from FP8 to BF16
 
 Run the following steps for conversion:
 
