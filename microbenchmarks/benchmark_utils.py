@@ -7,24 +7,22 @@ import json
 import os
 import pathlib
 import re
+import time
 from typing import Any, Callable
 import jax
 import numpy as np
 
 
 @dataclass
-class BenchmarkResult:
-  """The result of a benchmark run.
+class TimingStats:
+  """The timing statistics of the benchmark.
 
   Attributes:
-    time_median: the median elapsed time of the benchmark at the event level. By
-      default, the event to be measured is equivalent to the function to be
-      benchmarked, unless an event_matcher is provided.
-    time_min: the minimum elapsed time of the benchmark.
+    time_median: the median completion time of the benchmark function or the
+      trace if a trace matcher is specified.
   """
 
   time_median: float = 0
-  time_min: float = 0
 
 
 def get_trace(log_dir: str) -> dict[str, Any]:
@@ -59,13 +57,13 @@ def get_trace(log_dir: str) -> dict[str, Any]:
 
 def get_eligible_events(
     trace: dict[str, Any],
-    event_matcher: re.Pattern[str],
+    trace_matcher: re.Pattern[str],
 ) -> list[dict[str, Any]]:
   """Filter the trace events eligible for benchmarking.
 
   Args:
     trace: a trace object in JSON format.
-    event_matcher: a regex-based event name matcher to filter the evnets.
+    trace_matcher: a regex-based trace name matcher to filter the evnets.
 
   Returns:
     A list of events objects in JSON format.
@@ -75,19 +73,19 @@ def get_eligible_events(
 
   ret = []
   for e in trace["traceEvents"]:
-    if "name" in e and event_matcher.match(e["name"]):
+    if "name" in e and trace_matcher.match(e["name"]):
       ret.append(e)
   return ret
 
 
-def get_benchmark_result(events: list[dict[str, Any]]) -> BenchmarkResult:
-  """Derive the benchmark result from the given list of trace events.
+def calculate_timing_stats(events: list[dict[str, Any]]) -> TimingStats:
+  """Calculate the timing statistics from the given list of trace events.
 
   Args:
     events: a list of trace events.
 
   Returns:
-    A summary of the benchmark result.
+    Timing statistics.
   """
   # Data could be distributed onto multiple cores. We approximate the runtime to
   # be the maximum duration of all events with the same run_id.
@@ -107,52 +105,63 @@ def get_benchmark_result(events: list[dict[str, Any]]) -> BenchmarkResult:
     print("KeyError: Key 'dur' not found in the event object")
     raise
 
-  return BenchmarkResult(
+  return TimingStats(
       time_median=np.median(durations),
-      time_min=np.min(durations),
   )
 
 
 def run_bench(
     fn: Callable[..., Any],
+    *args,
     num_iter: int,
     warmup_iter: int,
     log_dir: str,
     func_label: str,
-    event_matcher: re.Pattern[str] = None,
-) -> BenchmarkResult:
-  """Runs a function `num_iter` times to measure the runtime for benchmarking.
+    trace_matcher: re.Pattern[str] = None,
+    clear_caches: bool = False,
+) -> TimingStats:
+  """Runs a function `num_iter` times to measure the runtime of benchmark function.
 
   A jax profiler trace is captured in order to measure the timing at the event
   level within the function.
 
   Args:
     fn: the function to be benchmarked.
+    *args: arguments to the function `fn`.
     num_iter: number of times `fn` will be run.
     warmup_iter: number of times `fn` will be run before the acutal timing
       measurement.
     log_dir: the directory to save the profiler trace to.
-    func_label: a label to identify the function in the trace events.
-    event_matcher: a regex-based event matcher to filter the evnets eligible for
-      benchmarking. If None, the runtime of the function will be reported.
+    func_label: the trace name of `fn` in the profiler.
+    trace_matcher: a regex-based trace matcher to filter the events eligible for
+      benchmarking. If None, timing result will be derived from time() wrapper.
+    clear_caches: call jax.clear_caches() every time before executing `fn`,
+      which clears all compilation and staging caches.
 
   Returns:
-    A summary of the benchmark result.
+    Timing statistics of the benchmark.
   """
   # warm up
   for _ in range(warmup_iter):
-    fn()
+    fn(*args)
 
+  durations = []
   with jax.profiler.trace(log_dir):
     for _ in range(num_iter):
-      jax.clear_caches()
+      if clear_caches:
+        jax.clear_caches()
       with jax.profiler.TraceAnnotation(func_label):
-        fn()
+        start_t = time.time()
+        jax.block_until_ready(fn(*args)),
+        durations.append(time.time() - start_t)
 
-  trace = get_trace(log_dir)
+  if trace_matcher:
+    trace = get_trace(log_dir)
+    events = get_eligible_events(trace, trace_matcher)
+    time_stats = calculate_timing_stats(events)
+  else:
+    time_stats = TimingStats(
+        time_median=np.median(durations),
+    )
 
-  if not event_matcher:
-    event_matcher = re.compile(func_label)
-  events = get_eligible_events(trace, event_matcher)
-
-  return get_benchmark_result(events)
+  return time_stats

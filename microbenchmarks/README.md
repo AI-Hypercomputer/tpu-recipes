@@ -2,7 +2,7 @@
 
 ## Setup
 
-Set up a v6e TPU VM:
+Set up a v6e TPU VM for single-chip microbenchmarks:
 ```
 gcloud compute tpus tpu-vm create ${TPU_NAME} /
         --project ${PROJECT_ID} /
@@ -31,18 +31,44 @@ pip install -r requirements.txt
 Usage example:
 ```
 python benchmark_matmul.py \
-  --dim 4096 4096 4096 \
+  --dim 8192 8192 8192 \
   --libtpu_args=--xla_tpu_scoped_vmem_limit_kib=65536 \
-  --matcher="jit_matmul.*"
+  --trace_matcher="jit_matmul.*"
 ```
 
 Example output:
 ```
-dtype: bfloat16, matrix Dimensions: (4096, 4096, 4096), time taken (median): 0.16358503900000002 ms, TFLOPS: 840.1682348958574
+dtype: bfloat16, matrix dimensions: (8192, 8192, 8192), time taken (median, ms): 1.328756094, TFLOPS: 827.474382048629
 ```
 
-Run `python benchmark_matmul.py -h` to view the how to set the arguments.
+The figure below shows the trace of the example above. Setting
+ `--trace_matcher="jit_matmul.*"` means that the completion time is measured by
+ the duration of the compiled [`matmul`](benchmark_matmul.py#L19) function on
+ TPUs, which excludes the communication overheads between the host (CPU) and
+ TPUs.
 
+
+![Trace Image](https://services.google.com/fh/files/misc/trace.png)
+
+
+If `--trace_matcher` is not set, the completion time will be measured by timing
+ the function on the host, which includes the compilation and communication
+ overheads, including kernel launch, data transfer, synchronization, etc..
+
+Example:
+```
+python benchmark_matmul.py \
+  --dim 8192 8192 8192 \
+  --libtpu_args=--xla_tpu_scoped_vmem_limit_kib=65536
+```
+
+Output:
+
+```
+dtype: bfloat16, matrix dimensions: (8192, 8192, 8192), time taken (median, ms): 1.457810401916504, TFLOPS: 754.2212803054033
+```
+
+Run `python benchmark_matmul.py -h` to view the how to set the other arguments.
 
 ## HBM Bandwidth Benchmark
 
@@ -50,7 +76,7 @@ Usage example:
 ```
 python benchmark_hbm.py \
   --num_elements=16777216 \
-  --matcher="jit_my_copy.*"
+  --trace_matcher="jit_my_copy.*"
 ```
 
 Example output:

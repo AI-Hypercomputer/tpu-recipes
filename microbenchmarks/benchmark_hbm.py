@@ -3,7 +3,7 @@ r"""Benchmark for HBM bandwidth.
 Sample usage (on TPU vm):
   $ python benchmark_hbm.py \
   --num_elements=16777216 \
-  --matcher="jit_my_copy.*"
+  --trace_matcher="jit_my_copy.*"
 """
 
 import argparse
@@ -20,28 +20,30 @@ def my_copy(a):
 
 
 def get_dtype(dtype: str):
+  if dtype == "float32":
+    return jnp.float32
   if dtype == "bf16":
     return jnp.bfloat16
   if dtype == "fp8_e5m2":
     return jnp.float8_e5m2
   if dtype == "fp8_e4m3":
     return jnp.float8_e4m3fn
+  if dtype == "int8":
+    return jnp.int8
   raise ValueError(f"Invalid data type: {dtype}")
 
 
 def main():
   """Benchmark for HBM bandwidth."""
 
-  parser = argparse.ArgumentParser(
-      description="Run HBM bandwidth benchmark."
-  )
+  parser = argparse.ArgumentParser(description="Run HBM bandwidth benchmark.")
 
   parser.add_argument(
       "--dtype",
       type=str,
-      choices=["bf16", "fp8_e5m2", "fp8_e4m3"],
+      choices=["float32", "bf16", "fp8_e5m2", "fp8_e4m3", "int8"],
       default="bf16",
-      help="Data type of the matrix elements.",
+      help="Data type of the tensor elements.",
   )
   parser.add_argument(
       "--libtpu_args",
@@ -56,21 +58,21 @@ def main():
       "--num_elements",
       type=int,
       required=True,
-      help="Number of elements in the array.",
+      help="Number of elements in the tensor.",
   )
   parser.add_argument(
       "--num_iter",
       type=int,
-      default=100,
-      help="Number of times the matmul kernel will be run.",
+      default=200,
+      help="Number of times the benchmark function will be run.",
   )
   parser.add_argument(
       "--warmup_iter",
       type=int,
-      default="1",
+      default=30,
       help=(
-          "Number of times the matmul kernel will be run to warm up before the"
-          " acutal timing measurement starts."
+          "Number of times the benchmark function will be run to warm up before"
+          " the actual timing measurement starts."
       ),
   )
   parser.add_argument(
@@ -89,15 +91,23 @@ def main():
       ),
   )
   parser.add_argument(
-      "--matcher",
+      "--trace_matcher",
       type=str,
       required=False,
       help=(
           "A regex-based string matcher to filter the trace events eligible for"
-          " benchmarking. This arg would be useful if we want to measure the"
-          " timing of a specific op or XLA module within the function., e.g."
-          " --matcher='fusion' measures the timing of XLA fusion op"
-          " specifically."
+          " benchmarking. If a matcher is specified, the timing result will be"
+          " derived from the profiler trace. Otherwise, the result will be"
+          " derived from the time() wrapper."
+      ),
+  )
+  parser.add_argument(
+      "--clear_caches",
+      action=argparse.BooleanOptionalAction,
+      help=(
+          "If set, jax.clear_caches() will be invoked every time before the"
+          " benchmark function is executed, which clears all compilation and"
+          " staging caches."
       ),
   )
 
@@ -111,14 +121,16 @@ def main():
   a = jax.random.normal(jax.random.key(0), (n,)).astype(dtype)
   compiled = jax.jit(my_copy).lower(a).compile()
 
-  matcher = re.compile(args.matcher) if args.matcher else None
+  matcher = re.compile(args.trace_matcher) if args.trace_matcher else None
   result = run_bench(
-      lambda: jax.block_until_ready(compiled(a)),
+      compiled,
+      a,
       num_iter=args.num_iter,
       warmup_iter=args.warmup_iter,
       log_dir=args.log_dir,
       func_label=args.label,
-      event_matcher=matcher,
+      trace_matcher=matcher,
+      clear_caches=args.clear_caches,
   )
 
   tensor_size = n * a.itemsize

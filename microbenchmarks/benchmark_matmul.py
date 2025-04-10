@@ -4,7 +4,7 @@ Sample usage (on TPU vm):
   $ python benchmark_matmul.py \
   --dim 4096 4096 4096 \
   --libtpu_args=--xla_tpu_scoped_vmem_limit_kib=65536 \
-  --matcher="jit_matmul.*"
+  --trace_matcher="jit_matmul.*"
 """
 
 import argparse
@@ -21,12 +21,16 @@ def matmul(a, b):
 
 
 def get_dtype(dtype: str):
+  if dtype == "float32":
+    return jnp.float32
   if dtype == "bf16":
     return jnp.bfloat16
   if dtype == "fp8_e5m2":
     return jnp.float8_e5m2
   if dtype == "fp8_e4m3":
     return jnp.float8_e4m3fn
+  if dtype == "int8":
+    return jnp.int8
   raise ValueError(f"Invalid data type: {dtype}")
 
 
@@ -39,7 +43,7 @@ def main():
   parser.add_argument(
       "--dtype",
       type=str,
-      choices=["bf16", "fp8_e5m2", "fp8_e4m3"],
+      choices=["float32", "bf16", "fp8_e5m2", "fp8_e4m3", "int8"],
       default="bf16",
       help="Data type of the matrix elements.",
   )
@@ -65,16 +69,16 @@ def main():
   parser.add_argument(
       "--num_iter",
       type=int,
-      default=100,
-      help="Number of times the matmul kernel will be run.",
+      default=200,
+      help="Number of times the benchmark function will be run.",
   )
   parser.add_argument(
       "--warmup_iter",
       type=int,
-      default="1",
+      default=30,
       help=(
-          "Number of times the matmul kernel will be run to warm up before the"
-          " actual timing measurement starts."
+          "Number of times the benchmark function will be run to warm up before"
+          " the actual timing measurement starts."
       ),
   )
   parser.add_argument(
@@ -93,15 +97,23 @@ def main():
       ),
   )
   parser.add_argument(
-      "--matcher",
+      "--trace_matcher",
       type=str,
       required=False,
       help=(
           "A regex-based string matcher to filter the trace events eligible for"
-          " benchmarking. This arg would be useful if we want to measure the"
-          " timing of a specific op or XLA module within the function., e.g."
-          " --matcher='fusion' measures the timing of XLA fusion op"
-          " specifically."
+          " benchmarking. If a matcher is specified, the timing result will be"
+          " derived from the profiler trace. Otherwise, the result will be"
+          " derived from the time() wrapper."
+      ),
+  )
+  parser.add_argument(
+      "--clear_caches",
+      action=argparse.BooleanOptionalAction,
+      help=(
+          "If set, jax.clear_caches() will be invoked every time before the"
+          " benchmark function is executed, which clears all compilation and"
+          " staging caches."
       ),
   )
 
@@ -116,14 +128,17 @@ def main():
   b = jax.random.normal(jax.random.key(0), (n, k)).astype(dtype)
 
   compiled = jax.jit(matmul).lower(a, b).compile()
-  matcher = re.compile(args.matcher) if args.matcher else None
+  matcher = re.compile(args.trace_matcher) if args.trace_matcher else None
   result = run_bench(
-      lambda: jax.block_until_ready(compiled(a, b)),
+      compiled,
+      a,
+      b,
       num_iter=args.num_iter,
       warmup_iter=args.warmup_iter,
       log_dir=args.log_dir,
       func_label=args.label,
-      event_matcher=matcher,
+      trace_matcher=matcher,
+      clear_caches=args.clear_caches,
   )
 
   # 2 ops (multiply and add)
@@ -131,8 +146,8 @@ def main():
   tflops = compute / result.time_median / 1e12
 
   print(
-      f"dtype: {dtype.__name__}, matrix Dimensions: ({m}, {n}, {k}), time taken"
-      f" (median): {result.time_median * 1e3} ms, TFLOPS: {tflops}"
+      f"dtype: {dtype.__name__}, matrix dimensions: ({m}, {n}, {k}), time taken"
+      f" (median, ms): {result.time_median * 1e3}, TFLOPS: {tflops}"
   )
 
 
