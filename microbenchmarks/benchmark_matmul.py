@@ -2,7 +2,7 @@ r"""Benchmark for matrix multiplication.
 
 Sample usage (on TPU vm):
   $ python benchmark_matmul.py \
-  --dim 4096 4096 4096 \
+  --dim 8192 8192 8192 \
   --libtpu_args=--xla_tpu_scoped_vmem_limit_kib=65536 \
   --trace_matcher="jit_matmul.*"
 """
