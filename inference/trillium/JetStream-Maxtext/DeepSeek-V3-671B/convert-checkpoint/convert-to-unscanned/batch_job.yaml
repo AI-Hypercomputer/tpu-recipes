@@ -20,7 +20,7 @@ taskGroups:
             entrypoint: "/bin/sh"
             commands:
               - "-c"
-              - mkdir -p /workspace/models/ && gcloud storage cp -r ${GCS_CKPT_PATH_BF16} /workspace/models/ && JAX_PLATFORMS='' python3 /maxtext/MaxText/convert_deepseek_unscanned_ckpt.py --base_model_path /workspace/models --maxtext_model_path ${GCS_CKPT_PATH_UNSCANNED} --model_size $MODEL_NAME --use-zarr3 false --use-ocdbt false
+              - mkdir -p /workspace/models/ && gcloud storage cp -r ${GCS_CKPT_PATH_BF16} /workspace/models/ && cd /maxtext && JAX_PLATFORMS='' python3 -m Maxtext.convert_deepseek_unscanned_ckp --base_model_path /workspace/models --maxtext_model_path ${GCS_CKPT_PATH_UNSCANNED} --model_size $MODEL_NAME --use-zarr3 false --use-ocdbt false
       computeResource:
         cpuMilli: 160000
         memoryMib: 3936256

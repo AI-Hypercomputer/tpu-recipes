@@ -127,7 +127,8 @@ spec:
             echo "===== MaxText Configuration ====="
             echo "${OPTIONS[@]}"
 
-            python3 /maxtext/MaxText/maxengine_server.py \
+            cd /maxtext
+            python3 -m MaxText.maxengine_server \
               /maxtext/MaxText/configs/base.yml \
               "${OPTIONS[@]}"
 
