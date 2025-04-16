@@ -1,0 +1,143 @@
+{{- if .Values.convert_hf_ckpt }}
+{{- $root := . }}
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-convert-ckpt
+  labels:
+    app: {{ .Release.Name }}-convert-ckpt
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-convert-ckpt
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        {{- if .Values.volumes.gcsMounts }}
+        gke-gcsfuse/volumes: "true"
+        gke-gcsfuse/cpu-limit: "0"
+        gke-gcsfuse/memory-limit: "0"
+        gke-gcsfuse/ephemeral-storage-limit: "0"
+        {{- end }}
+    spec:
+      restartPolicy: OnFailure
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: cloud.google.com/machine-family
+                operator: In
+                values:
+                - n2
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values:
+                - n2-highmem-80
+
+      volumes:
+        - name: shared-memory
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: 50Gi 
+        - name: local-ssd
+          hostPath:
+            path: /mnt/stateful_partition/kube-ephemeral-ssd
+        {{- range $gcs := .Values.volumes.gcsMounts }}
+        - name: "{{ $gcs.bucketName }}"
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            volumeAttributes:
+              bucketName: "{{ $gcs.bucketName }}"
+              mountOptions: "implicit-dirs,file-cache:enable-parallel-downloads:true,file-cache:parallel-downloads-per-file:100,file-cache:max-parallel-downloads:-1,file-cache:download-chunk-size-mb:10,file-cache:max-size-mb:-1"
+        {{- end }}
+
+      containers:
+      - name: convert-model
+        image: "{{ .Values.job.image.repository }}:{{ .Values.job.image.tag }}"
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: "{{ .Values.huggingface.secretName }}"
+                key: "{{ .Values.huggingface.secretData.token }}"
+          - name: BASE_MODEL_PATH
+            value: "/ssd/{{ .Values.model.name }}"
+          - name: CHECKPOINT_TPU_UNSCANNED
+            value: "/ssd/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/0/items"
+          - name: MODEL_SIZE
+            value: "llama4-17b-16e"
+          {{- range $gcs := $root.Values.volumes.gcsMounts }}
+          - name: GCS_FUSE_BUCKET
+            value: "{{ $gcs.bucketName }}"
+          {{- end }}
+
+        workingDir: /workspace
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -eux
+
+            echo "Starting conversion job on a CPU node..."
+            df -h
+
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
+            pip install huggingface_hub[hf_xet]
+
+            rm -rf /ssd/{{ .Values.model.name }}
+
+
+            echo "Downloading HuggingFace model to ${BASE_MODEL_PATH}..."
+
+            huggingface-cli download {{ .Values.model.name }} --local-dir ${BASE_MODEL_PATH} --local-dir-use-symlinks False
+
+            # Rename weights to expected format
+
+            echo "Rename weights in ${BASE_MODEL_PATH}"
+            found_files=0
+            for old_filepath in "${BASE_MODEL_PATH}"/consolidated.??.pth; do
+                if [ -f "$old_filepath" ]; then
+                    found_files=$((found_files + 1))
+                    old_filename=$(basename "$old_filepath")
+                    new_filename=$(echo "$old_filename" | sed 's/^consolidated/llama4-17b-16e/')
+                    new_filepath="${BASE_MODEL_PATH}/${new_filename}"
+
+                    if [ "$old_filepath" != "$new_filepath" ]; then
+                        mv -v "$old_filepath" "$new_filepath"
+                        echo "Renamed $old_filepath to $new_filepath"
+                    else
+                        echo "File already named correctly: $old_filepath"
+                    fi
+                fi
+            done
+            if [ "$found_files" -eq 0 ]; then
+                echo "No consolidated.*.pth files found for renaming in ${BASE_MODEL_PATH}."
+            fi
+
+            echo "Running MaxText checkpoint conversion (on CPU node)..."
+            cd /maxtext || exit 1
+            JAX_PLATFORMS=cpu python3 -m MaxText.llama4_ckpt_unscanned \
+              --base-model-path ${BASE_MODEL_PATH} \
+              --maxtext-model-path ${CHECKPOINT_TPU_UNSCANNED} \
+              --model-size ${MODEL_SIZE}
+
+            echo "Conversion Job Complete. Unscanned checkpoints should be at ${CHECKPOINT_TPU_UNSCANNED}"
+
+        volumeMounts:
+          - name: shared-memory
+            mountPath: /dev/shm
+          - name: local-ssd
+            mountPath: {{ $root.Values.volumes.ssdMountPath }}
+          {{- range $gcs := $root.Values.volumes.gcsMounts }}
+          - name: "{{ $gcs.bucketName }}"
+            mountPath: "{{ $gcs.mountPath }}"
+          {{- end }}
+  backoffLimit: 1
+{{- end }}

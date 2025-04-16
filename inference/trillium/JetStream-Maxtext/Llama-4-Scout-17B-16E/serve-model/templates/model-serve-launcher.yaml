@@ -1,0 +1,162 @@
+# templates/deployment.yaml
+{{- $root := . }}
+
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: {{ .Release.Name }}-serving
+  labels:
+    app: {{ .Release.Name }}-serving
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-serving
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-serving
+        app.kubernetes.io/name: {{ include "chart.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        kubectl.kubernetes.io/default-container: model-serving
+        {{- if .Values.volumes.gcsMounts }}
+        gke-gcsfuse/volumes: "true"
+        gke-gcsfuse/cpu-limit: "0"
+        gke-gcsfuse/memory-limit: "0"
+        gke-gcsfuse/ephemeral-storage-limit: "0"
+        {{- end }}
+    spec:
+      restartPolicy: Always
+      nodeSelector:
+        cloud.google.com/gke-tpu-topology: 2x4
+        cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+
+      tolerations:
+      - key: google.com/tpu
+        operator: Exists
+      - key: cloud.google.com/impending-node-termination
+        operator: Exists
+
+      volumes:
+        - name: shared-memory
+          emptyDir:
+            medium: "Memory"
+            sizeLimit: 250Gi
+        - name: local-ssd
+          hostPath:
+            path: /mnt/stateful_partition/kube-ephemeral-ssd
+        - name: workload-configuration
+          configMap:
+            name: "{{.Release.Name}}"
+        {{- range $gcs := .Values.volumes.gcsMounts }}
+        - name: "{{ $gcs.bucketName }}"
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            volumeAttributes:
+              bucketName: "{{ $gcs.bucketName }}"
+              mountOptions: "implicit-dirs,file-cache:enable-parallel-downloads:true,file-cache:parallel-downloads-per-file:100,file-cache:max-parallel-downloads:-1,file-cache:download-chunk-size-mb:10,file-cache:max-size-mb:-1"
+        {{- end }}
+
+      containers:
+      - name: model-serving
+        image: "{{ .Values.job.image.repository }}:{{ .Values.job.image.tag }}"
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true
+        resources:
+          requests:
+            google.com/tpu: 8
+          limits:
+            google.com/tpu: 8
+        ports:
+          - containerPort: {{ .Values.jetstream.service.ports.grpc }}
+            name: grpc
+        env:
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: "{{ .Values.huggingface.secretName }}"
+                key: "{{ .Values.huggingface.secretData.token }}"
+          - name: BASE_MODEL_PATH
+            value: "/gcs/{{ .Values.model.name }}"
+          - name: CHECKPOINT_TPU_SCANNED
+            value: "/gcs/{{ .Values.model.name }}/scanned_ckpt"
+          - name: RUN_NAME
+            value: "unscanned_ckpt"
+            value: "/gcs/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/0/items"
+          - name: LOAD_PARAMETERS_PATH
+            value: "/gcs/{{ .Values.model.name }}/scanned_ckpt/0/items"
+            value: "llama4-17b-16e"
+          {{- range $gcs := $root.Values.volumes.gcsMounts }}
+          - name: GCS_FUSE_BUCKET
+            value: "{{ $gcs.bucketName }}"
+          {{- end }}
+
+          - name: LIBTPU_INIT_ARGS
+            valueFrom:
+              configMapKeyRef:
+                name: "{{ .Release.Name }}"
+                key: libtpu-init-args
+
+        workingDir: /workspace
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -eux
+
+            echo "Starting model serving deployment on a TPU node..."
+
+            pip install torch --index-url https://download.pytorch.org/whl/cpu
+            python3 -m nltk.downloader punkt_tab
+
+            # Parse server configurations from values file
+            echo "MaxText configuration file:"
+            if [ -f /etc/workload-configuration/maxtext-configuration.yaml ]; then
+              sed 's/^/| /' /etc/workload-configuration/maxtext-configuration.yaml
+            else
+              echo "MaxText configuration file not found at /etc/workload-configuration/maxtext-configuration.yaml"
+            fi
+            echo ""
+
+            OPTIONS=()
+            if [ -f /etc/workload-configuration/maxtext-configuration.yaml ]; then
+              while IFS= read -r line || [[ -n "$line" ]]; do
+                [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+                key=$(echo "$line" | cut -d':' -f1 | tr -d '[:space:]')
+                value=$(echo "$line" | cut -d':' -f2- | sed 's/^[[:space:]]*//')
+                if [[ "$value" == \$* ]]; then
+                  var_name=${value#\$}
+                  if [[ -z "$var_name" ]]; then expanded_value="$"; else expanded_value="${!var_name:-$value}"; fi
+                  OPTIONS+=("$key=$expanded_value")
+                else
+                  OPTIONS+=("$key=$value")
+                fi
+              done < /etc/workload-configuration/maxtext-configuration.yaml
+            fi
+            echo "===== MaxText Configuration Options ====="
+            echo "${OPTIONS[@]}"
+
+            # Start the JetStream MaxText server
+            echo "Starting JetStream MaxText server on TPU node..."
+            cd /maxtext || exit 1
+            python3 -m MaxText.maxengine_server \
+              /maxtext/MaxText/configs/base.yml \
+              --hf-access-token=${HF_TOKEN} \
+              "${OPTIONS[@]}"
+
+        volumeMounts:
+          - name: shared-memory
+            mountPath: /dev/shm
+          - name: workload-configuration
+            mountPath: /etc/workload-configuration
+          - name: local-ssd
+            mountPath: {{ $root.Values.volumes.ssdMountPath }}
+          {{- range $gcs := $root.Values.volumes.gcsMounts }}
+          - name: "{{ $gcs.bucketName }}"
+            mountPath: "{{ $gcs.mountPath }}"
+          {{- end }}
