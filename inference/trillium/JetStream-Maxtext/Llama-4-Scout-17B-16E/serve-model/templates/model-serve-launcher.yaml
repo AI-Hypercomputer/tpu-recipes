@@ -20,7 +20,6 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-serving
-        app.kubernetes.io/name: {{ include "chart.name" . }}
         app.kubernetes.io/instance: {{ .Release.Name }}
       annotations:
         kubectl.kubernetes.io/default-container: model-serving
@@ -84,13 +83,13 @@ spec:
                 key: "{{ .Values.huggingface.secretData.token }}"
           - name: BASE_MODEL_PATH
             value: "/gcs/{{ .Values.model.name }}"
-          - name: CHECKPOINT_TPU_SCANNED
-            value: "/gcs/{{ .Values.model.name }}/scanned_ckpt"
+          - name: BASE_OUTPUT_PATH
+            value: "/gcs/{{ .Values.model.name }}/output"
           - name: RUN_NAME
             value: "unscanned_ckpt"
-            value: "/gcs/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/0/items"
-          - name: LOAD_PARAMETERS_PATH
-            value: "/gcs/{{ .Values.model.name }}/scanned_ckpt/0/items"
+          - name: CHECKPOINT_TPU_UNSCANNED
+            value: "/gcs/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/0/items/0/items"
+          - name: MODEL_SIZE
             value: "llama4-17b-16e"
           {{- range $gcs := $root.Values.volumes.gcsMounts }}
           - name: GCS_FUSE_BUCKET
@@ -146,7 +145,6 @@ spec:
             cd /maxtext || exit 1
             python3 -m MaxText.maxengine_server \
               /maxtext/MaxText/configs/base.yml \
-              --hf-access-token=${HF_TOKEN} \
               "${OPTIONS[@]}"
 
         volumeMounts:

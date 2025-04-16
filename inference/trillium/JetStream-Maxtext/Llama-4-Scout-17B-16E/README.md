@@ -212,6 +212,11 @@ The recipe uses the helm chart to run the above steps.
        user-serving-llama4-model-convert-ckpt   Running   1/1           26m        26m 
       ```
 
+    Uninstall the helm chart once done
+    ```bash
+    helm uninstall $USER-serving-llama4-model
+    ```
+
 3. Bring up the JetStream MaxText Engine server
     ```bash
     cd $RECIPE_ROOT
@@ -220,105 +225,63 @@ The recipe uses the helm chart to run the above steps.
     --set clusterName=$CLUSTER_NAME \
     --set job.image.repository=${ARTIFACT_REGISTRY}/${JETSTREAM_MAXTEXT_IMAGE} \
     --set job.image.tag=${JETSTREAM_MAXTEXT_VERSION} \
-    --set convert_hf_ckpt=true \
     $USER-serving-llama4-model \
     $RECIPE_ROOT/serve-model
     ```
 
     Verify if the deployment has started by running
 
-    ```bashå
-    kubectl get deployment/$USER-serving-llama4-model
+    ```bash
+    kubectl get deployment/$USER-serving-llama4-model-serving
     ```
 
-    d. Once the deployment has started, you'll see logs similar to:
+    Once the deployment has started, you'll see logs similar to:
       ```bash
-      Loading decode params from /gcs/deepseek-ai/DeepSeek-R1-Distill-Llama-70B/output/unscanned_ckpt/checkpoints/0/items
-      restoring params from /gcs/deepseek-ai/DeepSeek-R1-Distill-Llama-70B/output/unscanned_ckpt/checkpoints/0/items
-      WARNING:absl:The transformations API will eventually be replaced by an upgraded design. The current API will not be removed until this point, but it will no longer be actively worked on.
+        Loading decode params from /gcs/meta-llama/Llama-4-Scout-17B-16E-Original/output/unscanned_ckpt/checkpoints/0/items
+        restoring params from /gcs/meta-llama/Llama-4-Scout-17B-16E-Original/output/unscanned_ckpt/checkpoints/0/items
+        WARNING:absl:The transformations API will eventually be replaced by an upgraded design. The current API will not be removed until this point, but it will no longer be actively worked on.
 
-      Memstats: After load_params:
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_0(process=0,(0,0,0,0))
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_1(process=0,(1,0,0,0))
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_2(process=0,(0,1,0,0))
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_3(process=0,(1,1,0,0))
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_4(process=0,(0,2,0,0))
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_5(process=0,(1,2,0,0))
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_6(process=0,(0,3,0,0))
-              Using (GB) 16.43 / 31.25 (52.576000%) on TPU_7(process=0,(1,3,0,0))
+        Memstats: After load_params:
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_0(process=0,(0,0,0,0))
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_1(process=0,(1,0,0,0))
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_2(process=0,(0,1,0,0))
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_3(process=0,(1,1,0,0))
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_4(process=0,(0,2,0,0))
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_5(process=0,(1,2,0,0))
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_6(process=0,(0,3,0,0))
+                Using (GB) 25.1 / 31.25 (80.320000%) on TPU_7(process=0,(1,3,0,0))
+
+        RAMstats: After load_params:
+                Using (GB) 184.14 / 1417.35 (12.991851%) -->  Available:1224.63
+        2025-04-16 22:19:57,301 - jetstream.core.server_lib - INFO - Loaded all weights.
+        GC tweaked (allocs, gen1, gen2):  60000 20 30
+        2025-04-16 22:19:58,102 - jetstream.core.server_lib - INFO - Starting server on port 9000 with 256 threads
+        2025-04-16 22:19:58,109 - jetstream.core.server_lib - INFO - Not starting JAX profiler server: False
+        2025-04-16 22:19:58,109 - jetstream.core.server_lib - INFO - Server up and ready to process requests on port 9000
       ```
 
-    e. Verify the server works as expected by running a sample request
-      ```bash
-      kubectl exec -it deployments/$USER-serving-deepseek-r1-model-serving -- python3 /JetStream/jetstream/tools/requester.py --tokenizer /maxtext/assets/tokenizer_llama3.tiktoken
-      ```
+4. To run MMLU, run the following command:
 
-      If everything is setup correctly, you should a response similar to this:
-      ```
-      Sending request to: 0.0.0.0:9000
-      Prompt: My dog is cute
-      Response: , but she's also
-      ```
-
-    f. To run MMLU, run the following command:
-
-      ```bash
-        kubectl exec -it deployments/$USER-serving-deepseek-r1-model-serving -- /bin/bash -c "JAX_PLATFORMS=tpu python3 /JetStream/benchmarks/benchmark_serving.py \
-        --tokenizer=/maxtext/assets/tokenizer_llama3.tiktoken \
-        --num-prompts 14037 \
-        --dataset mmlu \
-        --dataset-path /gcs/mmlu/data/test \
-        --request-rate 0 \
-        --warmup-mode sampled \
-        --save-request-outputs \
-        --num-shots=5 \
-        --run-mmlu-dataset \
-        --run-eval True \
-        --model=llama-3 \
-        --save-result \
-        --max-input-length=1024 \
-        --max-target-length=1536 \
-        --request-outputs-file-path /gcs/benchmarks/mmlu_outputs.json"
-      ```
+  ```bash
+    kubectl exec -it deployment/$USER-serving-llama4-model-serving -- /bin/bash -c "JAX_PLATFORMS=tpu python3 /JetStream/benchmarks/benchmark_serving.py \
+    --tokenizer meta-llama/Llama-4-Scout-17B-16E \
+    --use-hf-tokenizer 1 \
+    --hf-access-token $HF_TOKEN \
+    --num-prompts 14037 \
+    --dataset mmlu \
+    --dataset-path /gcs/mmlu/data/test \
+    --request-rate 0 \
+    --warmup-mode sampled \
+    --save-request-outputs \
+    --num-shots=5 \
+    --run-eval True \
+    --model=llama4-17b-16e \
+    --save-result \
+    --request-outputs-file-path mmlu_outputs.json
+  ```
     
     e. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
-
-3. Run Math500 benchmark with the recipe
-
-    a. Install the helm chart to bring up the JetStream MaxText Engine server. If you already have not unscanned the model checkpoint, set the flag `convert_hf_ckpt=true`.
-
-      ```bash
-      cd $RECIPE_ROOT
-      helm install -f values.yaml \
-      --set volumes.gcsMounts[0].bucketName=${GCS_BUCKET} \
-      --set clusterName=$CLUSTER_NAME \
-      --set job.image.repository=${ARTIFACT_REGISTRY}/${JETSTREAM_MAXTEXT_IMAGE} \
-      --set job.image.tag=${JETSTREAM_MAXTEXT_VERSION} \
-      --set convert_hf_ckpt=false \
-      --set maxtext_config.max_target_length=2048 \
-      --set maxtext_config.per_device_batch_size=20 \
-      --set maxtext_config.quantize_kvcache=false \
-      $USER-serving-deepseek-r1-model \
-      $RECIPE_ROOT/serve-model
-      ```
-  
-    b. To run Math500, run the following command:
-
-      ```bash
-      kubectl exec -it deployments/$USER-serving-deepseek-r1-model-serving -- /bin/bash -c "JAX_PLATFORMS=tpu python3 /JetStream/benchmarks/benchmark_serving.py \
-      --tokenizer=/maxtext/assets/tokenizer_llama3.tiktoken \
-      --num-prompts 500 \
-      --dataset math500 \
-      --request-rate 5 \
-      --warmup-mode sampled \
-      --save-request-outputs \
-      --model=llama-3 \
-      --save-result \
-      --max-output-length 1024 \
-      --request-outputs-file-path /gcs/benchmarks/math500_outputs.json"
-      ```
     
-    c. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
 
 ### Cleanup
 
@@ -327,7 +290,7 @@ To clean up the resources created by this recipe, complete the following steps:
 1. Uninstall the helm chart.
 
     ```bash
-    helm uninstall $USER-serving-deepseek-r1-model
+    helm uninstall $USER-serving-llama4-model
     ```
 
 2. Delete the Kubernetes Secret.
