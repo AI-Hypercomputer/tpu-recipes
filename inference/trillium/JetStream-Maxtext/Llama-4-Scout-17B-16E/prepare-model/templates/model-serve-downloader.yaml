@@ -71,7 +71,7 @@ spec:
           - name: BASE_MODEL_PATH
             value: "/ssd/{{ .Values.model.name }}"
           - name: CHECKPOINT_TPU_UNSCANNED
-            value: "/ssd/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/0/items"
+            value: "/ssd/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints"
           - name: MODEL_SIZE
             value: "llama4-17b-16e"
           {{- range $gcs := $root.Values.volumes.gcsMounts }}
