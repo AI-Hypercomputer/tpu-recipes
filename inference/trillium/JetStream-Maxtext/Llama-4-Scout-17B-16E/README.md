@@ -67,7 +67,7 @@ Before running this recipe, ensure your environment is configured as follows:
    - Google Cloud SDK
    - Helm
    - kubectl
-- To access the [Llama-4-Scout-17B-16E model](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E) through Hugging Face, you'll need a Hugging Face token. Follow these steps to generate a new token if you don't have one already:
+- To access the [Llama-4-Scout-17B-16E model](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E) through Hugging Face, you'll need a Hugging Face token. Ensure that you also sign the community license agreement and get gated access to the Meta models. Follow these steps to generate a new token if you don't have one already:
    - Create a [Hugging Face account](https://huggingface.co/), if you don't already have one.
    - Click Your **Profile > Settings > Access Tokens**.
    - Select **New Token**.
@@ -280,7 +280,7 @@ The recipe uses the helm chart to run the above steps.
     --request-outputs-file-path mmlu_outputs.json
   ```
     
-    e. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
+5. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
     
 
 ### Cleanup
