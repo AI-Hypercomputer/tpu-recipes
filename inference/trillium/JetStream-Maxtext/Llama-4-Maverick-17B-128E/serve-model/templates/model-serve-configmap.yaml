@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-steps:
-- name: 'gcr.io/cloud-builders/docker'
-  args:
-  - 'build'
-  - '--tag=${_ARTIFACT_REGISTRY}/maxtext-jetstream:latest'
-  - '--file=Dockerfile'
-  - '.'
-  automapSubstitutions: true
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ .Release.Name }}"
+data:
+  maxtext-configuration.yaml: |- 
+    {{- range $key, $value := .Values.maxtext_config }}
+    {{ $key }}: {{ $value }}
+    {{- end }}
 
-images:
-- '${_ARTIFACT_REGISTRY}/maxtext-jetstream:latest'
+  libtpu-init-args: |-
+      {{- range $key, $value := .Values.xla_flags }}
+      --{{ $key }}={{ $value }}
+      {{- end }}

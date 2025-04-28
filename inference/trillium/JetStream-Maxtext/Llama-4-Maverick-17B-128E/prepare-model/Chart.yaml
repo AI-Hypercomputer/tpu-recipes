@@ -12,14 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-steps:
-- name: 'gcr.io/cloud-builders/docker'
-  args:
-  - 'build'
-  - '--tag=${_ARTIFACT_REGISTRY}/maxtext-jetstream:latest'
-  - '--file=Dockerfile'
-  - '.'
-  automapSubstitutions: true
-
-images:
-- '${_ARTIFACT_REGISTRY}/maxtext-jetstream:latest'
+apiVersion: v2
+name: trillium-maxtext-jetstream-llama-serve-model
+description: trillium-maxtext-jetstream-llama-serve-model
+type: application
+version: 0.1.0
+appVersion: "1.16.0"

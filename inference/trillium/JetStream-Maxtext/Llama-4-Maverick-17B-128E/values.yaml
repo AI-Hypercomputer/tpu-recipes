@@ -1,0 +1,65 @@
+
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
+clusterName:
+
+huggingface:
+  secretName: hf-secret
+  secretData:
+    token: "hf_api_token"
+
+model:
+  name: meta-llama/Llama-4-Scout-17B-16E-Original
+
+job:
+  image:
+    repository:
+    tag:
+
+volumes:
+  ssdMountPath: "/ssd"
+  gcsMounts:
+    - bucketName:
+      mountPath: "/gcs"
+
+pathwaysDir:
+
+jetstream:
+  service:
+    ports:
+      http: 8000
+      grpc: 9000
+
+convert_hf_ckpt: true
+
+maxtext_config:
+  load_parameters_path: "gs://jacobplatin/llama4/maverick-orbax-checkpoints/48-layer-unscanned/0/items"
+  max_prefill_predict_length: 128
+  max_target_length: 256
+  async_checkpointing: false
+  steps: 1
+  ici_fsdp_parallelism: 1
+  ici_autoregressive_parallelism: 8
+  ici_tensor_parallelism: 8
+  ici_context_autoregressive_parallelism: 1
+  scan_layers: false
+  weight_dtype: "bfloat16"
+  per_device_batch_size: 10
+  enable_single_controller: true
+  enable_model_warmup: true
+  checkpoint_storage_use_ocdbt: false
+  checkpoint_storage_use_zarr3: false
+  hf_access_token: $HF_TOKEN

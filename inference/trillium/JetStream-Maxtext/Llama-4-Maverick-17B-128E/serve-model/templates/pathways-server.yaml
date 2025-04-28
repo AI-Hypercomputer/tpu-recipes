@@ -1,0 +1,118 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+{{- $root := . }}
+
+apiVersion: pathways-job.pathways.domain/v1
+kind: PathwaysJob
+metadata:
+  name: pathways
+spec:
+  maxRestarts: 1
+  workers:
+  - type: ct6e-standard-4t
+    topology: 8x8
+    numSlices: 1
+  pathwaysDir: "gs://jacobplatin"
+  controller:
+    deploymentMode: colocate_head_with_workers
+    mainContainerName: jetstream
+    template:
+      spec:
+        volumes:
+          - name: workload-configuration
+            configMap:
+              name: "{{.Release.Name}}"
+        containers:
+          - name: jetstream
+            securityContext:
+              privileged: true
+            image: "{{ .Values.job.image.repository }}:{{ .Values.job.image.tag }}"
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                set -eux
+                echo "Starting model serving deployment on a TPU node..."
+
+                pip install torch --index-url https://download.pytorch.org/whl/cpu
+                python3 -m nltk.downloader punkt_tab
+
+                # Parse server configurations from values file
+                echo "MaxText configuration file:"
+                if [ -f /etc/workload-configuration/maxtext-configuration.yaml ]; then
+                  sed 's/^/| /' /etc/workload-configuration/maxtext-configuration.yaml
+                else
+                  echo "MaxText configuration file not found at /etc/workload-configuration/maxtext-configuration.yaml"
+                fi
+                echo ""
+
+                OPTIONS=()
+                if [ -f /etc/workload-configuration/maxtext-configuration.yaml ]; then
+                  while IFS= read -r line || [[ -n "$line" ]]; do
+                    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+                    key=$(echo "$line" | cut -d':' -f1 | tr -d '[:space:]')
+                    value=$(echo "$line" | cut -d':' -f2- | sed 's/^[[:space:]]*//')
+                    if [[ "$value" == \$* ]]; then
+                      var_name=${value#\$}
+                      if [[ -z "$var_name" ]]; then expanded_value="$"; else expanded_value="${!var_name:-$value}"; fi
+                      OPTIONS+=("$key=$expanded_value")
+                    else
+                      OPTIONS+=("$key=$value")
+                    fi
+                  done < /etc/workload-configuration/maxtext-configuration.yaml
+                fi
+                echo "===== MaxText Configuration Options ====="
+                echo "${OPTIONS[@]}"
+
+                echo "Starting GCSFuse Mount"
+                mkdir -p /gcs
+                gcsfuse --client-protocol http2 ${GCS_FUSE_BUCKET} /gcs
+
+                # Start the JetStream MaxText server
+                echo "Starting JetStream MaxText server on TPU node..."
+                cd /maxtext || exit 1
+                python3 -m MaxText.maxengine_server \
+                  /maxtext/MaxText/configs/v6e/inference/llama4_maverick_v6e-64.yml \
+                  "${OPTIONS[@]}"
+
+            imagePullPolicy: Always
+            ports:
+            - containerPort: 9000
+            env:
+            - name: ENABLE_PATHWAYS_PERSISTENCE
+              value: "1"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.huggingface.secretName }}"
+                  key: "{{ .Values.huggingface.secretData.token }}"
+            - name: BASE_MODEL_PATH
+              value: "/gcs/{{ .Values.model.name }}"
+            - name: CHECKPOINT_TPU_UNSCANNED
+              value: "/gcs/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints"
+            - name: MODEL_SIZE
+              value: "llama4-17b-128e"
+            {{- range $gcs := $root.Values.volumes.gcsMounts }}
+            - name: GCS_FUSE_BUCKET
+              value: "{{ $gcs.bucketName }}"
+            {{- end }}
+
+            volumeMounts:
+              - name: workload-configuration
+                mountPath: /etc/workload-configuration
+          - name: jetstream-http
+            image: us-docker.pkg.dev/cloud-tpu-images/inference/jetstream-http:v0.2.3
+            imagePullPolicy: Always
+            ports:
+            - containerPort: 8000
+
