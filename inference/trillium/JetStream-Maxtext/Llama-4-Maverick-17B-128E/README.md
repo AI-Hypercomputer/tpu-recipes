@@ -275,6 +275,7 @@ The recipe uses the helm chart to run the above steps.
     helm install -f values.yaml \
     --set volumes.gcsMounts[0].bucketName=${GCS_BUCKET} \
     --set clusterName=$CLUSTER_NAME \
+    --set pathwaysDir="gs://${GCS_BUCKET}" \
     --set job.image.repository=${ARTIFACT_REGISTRY}/${JETSTREAM_MAXTEXT_IMAGE} \
     --set job.image.tag=${JETSTREAM_MAXTEXT_VERSION} \
     --set convert_hf_ckpt=false \

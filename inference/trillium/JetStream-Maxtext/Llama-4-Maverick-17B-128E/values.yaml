@@ -22,7 +22,7 @@ huggingface:
     token: "hf_api_token"
 
 model:
-  name: meta-llama/Llama-4-Scout-17B-16E-Original
+  name: meta-llama/Llama-4-Maverick-17B-128E-Original
 
 job:
   image:
@@ -46,7 +46,7 @@ jetstream:
 convert_hf_ckpt: true
 
 maxtext_config:
-  load_parameters_path: "gs://jacobplatin/llama4/maverick-orbax-checkpoints/48-layer-unscanned/0/items"
+  load_parameters_path: $CHECKPOINT_TPU_UNSCANNED
   max_prefill_predict_length: 128
   max_target_length: 256
   async_checkpointing: false

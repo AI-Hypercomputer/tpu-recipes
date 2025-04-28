@@ -16,10 +16,10 @@ steps:
 - name: 'gcr.io/cloud-builders/docker'
   args:
   - 'build'
-  - '--tag=${_ARTIFACT_REGISTRY}/maxtext-jetstream:latest'
+  - '--tag=${_ARTIFACT_REGISTRY}/${_JETSTREAM_MAXTEXT_IMAGE}:${_JETSTREAM_MAXTEXT_VERSION}'
   - '--file=Dockerfile'
   - '.'
   automapSubstitutions: true
 
 images:
-- '${_ARTIFACT_REGISTRY}/maxtext-jetstream:latest'
+- '${_ARTIFACT_REGISTRY}/${_JETSTREAM_MAXTEXT_IMAGE}:${_JETSTREAM_MAXTEXT_VERSION}'

@@ -23,7 +23,7 @@ spec:
   - type: ct6e-standard-4t
     topology: 8x8
     numSlices: 1
-  pathwaysDir: "gs://jacobplatin"
+  pathwaysDir: "{{ .Values.pathwaysDir }}"
   controller:
     deploymentMode: colocate_head_with_workers
     mainContainerName: jetstream
