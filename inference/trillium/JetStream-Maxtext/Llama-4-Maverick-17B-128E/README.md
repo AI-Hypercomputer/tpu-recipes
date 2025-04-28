@@ -342,14 +342,52 @@ The recipe uses the helm chart to run the above steps.
 
     The server bring up takes ~20 mins with GCS. You can verify if it is ready by running:
       ```bash
-      HEAD_POD=$(kubectl get pods | grep pathways--pathways-head | awk '{print $1}')
+      HEAD_POD=$(kubectl get pods | grep pathways-pathways-head | awk '{print $1}')
       kubectl logs -f ${HEAD_POD} -c jetstream
 
+      WARNING:absl:The transformations API will eventually be replaced by an upgraded design. The current API will not be removed until this point, but it will no longer be actively worked on.
 
-    
+      Memstats: After load_params:
+              Memstats unavailable, error: INVALID_ARGUMENT: MemoryStats is only supported for addressable PjRt devices.
+
+      RAMstats: After load_params:
+              Using (GB) 15.49 / 708.23 (2.187143%) -->  Available:686.77
+      2025-04-28 22:21:36,353 - jetstream.core.server_lib - INFO - Loaded all weights.
+      GC tweaked (allocs, gen1, gen2):  60000 20 30
+      2025-04-28 22:22:13,177 - jetstream.core.server_lib - INFO - Starting server on port 9000 with 256 threads
+      2025-04-28 22:22:14,545 - jetstream.core.server_lib - INFO - Not starting JAX profiler server: False
+      INFO:     Started server process [1]
+      INFO:     Waiting for application startup.
+      INFO:     Application startup complete.
+      INFO:     Uvicorn running on http://0.0.0.0:9999 (Press CTRL+C to quit)
       ```
 
-4. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
+5. Port forward and connect to model server. Replace the `UUID` with your pod `UUID`
+    ```
+    kubectl port-forward pod/pathways-pathways-head-0-0-UUID 8000:8000
+    ```
+
+6. Make a sample reuqest on a new terminal
+    ```bash
+    curl --request POST \
+    --header "Content-type: application/json" \
+    -s \
+    localhost:8000/generate \
+    --data \
+    '{
+        "prompt": "What are the top 5 programming languages",
+        "max_tokens": 200
+    }'
+    ```
+
+    You should see a response like this 
+    ```bash
+    {
+      "response": " that are most widely used and in demand in the industry?\n\n1. **Identify the context**: The question is asking about the most popular programming languages, which implies a need to consider current industry trends and usage statistics.\n2. **Consider the criteria**: To determine the most popular languages, we need to look at factors such as the number of developers using each language, the number of projects and applications built with each language, and the demand for each language in the job market.\n3. **Evaluate the options**: Based on various sources, including industry reports and developer surveys, we can evaluate the popularity of different programming languages.\n4. **Rank the languages**: By analyzing the data and considering the criteria, we can rank the programming languages in order of their popularity.\n5. **Identify the top 5**: Based on the ranking, we can identify the top 5 most popular programming languages.\n\nThe top 5 most popular programming languages are: \n1. JavaScript\n2. Python\n3. Java\n"
+    }
+    ```
+
+7. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
     
 
 ### Cleanup
