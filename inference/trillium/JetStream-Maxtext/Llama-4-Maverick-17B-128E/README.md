@@ -248,8 +248,8 @@ gcloud container clusters get-credentials $CLUSTER_NAME --region $CLUSTER_REGION
 The recipe serves Llama-4-Maverick-17B-128E model using JetStream MaxText Engine on `v6e-32` mulithost slice of TPU v6e Trillium
 
 To start the inference, the recipe launches JetStream MaxText Engine that does the following steps:
-1. Downloads the full Llama-4-Maverick-17B-128E model PyTorch checkpoints from [Hugging Face](https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E-Original).
-2. Convert the model checkpoints from PyTorch format to JAX Orbax format.
+1. Downloads the full Llama-4-Maverick-17B-128E model Hugging Face checkpoints from [Hugging Face](https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E).
+2. Convert the model checkpoints from Hugging Face format to JAX Orbax format.
 3. Start the JetStream MaxText Engine server.
 3. Inference is ready to respond to requests and run benchmarks
 
@@ -267,8 +267,8 @@ The recipe uses the helm chart to run the above steps.
     --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-2. Convert the checkpoint from PyTorch to Orbax 
-    This job converts the checkpoint from PyTorch format to JAX Orbax format and unscans it for performant serving. This unscanned checkpoint is then stored in the mounted GCS bucket so that it can be used by the TPU nodepool to bring up the JetStream serve in the next step.
+2. Convert the checkpoint from Hugging Face to Orbax 
+    This job converts the checkpoint from Hugging Face format to JAX Orbax format and unscans it for performant serving. This unscanned checkpoint is then stored in the mounted GCS bucket so that it can be used by the TPU nodepool to bring up the JetStream serve in the next step.
 
     ```bash
     cd $RECIPE_ROOT
