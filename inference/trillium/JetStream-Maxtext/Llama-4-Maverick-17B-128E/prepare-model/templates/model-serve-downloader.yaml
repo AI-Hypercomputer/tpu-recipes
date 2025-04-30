@@ -83,29 +83,6 @@ spec:
 
             huggingface-cli download {{ .Values.model.name }} --local-dir ${BASE_MODEL_PATH} --local-dir-use-symlinks False
 
-            # Rename weights to expected format
-
-            echo "Rename weights in ${BASE_MODEL_PATH}"
-            found_files=0
-            for old_filepath in "${BASE_MODEL_PATH}"/consolidated.??.pth; do
-                if [ -f "$old_filepath" ]; then
-                    found_files=$((found_files + 1))
-                    old_filename=$(basename "$old_filepath")
-                    new_filename=$(echo "$old_filename" | sed 's/^consolidated/llama4-17b-128e/')
-                    new_filepath="${BASE_MODEL_PATH}/${new_filename}"
-
-                    if [ "$old_filepath" != "$new_filepath" ]; then
-                        mv -v "$old_filepath" "$new_filepath"
-                        echo "Renamed $old_filepath to $new_filepath"
-                    else
-                        echo "File already named correctly: $old_filepath"
-                    fi
-                fi
-            done
-            if [ "$found_files" -eq 0 ]; then
-                echo "No consolidated.*.pth files found for renaming in ${BASE_MODEL_PATH}."
-            fi
-
             echo "Starting GCSFuse Mount"
             mkdir -p /gcs
             gcsfuse --client-protocol http2 ${GCS_FUSE_BUCKET} /gcs
@@ -115,7 +92,8 @@ spec:
             JAX_PLATFORMS=cpu python3 -m MaxText.llama4_ckpt_unscanned \
               --base-model-path ${BASE_MODEL_PATH} \
               --maxtext-model-path ${CHECKPOINT_TPU_UNSCANNED} \
-              --model-size ${MODEL_SIZE}
+              --model-size ${MODEL_SIZE} \
+              --huggingface-checkpoint
 
             gsutil -m cp -r ${CHECKPOINT_TPU_UNSCANNED} /gcs/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/
 

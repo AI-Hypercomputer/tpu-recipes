@@ -22,7 +22,7 @@ huggingface:
     token: "hf_api_token"
 
 model:
-  name: meta-llama/Llama-4-Maverick-17B-128E-Original
+  name: meta-llama/Llama-4-Maverick-17B-128E
 
 job:
   image:
