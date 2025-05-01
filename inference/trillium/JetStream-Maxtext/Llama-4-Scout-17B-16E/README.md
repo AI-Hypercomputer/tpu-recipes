@@ -58,7 +58,7 @@ GKE creates the following resources for the recipe:
 Before running this recipe, ensure your environment is configured as follows:
 
 - A GKE cluster with the following setup:
-    - A TPU Trillium node pool with a `ct6e-standard-8t` machine type. 
+    - A TPU Trillium node pool with a `ct6e-standard-8t` machine type.
     - Topology-aware scheduling enabled
 - An Artifact Registry repository to store the Docker image.
 - A Google Cloud Storage (GCS) bucket to store results.
@@ -67,14 +67,13 @@ Before running this recipe, ensure your environment is configured as follows:
    - Google Cloud SDK
    - Helm
    - kubectl
-- To access the [Llama-4-Scout-17B-16E model](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E) through Hugging Face, you'll need a Hugging Face token. Ensure that you also sign the community license agreement and get gated access to the Meta models. Follow these steps to generate a new token if you don't have one already:
+- To access the [Llama-4-Scout-17B-16E model](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E) through Hugging Face, you'll need a Hugging Face token. **Ensure that you also sign the community license agreement and get gated access to the Meta models**. Follow these steps to generate a new token if you don't have one already:
    - Create a [Hugging Face account](https://huggingface.co/), if you don't already have one.
    - Click Your **Profile > Settings > Access Tokens**.
    - Select **New Token**.
    - Specify a Name and a Role of at least `Read`.
    - Select **Generate a token**.
    - Copy the generated token to your clipboard.
-
 
 ## Run the recipe
 
@@ -135,6 +134,17 @@ From your client, get the credentials for your cluster.
 gcloud container clusters get-credentials $CLUSTER_NAME --region $CLUSTER_REGION
 ```
 
+### Grant access to your GCS bucket from the KSA
+
+```
+gcloud storage buckets add-iam-policy-binding gs://<GCS_BUCKET> \
+    --role=roles/storage.objectViewer \
+    --member=principal://iam.googleapis.com/projects/630405687483/locations/global/workloadIdentityPools/<PROJECT_ID>.svc.id.goog/subject/ns/default/sa/default \
+    --condition=None
+```
+
+Also note that [xpk](https://github.com/AI-Hypercomputer/xpk/) does not configure Workload Identity Federation. If you use xpk, follow [these instructions](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity#enable-existing-cluster) to enable it.
+
 ### Build and push a docker container image to Artifact Registry
 
 To build the container, complete the following steps from your client:
@@ -189,7 +199,7 @@ The recipe uses the helm chart to run the above steps.
     --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-2. Convert the checkpoint from PyTorch to Orbax 
+2. Convert the checkpoint from PyTorch to Orbax
     This job converts the checkpoint from PyTorch format to JAX Orbax format and unscans it for performant serving. This unscanned checkpoint is then stored in the mounted GCS bucket so that it can be used by the TPU nodepool to bring up the JetStream serve in the next step.
 
     ```bash
@@ -203,13 +213,13 @@ The recipe uses the helm chart to run the above steps.
     $USER-serving-llama4-model \
     $RECIPE_ROOT/prepare-model
     ```
-    
+
     Run the following to verify if the job has been completed.
       ```bash
        kubectl get job/$USER-serving-llama4-model-convert-ckpt
 
        NAME                                     STATUS    COMPLETIONS   DURATION   AGE
-       user-serving-llama4-model-convert-ckpt   Running   1/1           26m        26m 
+       user-serving-llama4-model-convert-ckpt   Running   1/1           26m        26m
       ```
 
     Uninstall the helm chart once done
@@ -279,9 +289,9 @@ The recipe uses the helm chart to run the above steps.
     --save-result \
     --request-outputs-file-path mmlu_outputs.json
   ```
-    
+
 5. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
-    
+
 
 ### Cleanup
 
