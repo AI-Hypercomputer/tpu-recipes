@@ -71,7 +71,7 @@ From your client, clone the [`tpu-recipes`](https://github.com/AI-Hypercomputer/
 git clone https://github.com/ai-hypercomputer/tpu-recipes.git
 cd tpu-recipes
 export REPO_ROOT=`git rev-parse --show-toplevel`
-export RECIPE_ROOT=$REPO_ROOT/inference/trillium/JetStream-Maxtext/DeepSeek-V3-671B
+export RECIPE_ROOT=$REPO_ROOT/inference/trillium/JetStream-Maxtext/DeepSeek-R1-671B
 ```
 
 ### Configure environment settings
