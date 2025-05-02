@@ -34,6 +34,8 @@ RUN echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.
 # Install pip
 RUN python3 -m pip install --upgrade pip
 
+RUN pip install "huggingface_hub[cli]" hf_transfer
+
 # Set environment variables
 ENV JAX_PLATFORMS=proxy
 ENV JAX_BACKEND_TARGET=grpc://localhost:38681
@@ -47,7 +49,7 @@ git clone https://github.com/google/aqt.git
 
 RUN cd /maxtext && bash setup.sh && pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-RUN pip install setuptools fastapi uvicorn rouge_score scikit-learn
+RUN pip install safetensors setuptools fastapi uvicorn rouge_score scikit-learn
 
 RUN cd /JetStream && pip install -e .
 

@@ -1,10 +1,10 @@
 # DeepSeek R1/V3 Multi-host Inference on TPU v6e with JetStream, MaxText and Pathways on Cloud with GKE Cluster
 
-This recipe outlines the steps to benchmark [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3) or [DeepSeek-R1](https://huggingface.co/deepseek-ai/DeepSeek-R1) 671B model using [JetStream](https://github.com/AI-Hypercomputer/JetStream/tree/main) \+ [MaxText](https://github.com/AI-Hypercomputer/maxtext) inference engine deployed on a GKE cluster with multi-host [TPU v6e slices](https://cloud.google.com/kubernetes-engine) utilizing Pathways on Cloud.
+This recipe outlines the steps to benchmark [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3) or [DeepSeek-R1](https://huggingface.co/deepseek-ai/DeepSeek-R1) 671B model using [JetStream](https://github.com/AI-Hypercomputer/JetStream/tree/main) \+ [MaxText](https://github.com/AI-Hypercomputer/maxtext) inference engine deployed on a GKE cluster with multi-host [TPU v6e slices](https://cloud.google.com/kubernetes-engine) utilizing [Pathways on Cloud](https://cloud.google.com/ai-hypercomputer/docs/workloads/pathways-on-cloud/pathways-intro).
 
 * [Jetstream](https://github.com/AI-Hypercomputer/JetStream) is a throughput and memory-optimized engine for LLM inference on XLA devices, primarily TPUs written in JAX.  
 * [MaxText](https://github.com/AI-Hypercomputer/maxtext) is an open-source LLM project by Google, written in JAX and designed to be highly performant and scalable, running efficiently on Google Cloud TPUs and GPUs.   
-* Pathways is a system that simplifies large-scale ML computations by enabling a single JAX client to orchestrate workloads across multiple large TPU slices, spanning thousands of TPU chips.  
+* [Pathways](https://cloud.google.com/ai-hypercomputer/docs/workloads/pathways-on-cloud/pathways-intro) is a system that simplifies large-scale ML computations by enabling a single JAX client to orchestrate workloads across multiple large TPU slices, spanning thousands of TPU chips.  
 * [TPUs](https://cloud.google.com/tpu/docs/v6e) are Google's custom-developed accelerator for ML and AI models built using frameworks such as TensorFlow, PyTorch, and JAX. TPU v6e is Cloud TPU's latest generation AI accelerator.
 
 ## Outline
@@ -15,9 +15,9 @@ This recipe outlines the steps to benchmark [DeepSeek-V3](https://huggingface.co
 4. [Configure service account for access](#configure-a-service-account-for-access)  
 5. [Create container image with dependencies](#build-jetstreammaxtext-container-image-to-deploy-the-workload)  
 6. [Checkpoint conversion](#checkpoint-conversion)  
-   - Download model weights from HuggingFace  
-   - [Convert Hugging Face checkpoint from FP8 to BF16](#convert-hugging-face-checkpoint-from-fp8-to-bf16)  
-   - [Convert Hugging Face BF16 checkpoint to MaxText compatible checkpoint](#convert-hugging-face-bf16-checkpoint-to-maxtext-compatible-checkpoint)  
+   - Download model weights from HuggingFace
+   - Convert Hugging Face checkpoint from FP8 to BF16
+   - Convert Hugging Face BF16 checkpoint to MaxText compatible checkpoint
 7. [Deploy JetStream and Pathways](#deploy-jetstream-and-pathways)  
 8. [Run MMLU benchmark](#run-mmlu-benchmark)
 
@@ -25,19 +25,19 @@ This recipe outlines the steps to benchmark [DeepSeek-V3](https://huggingface.co
 
 1. Verify that your project has enough quota in your region of choice for:  
    * A Cloud TPU slice, for example v6e-64 (`TPUS_PER_TPU_FAMILY`)  
-   * A GCE VM with the M1 machine configuration for 160 chips (`M1_CPUS`)  
+   * Compute Engine API quota for M1 machine configuration for 160 chips (`M1_CPUS`)
 2. Required IAM Permissions  
    Make sure that you have the following roles on the project:   
-   * Compute Admin (`roles/compute.admin`)  
-   * Kubernetes Engine Admin (`roles/container.admin`)  
-   * Storage Admin (`roles/storage.admin`)  
-   * Logging Admin (`roles/logging.admin`)  
-   * Monitoring Admin (`roles/monitoring.admin`)  
-   * Artifact Registry Writer (`roles/artifactregistry.writer`)  
-   * Service Account Admin (`roles/iam.serviceAccountAdmin`)  
-   * Project IAM Admin (`roles/resourcemanager.projectIamAdmin`)  
-3. Access to Pathways Container Images  
-   You run a Pathways cluster on GKE in one of the Pathways container images. To access the Pathways container images, the service account used by the cluster must be allowlisted. Reach out to your GCP account team to request access.  
+   * Compute Admin (`roles/compute.admin`)
+   * Kubernetes Engine Admin (`roles/container.admin`)
+   * Storage Admin (`roles/storage.admin`)
+   * Logging Admin (`roles/logging.admin`)
+   * Monitoring Admin (`roles/monitoring.admin`)
+   * Artifact Registry Writer (`roles/artifactregistry.writer`)
+   * Service Account Admin (`roles/iam.serviceAccountAdmin`)
+   * Project IAM Admin (`roles/resourcemanager.projectIamAdmin`)
+3. Access to Pathways Container Images.
+   * You run a Pathways cluster on GKE in one of the [Pathways container images](https://cloud.google.com/ai-hypercomputer/docs/workloads/pathways-on-cloud/pathways-intro#pathways-components).
 4. Access to DeepSeek models on Hugging Face.  
    To access the [DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3) or [DeepSeek-R1](https://huggingface.co/deepseek-ai/DeepSeek-R1) model through Hugging Face, you'll need a Hugging Face token. Follow these steps to generate a new token if you don't have one already:  
    * Create a [Hugging Face account](https://huggingface.co/), if you don't already have one.  
@@ -100,6 +100,7 @@ export ARTIFACT_REGISTRY_REPO_NAME=jetstream-maxtext-ar
 export ARTIFACT_REGISTRY=${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REGISTRY_REPO_NAME}
 export JETSTREAM_MAXTEXT_IMAGE=jetstream-maxtext
 export JETSTREAM_MAXTEXT_VERSION=latest
+export HF_MODEL_NAME="deepseek-ai/DeepSeek-R1"
 export MODEL_NAME=deepseek3-671b
 export GCS_CKPT_PATH_BF16=gs://${GCS_BUCKET}/models/${MODEL_NAME}/bf16
 export GCS_CKPT_PATH_UNSCANNED=gs://${GCS_BUCKET}/models/${MODEL_NAME}/unscanned
@@ -280,51 +281,26 @@ gcloud beta builds log $BUILD_ID --region=$REGION
 
 ## Checkpoint conversion
 
-### Convert Hugging Face checkpoint from FP8 to BF16
+This step requires an `m1-ultramem-160` (memory-optimized) machine with 3TB of storage that can be run. The recipe uses a [Cloud Batch job](https://cloud.google.com/batch/docs/get-started) to run the conversion.
 
-Run the following steps for conversion:
+The following job performs following steps:
+- Downloads DeepSeek V3 or DeepSeek R1 (defined by `HF_MODEL_NAME`) weights from HuggingFace.
+- Convert Hugging Face checkpoint weights from FP8 to BF16.
+- Convert BF16 weights  to MaxText compatible format (unscanned checkpoint) for efficient serving. 
 
-* Download DeepSeek V3 or DeepSeek R1 weights from HuggingFace
-
-``` bash
-mkdir -p /models/deepseek_fp8
-huggingface-cli download deepseek-ai/DeepSeek-R1 --local-dir /models/deepseek_fp8
-```
-
-* Clone DeepSeek-V3 github repo to setup the environment for FP8 to BF16 conversion
+Submit Cloud Batch job. This step can take >2 hours.
 
 ``` bash
-git clone https://github.com/deepseek-ai/DeepSeek-V3.git && \
-cd DeepSeek-V3/inference && \
-pip install -r requirements.txt
-```
-
-* Run the FP8 to BF16 conversion
-
-``` bash
-python3 fp8_cast_bf16.py \
-  --input-fp8-hf-path /models/deepseek_fp8 \
-  --output-bf16-hf-path /models/deepseek_fp16
-```
-
-* Upload converted checkpoints to Cloud Storage bucket
-
-``` bash
-gcloud storage cp -r /models/deepseek_fp16 ${GCS_CKPT_PATH_BF16}
-```
-
-### Convert Hugging Face BF16 checkpoint to MaxText compatible checkpoint
-
-This step requires an `m1-ultramem-160` (memory-optimized) machine with 3TB of storage that can be run. The recipe uses Cloud Batch job to run the conversion.
-
-Run the checkpoint conversion from BF16 weights to MaxText compatible format (unscanned checkpoint) for efficient serving. This step can take \~1-2 hours.
-
-``` bash
-cd $RECIPE_ROOT/convert-checkpoint/convert-to-unscanned
+cd $RECIPE_ROOT/prepare-model
 gcloud batch jobs submit convert-ckpt-to-unscanned-$(date +%Y%m%d-%H%M%S) \
+  --project ${PROJECT_ID} \
   --location ${CLUSTER_CKPT_NODE_REGION} \
-  --config batch_job.yaml
+  --config - <<EOF
+$(envsubst < batch_job.yaml)
+EOF
 ```
+
+You can monitor the progress of the job on Cloud Console from the [job list page](https://console.cloud.google.com/batch/jobs). Click the name of a job to view the job details including logs.
 
 ## Deploy JetStream and Pathways
 
@@ -421,7 +397,11 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:9999 (Press CTRL+C to quit)
 ```
 
-After the server is up and running, you can now prompt the model
+After the server is up and running, you can SSH into one of the workers and prompt the model:
+
+``` bash
+kubectl exec -it jetstream-pathways-0 -c jax-tpu -- /bin/bash
+```
 
 ``` bash
 curl --request POST --header "Content-type: application/json" -s localhost:8000/generate --data '{

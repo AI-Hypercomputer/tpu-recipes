@@ -20,7 +20,11 @@ taskGroups:
             entrypoint: "/bin/sh"
             commands:
               - "-c"
-              - mkdir -p /workspace/models/ && gcloud storage cp -r ${GCS_CKPT_PATH_BF16} /workspace/models/ && cd /maxtext && JAX_PLATFORMS='' python3 -m Maxtext.convert_deepseek_unscanned_ckp --base_model_path /workspace/models --maxtext_model_path ${GCS_CKPT_PATH_UNSCANNED} --model_size $MODEL_NAME --use-zarr3 false --use-ocdbt false
+              - mkdir -p /mnt/disks/persist/models/ && echo "Downloading model ${HF_MODEL_NAME}" && huggingface-cli download ${HF_MODEL_NAME} --local-dir /mnt/disks/persist/models/fp8 && cd /maxtext && echo "Converting checkpoint from fp8 to bf16" && python3 -m MaxText.deepseek_fp8_to_bf16 --input-fp8-hf-path /mnt/disks/persist/models/fp8 --output-bf16-hf-path /mnt/disks/persist/models/bf16 --cache-file-num 16 && echo "Converting checkpoint from bf16 to maxtext/unscanned format" && JAX_PLATFORMS='' python3 -m MaxText.convert_deepseek_unscanned_ckpt --base_model_path /mnt/disks/persist/models/bf16 --maxtext_model_path ${GCS_CKPT_PATH_UNSCANNED} --model_size $MODEL_NAME --use-zarr3 false --use-ocdbt false && echo "Completed checkpoint conversion. Unscanned checkpoint saved at ${GCS_CKPT_PATH_UNSCANNED}"
+      volumes:
+        - deviceName: persist
+          mountPath: /mnt/disks/persist
+          mountOptions: rw,async
       computeResource:
         cpuMilli: 160000
         memoryMib: 3936256
@@ -33,6 +37,11 @@ allocationPolicy:
         machineType: ${CLUSTER_CKPT_NODE_MACHINE_TYPE}
         bootDisk:
           type: pd-ssd
-          sizeGb: 3000
+          sizeGb: 500
+        disks:
+          newDisk:
+            sizeGb: 3000
+            type: pd-ssd
+          deviceName: persist
 logsPolicy:
   destination: CLOUD_LOGGING
