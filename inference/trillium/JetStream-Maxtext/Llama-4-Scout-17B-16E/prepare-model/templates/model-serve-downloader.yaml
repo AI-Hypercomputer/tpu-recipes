@@ -42,7 +42,7 @@ spec:
         - name: shared-memory
           emptyDir:
             medium: "Memory"
-            sizeLimit: 50Gi 
+            sizeLimit: 50Gi
         - name: local-ssd
           hostPath:
             path: /mnt/stateful_partition/kube-ephemeral-ssd
@@ -87,12 +87,10 @@ spec:
 
             echo "Starting conversion job on a CPU node..."
             df -h
-
             pip install torch --index-url https://download.pytorch.org/whl/cpu
             pip install huggingface_hub[hf_xet]
 
             rm -rf /ssd/{{ .Values.model.name }}
-
 
             echo "Downloading HuggingFace model to ${BASE_MODEL_PATH}..."
 
@@ -129,6 +127,9 @@ spec:
               --model-size ${MODEL_SIZE}
 
             echo "Conversion Job Complete. Unscanned checkpoints should be at ${CHECKPOINT_TPU_UNSCANNED}"
+            echo "Copying unscanned checkpoints to GCS bucket..."
+            gsutil -m cp -r ${CHECKPOINT_TPU_UNSCANNED} gs://${GCS_FUSE_BUCKET}/{{ .Values.model.name }}/output/unscanned_ckpt/
+            echo "Finished copying unscanned checkpoints to gs://${GCS_FUSE_BUCKET}/{{ .Values.model.name }}/output/unscanned_ckpt/"
 
         volumeMounts:
           - name: shared-memory

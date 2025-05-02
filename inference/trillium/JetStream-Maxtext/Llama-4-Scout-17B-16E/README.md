@@ -45,15 +45,16 @@ To prepare the required environment, complete the following steps:
       --machine-type=n2-highmem-80 \
       --cluster=<CLUSTER_NAME> \
       --image_type=COS_CONTAINERD \
-      --disk-type=pd-balanced
-      --disk-size=100
+      --disk-type=pd-balanced \
+      --disk-size=100 \
+      --ephemeral-storage-local-ssd count=8
   ```
 
 GKE creates the following resources for the recipe:
 
 - A GKE Standard cluster that uses Workload Identity Federation for GKE and has Cloud Storage FUSE CSI driver enabled.
 - A TPU Trillium node pool with a `ct6e-standard-8t` machine type. This node pool has one node, eight TPU chips, and autoscaling enabled
-- A CPU high memory nodepool with a `n2-highmem-80` machine type. This node pool has one node with 640G of memory for converting the checkpoint
+- A CPU high memory nodepool with a `n2-highmem-80` machine type. This node pool has one node with 640G of memory and 8 local SSDs for converting the checkpoint.
 
 Before running this recipe, ensure your environment is configured as follows:
 
@@ -139,6 +140,11 @@ gcloud container clusters get-credentials $CLUSTER_NAME --region $CLUSTER_REGION
 ```
 gcloud storage buckets add-iam-policy-binding gs://<GCS_BUCKET> \
     --role=roles/storage.objectViewer \
+    --member=principal://iam.googleapis.com/projects/630405687483/locations/global/workloadIdentityPools/<PROJECT_ID>.svc.id.goog/subject/ns/default/sa/default \
+    --condition=None
+
+gcloud storage buckets add-iam-policy-binding gs://<GCS_BUCKET> \
+    --role=roles/storage.objectCreator \
     --member=principal://iam.googleapis.com/projects/630405687483/locations/global/workloadIdentityPools/<PROJECT_ID>.svc.id.goog/subject/ns/default/sa/default \
     --condition=None
 ```
@@ -273,6 +279,10 @@ The recipe uses the helm chart to run the above steps.
 4. To run MMLU, run the following command:
 
   ```bash
+    # Copy the test dataset
+    gsutil cp /path/to/JetStream/benchmarks/mmlu_test_dataset/* gs://${GCS_BUCKET}/mmlu/data/test/
+
+    # Run the benchmark
     kubectl exec -it deployment/$USER-serving-llama4-model-serving -- /bin/bash -c "JAX_PLATFORMS=tpu python3 /JetStream/benchmarks/benchmark_serving.py \
     --tokenizer meta-llama/Llama-4-Scout-17B-16E \
     --use-hf-tokenizer 1 \
@@ -287,8 +297,10 @@ The recipe uses the helm chart to run the above steps.
     --run-eval True \
     --model=llama4-17b-16e \
     --save-result \
-    --request-outputs-file-path mmlu_outputs.json
+    --request-outputs-file-path mmlu_outputs.json"
   ```
+
+  Note that the test will take a long time (you can adjust the `--num-prompts` argument).
 
 5. Stop the server and clean up the resources after completion by following the steps in the [Cleanup](#cleanup) section.
 

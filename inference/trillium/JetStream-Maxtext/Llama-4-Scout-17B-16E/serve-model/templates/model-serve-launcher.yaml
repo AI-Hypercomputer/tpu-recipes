@@ -88,7 +88,7 @@ spec:
           - name: RUN_NAME
             value: "unscanned_ckpt"
           - name: CHECKPOINT_TPU_UNSCANNED
-            value: "/gcs/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/0/items/0/items"
+            value: "/gcs/{{ .Values.model.name }}/output/unscanned_ckpt/checkpoints/0/items"
           - name: MODEL_SIZE
             value: "llama4-17b-16e"
           {{- range $gcs := $root.Values.volumes.gcsMounts }}
