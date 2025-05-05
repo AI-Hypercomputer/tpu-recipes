@@ -50,7 +50,7 @@ MaxTextModel(
     model_name="llama2-70b-4096-sc",
     model_type="llama2-70b",
     tuning_params={
-        "per_device_batch_size": 2,
+        "per_device_batch_size": 3,
         "ici_fsdp_parallelism": 1,
         "ici_fsdp_transpose_parallelism": -1,
         "ici_tensor_parallelism": 1,

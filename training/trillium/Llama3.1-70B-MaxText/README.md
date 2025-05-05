@@ -47,11 +47,11 @@ If you would like to run on multiple slices of v6e-256, you may modify the `--nu
 For reference, here are the `llama3_1_70b_8192` workload details as found in `MaxText@tpu-recipes-v0.1.2`:
 
 ```
-  MaxTextModel(
+MaxTextModel(
     model_name="llama3_1-70b-8192",
     model_type="llama3.1-70b",
     tuning_params={
-        "per_device_batch_size": 4,
+        "per_device_batch_size": 5,
         "ici_fsdp_parallelism": -1,
         "remat_policy": "custom",
         "decoder_layer_input": "offload",
@@ -87,4 +87,4 @@ For reference, here are the `llama3_1_70b_8192` workload details as found in `Ma
   )
 ```
 
-This equivalent workload code can be found in the [maxtext_trillium_model_configs.py](https://github.com/AI-Hypercomputer/maxtext/blob/243b25e480f7550a0c389fa95cd3adcc716fe0df/benchmarks/maxtext_trillium_model_configs.py) file within the MaxText repository.
+This equivalent workload code can be found in the [maxtext_trillium_model_configs.py](https://github.com/AI-Hypercomputer/maxtext/blob/tpu-recipes-v0.1.2/benchmarks/maxtext_trillium_model_configs.py) file within the MaxText repository.
