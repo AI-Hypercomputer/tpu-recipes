@@ -25,11 +25,11 @@ spec:
               - key: cloud.google.com/machine-family
                 operator: In
                 values:
-                - n2
+                - m1
               - key: node.kubernetes.io/instance-type
                 operator: In
                 values:
-                - n2-highmem-80
+                - m1-ultramem-160
 
       volumes:
         - name: shared-memory

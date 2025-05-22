@@ -182,6 +182,20 @@ python3 ~/xpk/xpk.py cluster create \
   --custom-nodepool-arguments="${NODE_POOL_ARGUMENTS}"
 ```
 
+You will also need to Create a CPU nodepool with a high memory machine to convert the checkpoint
+
+```bash
+  gcloud container node-pools create cpunodepool \
+      --zone=<ZONE> \
+      --num-nodes=1 \
+      --machine-type=m1-ultramem-160 \
+      --cluster=<CLUSTER_NAME> \
+      --image-type=COS_CONTAINERD \
+      --disk-type=pd-balanced \
+      --disk-size=100 \
+      --ephemeral-storage-local-ssd count=8
+```
+
 ## Create a Cloud Storage bucket to store checkpoints and temporary files
 
 Create a Cloud Storage bucket to store model checkpoint, Pathways temporary files like compilation cache. It's recommended to create a bucket in the same region as the TPU nodepool is located.

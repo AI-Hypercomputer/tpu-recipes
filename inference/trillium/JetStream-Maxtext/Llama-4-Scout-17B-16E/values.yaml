@@ -22,7 +22,7 @@ huggingface:
     token: "hf_api_token"
 
 model:
-  name: meta-llama/Llama-4-Scout-17B-16E-Original
+  name: meta-llama/Llama-4-Scout-17B-16E
 
 job:
   image:

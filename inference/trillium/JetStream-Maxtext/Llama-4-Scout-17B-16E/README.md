@@ -44,7 +44,7 @@ To prepare the required environment, complete the following steps:
       --num-nodes=1 \
       --machine-type=n2-highmem-80 \
       --cluster=<CLUSTER_NAME> \
-      --image_type=COS_CONTAINERD \
+      --image-type=COS_CONTAINERD \
       --disk-type=pd-balanced \
       --disk-size=100 \
       --ephemeral-storage-local-ssd count=8
@@ -186,7 +186,7 @@ To build the container, complete the following steps from your client:
 The recipe serves Llama-4-Scout-17B-16E model using JetStream MaxText Engine on a single TPU v6e node.
 
 To start the inference, the recipe launches JetStream MaxText Engine that does the following steps:
-1. Downloads the full Llama-4-Scout-17B-16 model PyTorch checkpoints from [Hugging Face](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E-Original).
+1. Downloads the full Llama-4-Scout-17B-16 model PyTorch checkpoints from [Hugging Face](https://huggingface.co/meta-llama/Llama-4-Scout-17B-16E).
 2. Convert the model checkpoints from PyTorch format to JAX Orbax format.
 3. Start the JetStream MaxText Engine server.
 3. Inference is ready to respond to requests and run benchmarks
@@ -205,8 +205,8 @@ The recipe uses the helm chart to run the above steps.
     --dry-run=client -o yaml | kubectl apply -f -
     ```
 
-2. Convert the checkpoint from PyTorch to Orbax
-    This job converts the checkpoint from PyTorch format to JAX Orbax format and unscans it for performant serving. This unscanned checkpoint is then stored in the mounted GCS bucket so that it can be used by the TPU nodepool to bring up the JetStream serve in the next step.
+2. Convert the checkpoint from HuggingFace to Orbax
+    This job converts the checkpoint from Huggingface safetensor format to JAX Orbax format and unscans it for performant serving. This unscanned checkpoint is then stored in the mounted GCS bucket so that it can be used by the TPU nodepool to bring up the JetStream serve in the next step.
 
     ```bash
     cd $RECIPE_ROOT
@@ -253,8 +253,8 @@ The recipe uses the helm chart to run the above steps.
 
     Once the deployment has started, you'll see logs similar to:
       ```bash
-        Loading decode params from /gcs/meta-llama/Llama-4-Scout-17B-16E-Original/output/unscanned_ckpt/checkpoints/0/items
-        restoring params from /gcs/meta-llama/Llama-4-Scout-17B-16E-Original/output/unscanned_ckpt/checkpoints/0/items
+        Loading decode params from /gcs/meta-llama/Llama-4-Scout-17B-16E/output/unscanned_ckpt/checkpoints/0/items
+        restoring params from /gcs/meta-llama/Llama-4-Scout-17B-16E/output/unscanned_ckpt/checkpoints/0/items
         WARNING:absl:The transformations API will eventually be replaced by an upgraded design. The current API will not be removed until this point, but it will no longer be actively worked on.
 
         Memstats: After load_params:
