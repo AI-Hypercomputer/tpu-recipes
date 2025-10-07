@@ -4,11 +4,11 @@ This documents present steps to run Llama4-Maverick-17B-128E [MaxText](https://g
 
 ## XPK setup
 
-Please follow this [link](https://github.com/gclouduniverse/reproducibility/tree/main/Training/TPU-v5p/XPK_README.md) to create your GKE cluster with XPK.
+Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK.
 
 ## Prep for Maxtext
 
-Please follow the [MAXTEXT_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/trillium/MAXTEXT_README.md) to install maxtext and build the docker image. The following variables should be set:
+Please follow the [MAXTEXT_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/MAXTEXT_README.md) to install maxtext and build the docker image. The following variables should be set:
 
 In step 1, Use the MaxText [tpu-recipes-v0.1.3](https://github.com/AI-Hypercomputer/maxtext/releases/tag/tpu-recipes-v0.1.3) tag to run this recipe:
 ```

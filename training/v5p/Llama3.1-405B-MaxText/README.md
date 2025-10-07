@@ -1,10 +1,7 @@
-# Instructions for training Llama4-Scout-17B-16E Maxtext on TPU v5p-256, v5p-512, and v5p-1024
-
-This documents present steps to run Llama4-Scout-17B-16E [MaxText](https://github.com/google/maxtext) workload through [XPK](https://github.com/google/xpk/blob/main/README.md) tool.
+# Instructions for training Llama3.1-405B-MaxText on TPU v5p-1024
 
 ## XPK setup
-
-Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK.
+Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
 
 ## Prep for Maxtext
 
@@ -29,13 +26,12 @@ gcloud storage buckets create ${GCS_PATH}  --project ${PROJECT}
 ```
 
 4. Specify your workload enviroment variables
-
 ```
 export PROJECT=#<your_compute_project>
 export ZONE=#<your_compute_zone>
 export CLUSTER_NAME=#<your_cluster_name>
 export OUTPUT_DIR=gs://v5p-demo/ #<your_GCS_folder_for_results>
-export DEVICE_TYPE=${DEVICE_TYPE} # v5p-256, v5p-512, or v5p-1024
+export DEVICE_TYPE=${DEVICE_TYPE} # v5p-1024 for 512 v5p chips
 ```
 
 ## Run workloads
@@ -43,24 +39,25 @@ export DEVICE_TYPE=${DEVICE_TYPE} # v5p-256, v5p-512, or v5p-1024
 5. From the MaxText root directory, start your workload:
 ```
 python3 -m benchmarks.benchmark_runner xpk \
-    --project=$PROJECT \
-    --zone=$ZONE \
-    --device_type=${DEVICE_TYPE} \
-    --num_slices=1  \
-    --cluster_name=${CLUSTER_NAME} \
-    --base_output_directory=${OUTPUT_DIR} \
-    --model_name="llama4_scout_dropless_v5p_256" \
-    --base_docker_image=maxtext_base_image
+--project=$PROJECT \
+--zone=$ZONE \
+--device_type=${DEVICE_TYPE} \
+--num_slices=1 \
+--cluster_name=${CLUSTER_NAME} \
+--base_output_directory=${OUTPUT_DIR} \
+--model_name="llama3_1_405b_8192_v5p_1024" \
+--base_docker_image=maxtext_base_image
 ```
 
 6. Check the training log
 
 From your workload logs, you should see step time logs like the following, as training progresses:
 ```
-completed step: 11, seconds: 31.652, TFLOP/s/device: 225.491, Tokens/s/device: 2070.487, total_weights: 33554432, loss: 11.825
+completed step: 10, seconds: 131.474, TFLOP/s/device: 314.530, Tokens/s/device: 124.618, total_weights: 8388608, loss: 4.453
 ```
 
 7. Workload configuration
 
-Workload configuration details can be found [here](https://github.com/AI-Hypercomputer/maxtext/blob/3eb77db3c94580f56f1b738f8d254b03bd205e35/benchmarks/maxtext_v5p_model_configs.py) in MaxText GitHub repo. Look for the configuration `llama4_scout_dropless_v5p_256`.
+Workload configuration details can be found [here](https://github.com/AI-Hypercomputer/maxtext/blob/3eb77db3c94580f56f1b738f8d254b03bd205e35/benchmarks/maxtext_v5p_model_configs.py) in MaxText GitHub repo. Look for the configuration `llama3_1_405b_8192_v5p_1024`.
 
+Please note that this configuration is appropriate for v5p-256, v5p-512, and v5p-1024.

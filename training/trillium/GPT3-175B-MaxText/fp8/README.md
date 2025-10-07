@@ -1,10 +1,10 @@
 # Instructions for training GPT3-175B-Maxtext on TPU trillium
 
 ## XPK setup
-Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/trillium/XPK_README.md) to create your GKE cluster with XPK
+Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
 
 ## Prep for Maxtext 
-Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/trillium/MAXTEXT_README.md) to install maxtext and build docker image
+Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/MAXTEXT_README.md) to install maxtext and build docker image
 
 ## Run Maxtext GPT3-175B workloads on GKE
 

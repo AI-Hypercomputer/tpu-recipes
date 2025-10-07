@@ -2,7 +2,7 @@
 
 This documents present steps to run StableDiffusion [MaxDiffusion](https://github.com/google/maxdiffusion/tree/main/src/maxdiffusion) workload through [XPK](https://github.com/google/xpk/blob/main/README.md) tool.
 
-Setup XPK and create cluster [XPK Userguide](Training/TPU-v5p/XPK_README.md)
+Setup XPK and create cluster [XPK Userguide](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md)
 
 Build a local docker image.
 

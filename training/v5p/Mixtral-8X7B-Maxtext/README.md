@@ -4,7 +4,7 @@ This documents present steps to run Mixtral-8x7B [MaxText](https://github.com/go
 
 ## XPK setup
 
-Please follow this [link](https://github.com/gclouduniverse/reproducibility/tree/main/Training/TPU-v5p/XPK_README.md) to create your GKE cluster with XPK.
+Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK.
 
 
 ## Run script

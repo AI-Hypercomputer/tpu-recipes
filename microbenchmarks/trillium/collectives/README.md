@@ -1,7 +1,7 @@
 # Instructions for running Collectives Benchmark on TPU trillium (v6e-256)
 
 ## XPK setup
-Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/trillium/XPK_README.md) to create your GKE cluster with XPK
+Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
 
 ## Run Collectives on v6e-256
 
