@@ -63,19 +63,15 @@ Now we serve the vllm server. Make sure you keep this terminal open for the enti
 ```bash
 export MAX_MODEL_LEN=4096
 export TP=4 # number of chips
-# export RATIO=0.8
-# export PREFIX_LEN=0
 
-VLLM_USE_V1=1 vllm serve Qwen/Qwen2.5-32B --seed 42 --disable-log-requests --gpu-memory-utilization 0.98 --max-num-batched-tokens 2048 --max-num-seqs 128 --tensor-parallel-size $TP --max-model-len $MAX_MODEL_LEN
+vllm serve Qwen/Qwen2.5-32B --seed 42 --disable-log-requests --gpu-memory-utilization 0.98 --max-num-batched-tokens 2048 --max-num-seqs 128 --tensor-parallel-size $TP --max-model-len $MAX_MODEL_LEN
 ```
 
-It takes a few minutes depending on the model size to prepare the server - once you see the below snippet in the logs, it means that the server is ready to serve requests or run benchmarks:
+It takes a few minutes depending on the model size to prepare the server - once you see the `Application startup complete.` message in the logs, it means that the server is ready to serve requests or run benchmarks:
 
 ```bash
-INFO:     Started server process [7]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+(APIServer pid=7) INFO:     Waiting for application startup.
+(APIServer pid=7) INFO:     Application startup complete.
 ```
 
 ## Step 7: Prepare the test environment
@@ -113,7 +109,7 @@ curl http://localhost:8000/v1/completions \
     }'
 ```
 
-## Step 9: Preparing the test image
+## Step 10: Install Benchmark Dependencies
 
 You might need to install datasets as it's not available in the base vllm image.
 
@@ -121,7 +117,7 @@ You might need to install datasets as it's not available in the base vllm image.
 pip install datasets
 ```
 
-## Step 10:  Run the benchmarking
+## Step 11:  Run the benchmarking
 
 Finally, we are ready to run the benchmark:
 
@@ -132,16 +128,13 @@ export HF_TOKEN=<your HF token>
 
 cd /workspace/vllm
 
-python benchmarks/benchmark_serving.py \
-    --backend vllm \
+vllm bench serve \
     --model "Qwen/Qwen2.5-32B"  \
     --dataset-name random \
     --num-prompts 1000 \
     --random-input-len=$MAX_INPUT_LEN \
     --random-output-len=$MAX_OUTPUT_LEN \
     --seed 100
-    # --random-range-ratio=$RATIO \
-    # --random-prefix-len=$PREFIX_LEN
 ```
 
 The snippet below is what you’d expect to see - the numbers vary based on the vllm version, the model size and the TPU instance type/size.
