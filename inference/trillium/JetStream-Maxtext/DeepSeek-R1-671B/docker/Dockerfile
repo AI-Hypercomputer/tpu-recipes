@@ -44,8 +44,11 @@ ENV XCLOUD_ENVIRONMENT=GCP
 # Install JetStream and MaxText
 
 RUN git clone https://github.com/AI-Hypercomputer/JetStream.git && \
-git clone https://github.com/AI-Hypercomputer/maxtext.git && \
-git clone https://github.com/google/aqt.git
+    cd JetStream && git checkout 29329e8 && cd .. && \
+    git clone https://github.com/AI-Hypercomputer/maxtext.git && \
+    cd maxtext && git checkout 4f63ce61 && cd .. && \
+    git clone https://github.com/google/aqt.git && \
+    cd aqt && git checkout 28504f5 && cd ..
 
 RUN cd /maxtext && bash setup.sh && pip install torch --index-url https://download.pytorch.org/whl/cpu
 

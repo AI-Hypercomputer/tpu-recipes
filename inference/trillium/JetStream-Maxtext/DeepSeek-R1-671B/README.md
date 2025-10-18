@@ -363,7 +363,7 @@ helm install -f values.yaml \
 --set clusterName=$CLUSTER_NAME \
 --set job.jax_tpu_image.repository=${ARTIFACT_REGISTRY}/${JETSTREAM_MAXTEXT_IMAGE} \
 --set job.jax_tpu_image.tag=${JETSTREAM_MAXTEXT_VERSION} \
---set maxtext_config.load_parameters_path=${GCS_CKPT_PATH_UNSCANNED}/0/items \
+--set maxtext_config.load_parameters_path=${GCS_CKPT_PATH_QUANTIZED} \
 jetstream-pathways \
 $RECIPE_ROOT/serve-model
 ```
