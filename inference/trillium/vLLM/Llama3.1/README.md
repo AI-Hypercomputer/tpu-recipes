@@ -129,14 +129,11 @@ vllm serve meta-llama/Llama-3.1-70B-Instruct \
 For the 8B model on a v6e-1 (1-chip) instance, we recommend `--max-num-batched-tokens 1024 --max-num-seqs 128`.
 
 It takes a few minutes depending on the model size to prepare the server.
-Once you see the below snippet in the logs, it means that the server is ready
-to serve requests or run benchmarks:
+Once you see the `Application startup complete.` message in the logs, it means that the server is ready to serve requests.
 
 ```bash
-INFO:     Started server process [7]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+(APIServer pid=7) INFO:     Waiting for application startup.
+(APIServer pid=7) INFO:     Application startup complete.
 ```
 
 ## Step 7: Prepare the test environment
@@ -153,11 +150,15 @@ export PROJECT=your-tpu-project
 gcloud compute tpus tpu-vm ssh $TPU_NAME --project $PROJECT --zone=$ZONE
 ```
 
-## Step 8: access the running container
+## Step 8: Access the running container
+
+To run the benchmark and install dependencies, you first need to enter the running container.
 
 ```bash
 sudo docker exec -it $USER-vllm bash
 ```
+
+The following steps for testing and benchmarking should be executed from within this container shell.
 
 ## Step 9: Test the server
 
