@@ -26,6 +26,7 @@ git clone https://github.com/google/xpk.git
 
 ```shell
 cd xpk # Should be equivalent to cd ~/xpk
+git checkout v0.14.3
 ```
 
 > **_NOTE:_** If you use a virtual environment in the 
