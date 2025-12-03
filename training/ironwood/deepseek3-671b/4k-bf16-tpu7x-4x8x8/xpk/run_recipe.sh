@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.11 virtual environment with xpk installed.
+# This script requires uv and a Python 3.13 virtual environment with xpk installed.
 # If you haven't set up uv and the environment, please refer to the README.md.
 
 UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.11"
+UV_PYTHON_VERSION="3.13"
 
 # Activate the virtual environment
 source "${UV_VENV_PATH}/bin/activate"
@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.14.3"
+    echo "pip install xpk==0.16.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -29,7 +29,7 @@ export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b")-$(date +%Y%m%d-%H%M)"
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -77,11 +77,9 @@ remat_policy=custom \
 decoder_layer_input=offload \
 opt_type=adamw \
 mu_dtype=bfloat16 \
-grad_dtype=bfloat16 \
 megablox=True \
 sparse_matmul=True \
 use_custom_sort_vjp=True \
-fsdp_shard_on_exp=False \
 sa_use_fused_bwd_kernel=True \
 sa_block_q=2048 \
 sa_block_kv=2048 \
@@ -91,6 +89,11 @@ sa_block_kv_dkv_compute=2048 \
 sa_block_kv_dq=2048 \
 sa_block_q_dq=2048 \
 attention=flash \
+tokenizer_path=assets/tokenizer.mistral-v3 \
+dataset_type=synthetic \
+dataset_path=gs://max-datasets-rogue \
+grad_dtype=bfloat16 \
+fsdp_shard_on_exp=False \
 use_tokamax_splash=True \
 use_max_logit_estimate=-1 \
 cost_estimate_flops_fwd=5000000000000 \
@@ -100,9 +103,6 @@ tile_batch_seq=512 \
 tile_embed_dim=1024 \
 tile_mlp_dim=2048 \
 use_tokamax_gmm=True \
-tokenizer_path=assets/tokenizer.mistral-v3 \
-dataset_type=synthetic \
-dataset_path=gs://max-datasets-rogue \
 enable_checkpointing=False \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
@@ -112,7 +112,7 @@ xpk workload create \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
   --zone=$ZONE \
-  --priority=very-high \
+  --priority=high \
   --max-restarts=0 \
   --device-type=tpu7x-4x8x8 \
   --num-slices=1 \
