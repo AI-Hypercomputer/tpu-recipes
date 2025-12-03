@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.11 virtual environment with xpk installed.
+# This script requires uv and a Python 3.13 virtual environment with xpk installed.
 # If you haven't set up uv and the environment, please refer to the README.md.
 
 UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.11"
+UV_PYTHON_VERSION="3.13"
 
 # Activate the virtual environment
 source "${UV_VENV_PATH}/bin/activate"
@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.14.3"
+    echo "pip install xpk==0.16.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -62,9 +62,6 @@ use_iota_embed=True \
 remat_policy=custom \
 decoder_layer_input=device \
 context=device \
-query_proj=device \
-key_proj=device \
-value_proj=device \
 ici_fsdp_parallelism=-1 \
 dataset_type=synthetic \
 opt_type=adamw \
@@ -73,14 +70,19 @@ sa_block_q=2048 \
 sa_block_kv=1024 \
 sa_block_kv_compute=512 \
 sa_block_q_dkv=2048 \
+sa_block_q_dq=2048 \
 sa_block_kv_dkv=2048 \
+sa_block_kv_dq=2048 \
+sa_use_fused_bwd_kernel=True \
+max_target_length=8192 \
+query_proj=device \
+key_proj=device \
+value_proj=device \
 sa_block_kv_dkv_compute=256 \
 sa_q_layout=SEQ_MINOR \
 sa_k_layout=SEQ_MINOR \
 sa_v_layout=HEAD_DIM_MINOR \
-sa_use_fused_bwd_kernel=True \
 use_tokamax_splash=True \
-max_target_length=8192 \
 profiler=xplane \
 skip_first_n_steps_for_profiler=5 \
 profiler_steps=2 \
@@ -93,7 +95,7 @@ xpk workload create \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
   --zone=$ZONE \
-  --priority=very-high \
+  --priority=high \
   --max-restarts=0 \
   --device-type=tpu7x-4x8x8 \
   --num-slices=1 \
