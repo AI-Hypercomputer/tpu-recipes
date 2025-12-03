@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.14.3"
+    echo "pip install xpk==0.16.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -33,20 +33,9 @@ export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-70b-8192-4x4x4")-$
 
 # XLA Flags
 XLA_FLAGS=" \
-  --xla_tpu_scoped_vmem_limit_kib=65536 \
+  --xla_tpu_scoped_vmem_limit_kib=61440 \
   --xla_tpu_bf16_emission_mode=NATIVE_EMISSION \
-  --xla_tpu_enable_sparse_core_reduce_scatter_v2=true \
-  --xla_tpu_enable_sparse_core_collective_offload_all_gather=true \
-  --xla_tpu_enable_sparse_core_collective_offload_2d_all_gather=true \
-  --xla_tpu_enable_all_gather_offload_tracing=true \
-  --xla_tpu_use_tc_device_shape_on_sc=True \
-  --xla_sc_disable_megacore_partitioning=True \
-  --xla_tpu_enable_async_collective_fusion_fuse_all_gather=false \
-  --xla_enable_async_all_gather=true \
-  --xla_tpu_prefer_async_allgather_to_allreduce=true \
   --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true \
-  --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true \
-  --xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true \
   --xla_tpu_use_single_sparse_core_for_all_gather_offload=true "
 
 # MaxText Workload Overrides
@@ -65,16 +54,19 @@ context=device \
 query_proj=device \
 key_proj=device \
 value_proj=device \
+qkv_proj=device \
 ici_fsdp_parallelism=-1 \
 dataset_type=synthetic \
 opt_type=adamw \
 mu_dtype=bfloat16 \
 sa_block_q=2048 \
-sa_block_kv=1024 \
-sa_block_kv_compute=512 \
+sa_block_kv=2048 \
+sa_block_kv_compute=2048 \
 sa_block_q_dkv=2048 \
 sa_block_kv_dkv=2048 \
-sa_block_kv_dkv_compute=256 \
+sa_block_kv_dkv_compute=2048 \
+tokenizer_type=tiktoken \
+tokenizer_path=assets/tokenizer_llama3.tiktoken \
 sa_q_layout=SEQ_MINOR \
 sa_k_layout=SEQ_MINOR \
 sa_v_layout=HEAD_DIM_MINOR \

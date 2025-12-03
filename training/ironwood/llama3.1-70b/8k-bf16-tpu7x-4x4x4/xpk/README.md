@@ -1,16 +1,17 @@
-# Pretrain llama3.1-70b workload on Ironwood GKE clusters with XPK
+# Pretrain llama3-1-70b workload on Ironwood GKE clusters with XPK
 
-This recipe outlines the steps for running a llama3.1-70b
+This recipe outlines the steps for running a llama3-1-70b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [XPK](https://github.com/AI-Hypercomputer/xpk).
+
 
 ## Workload Details
 
 This workload is configured with the following details:
 
 -   Sequence Length: 8192
--   Precision: bf16
+-   Precision: bfloat16
 -   Chips: 64 (4x4x4 topology)
 
 ## Prerequisites
@@ -35,8 +36,8 @@ To run this recipe, you need the following:
     in the [Install XPK and dependencies](#install-xpk-and-dependencies) section
     to install Docker.
 -   **Python 3.11 Virtual Environment:** A Python
-    3.11 virtual environment is required. Instructions for
-    setting this up are also in the
+    3.11 virtual environment is required. Instructions
+    for setting this up are also in the
     [Install XPK and dependencies](#install-xpk-and-dependencies) section.
 -   **XPK and Dependencies:** Follow the steps in the
     [Install XPK and dependencies](#install-xpk-and-dependencies) section to
@@ -57,11 +58,11 @@ curl -LsSf https://astral.sh/uv/install.sh -o install-uv.sh
 chmod +x install-uv.sh
 ./install-uv.sh
 rm install-uv.sh
-source ~/.local/bin/env
+source ${HOME}/.local/bin/env
 
 # Set up and Activate Python 3.11 virtual environment
-uv venv --seed ~/.local/bin/venv --python 3.11 --clear
-source ~/.local/bin/venv/bin/activate
+uv venv --seed ${HOME}/.local/bin/venv --python 3.11 --clear
+source ${HOME}/.local/bin/venv/bin/activate
 pip install --upgrade pip
 ```
 
@@ -78,7 +79,7 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==0.14.3
+pip install xpk==0.16.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
 
@@ -146,16 +147,18 @@ across all commands and configurations.
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
+-   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `CONTAINER_REGISTRY`: The container registry to use (e.g., gcr.io).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner` by default,
+    `run_recipe.sh` to
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner` by default,
     matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-70b-8192-4x4x4")-$(date +%Y%m%d-%H%M)"`
+    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-70b")-\
+    $(date +%Y%m%d-%H%M)"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -191,13 +194,23 @@ XPK and its dependencies. Docker installation is part of this process.
 
 ### Steps for building workload image
 
+**Warning:** If any of the software versions below show as "N/A", you *must*
+fill in the correct versions. To find the missing versions (e.g., for MaxText
+commit hash, Libtpu, and Jax/Jaxlib), you may need to:
+1.  Pull the Docker image from the workload that this recipe is based on.
+2.  Start the Docker container.
+3.  Run commands within the container to get the specific versions. For example,
+to find the MaxText commit, you can use `git rev-parse HEAD` inside the cloned
+MaxText repository within the container. For Python package versions, use
+`pip show <package_name>`.
+
 The following software versions are used:
 
--   Libtpu version: 0.0.31.dev20251119+nightly
--   Jax version: 0.8.1
--   Maxtext version: maxtext-tutorial-v1.3.0
+-   Libtpu version: N/A
+-   Jax version: N/A
+-   Maxtext version: N/A
 -   Python 3.11
--   XPK 0.14.3
+-   XPK 0.16.0
 
 Docker Image Building Command:
 
@@ -206,23 +219,23 @@ export CONTAINER_REGISTRY="" # Initialize with your registry
 export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
-# Let's temporarily switch to a Python 3.12 virtual environment for Docker build
-uv venv --seed ~/.local/bin/venv-docker --python 3.12 --clear
-source ~/.local/bin/venv-docker/bin/activate
+# Set up and Activate Python 3.12 virtual environment for Docker build
+uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
+source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
 # Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo You have the correct Python version 3.12; } else { >&2 echo Error: Python version must be 3.12; } fi
+[[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]] || { >&2 echo "Error: Python version must be 3.12."; false; }
 
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.3.0
+git checkout N/A
 
 # Custom Jax and LibTPU wheels
-pip download libtpu==0.0.31.dev20251119+nightly -f"https://storage.googleapis.com/jax-releases/libtpu_releases.html"
+pip download libtpu==N/A -f"https://storage.googleapis.com/jax-releases/libtpu_releases.html"
 
-pip download --pre jax==0.8.1 jaxlib==0.8.1 --index https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
+pip download --pre jax==N/A jaxlib==N/A --index https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
 
 # Build and upload the docker image
 bash dependencies/scripts/docker_build_dependency_image.sh MODE=custom_wheels
@@ -254,16 +267,15 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-### Run llama3.1-70b Pretraining Workload
+### Run llama3-1-70b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the llama3.1-70b pretraining workload.
+configurations to launch the llama3-1-70b pretraining workload.
 
 To run the benchmark, first make the script executable and then run it:
 
 ```bash
 chmod +x run_recipe.sh
-
 ./run_recipe.sh
 ```
 
