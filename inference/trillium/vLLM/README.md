@@ -5,6 +5,7 @@ Although vLLM TPU’s [new unified backend](https://github.com/vllm-project/tpu-
 For this reason, we’ve provided a set of stress-tested recipes for deploying and serving vLLM on Trillium TPUs using Google Compute Engine (GCE).
 
 - [Llama3.1-8B/70B](./Llama3.1/README.md)
+- [Llama3.3-70B](./Llama3.3/README.md)
 - [Qwen2.5-32B](./Qwen2.5-32B/README.md)
 - [Qwen2.5-VL-7B](./Qwen2.5-VL/README.md)
 - [Qwen3-4B/32B](./Qwen3/README.md)
