@@ -77,7 +77,7 @@ cluster credentials and deploy the JobSet:
 gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 
 # Apply the manifest
-envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < manifest.yaml | kubectl apply -n default -f -
+envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < k8s_manifest.yaml | kubectl apply -n default -f -
 ```
 
 ## Monitor the job
