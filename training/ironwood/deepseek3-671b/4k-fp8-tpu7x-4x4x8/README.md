@@ -78,7 +78,7 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==0.16.0
+pip install xpk==0.16.1
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
 curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.0/tools/install-xpk.sh -o install-xpk.sh
