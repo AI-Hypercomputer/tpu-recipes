@@ -82,9 +82,9 @@ Install XPK and necessary tools:
 pip install xpk==0.16.1
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.0/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.1/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
-./install-xpk.sh
+sudo ./install-xpk.sh
 rm install-xpk.sh
 
 # Follow https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin to install gke-gcloud-auth-plugin
@@ -111,7 +111,7 @@ For this recipe, the following setup is used:
 -   **Pretraining job configuration and deployment** - XPK is used to configure
     and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
-    resource, which manages the execution of the MaxText pretraining workload.
+    resource, which manages the execution of the llama3-1-405b workload.
 
 ## Test environment
 
@@ -138,12 +138,12 @@ across all commands and configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner` by default,
-    matching the image built in the
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-llama3-1-405b-runner` by
+    default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-405b-8192-fp8-4x4x4")-$(date +%Y%m%d-%H%M)"`
+    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-405b-8192-fp8-4x8x8")-$(date +%Y%m%d-%H%M)"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -151,7 +151,7 @@ across all commands and configurations.
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
 
-If you don’t have a GCS bucket, create one with this command:
+If you don't have a GCS bucket, create one with this command:
 
 ```bash
 # Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
@@ -180,11 +180,11 @@ XPK and its dependencies. Docker installation is part of this process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.31.dev20251119+nightly
--   Jax version: 0.8.1
--   Maxtext version: maxtext-tutorial-v1.3.0
--   Python 3.11
--   XPK 0.14.3
+-   Libtpu version: 0.0.33.dev20251219+nightly
+-   Jax version: 0.8.3.dev20251219
+-   Maxtext version: maxtext-tutorial-v1.4.0
+-   Python: 3.11
+-   XPK: 0.16.1
 
 Docker Image Building Command:
 
@@ -193,23 +193,23 @@ export CONTAINER_REGISTRY="" # Initialize with your registry
 export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
-# Let's temporarily switch to a Python 3.12 virtual environment for Docker build
-uv venv --seed ~/.local/bin/venv-docker --python 3.12 --clear
-source ~/.local/bin/venv-docker/bin/activate
+# Set up and Activate Python 3.12 virtual environment for Docker build
+uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
+source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
 # Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo You have the correct Python version 3.12; } else { >&2 echo Error: Python version must be 3.12; } fi
+if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
 
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.3.0
+git checkout maxtext-tutorial-v1.4.0
 
 # Custom Jax and LibTPU wheels
-pip download libtpu==0.0.31.dev20251119+nightly -f"https://storage.googleapis.com/jax-releases/libtpu_releases.html"
+pip download libtpu==0.0.33.dev20251219+nightly -f"https://storage.googleapis.com/jax-releases/libtpu_releases.html"
 
-pip download --pre jax==0.8.1 jaxlib==0.8.1 --index https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
+pip download --pre jax==0.8.3.dev20251219 jaxlib==0.8.3.dev20251219 --index https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
 
 # Build and upload the docker image
 bash dependencies/scripts/docker_build_dependency_image.sh MODE=custom_wheels
@@ -250,7 +250,6 @@ To run the benchmark, first make the script executable and then run it:
 
 ```bash
 chmod +x run_recipe.sh
-
 ./run_recipe.sh
 ```
 
@@ -303,7 +302,7 @@ xpk workload list --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZON
 For more in-depth debugging, use xpk inspector: (`xpk inspector`)
 
 ```bash
-xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload <workload_name>]
+xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload ${WORKLOAD_NAME}]
 ```
 
 ### Delete resources
@@ -311,7 +310,7 @@ xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [
 #### Delete a specific workload
 
 ```bash
-xpk workload delete --workload <workload_name> --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+xpk workload delete --workload ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 # Or filter and delete:
 xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} --filter-by-job=${USER}
 ```
