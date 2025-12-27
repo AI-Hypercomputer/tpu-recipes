@@ -186,7 +186,7 @@ create a node pool with a single TPU v7 node in 2x2x1 configuration.
         - ReadWriteOnce
       resources:
         requests:
-          storage: 100Gi
+          storage: 200Gi
     ---
     apiVersion: apps/v1
     kind: Deployment
@@ -207,7 +207,7 @@ create a node pool with a single TPU v7 node in 2x2x1 configuration.
             cloud.google.com/gke-tpu-topology: 2x2x1
           containers:
           - name: vllm-tpu
-            image: vllm/vllm-tpu:latest
+            image: vllm/vllm-tpu:nightly-ironwood-20251217-baf570b-0cd5353  # Can be replaced with vllm/vllm-tpu:ironwood once mxfp4 quantization is added to it.
             command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
             args:
             - --host=0.0.0.0
