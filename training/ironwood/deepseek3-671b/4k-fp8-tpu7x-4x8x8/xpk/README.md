@@ -204,15 +204,13 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.4.0
-
-# Custom Jax and LibTPU wheels
-pip download libtpu==0.0.32.dev20251215+nightly -f"https://storage.googleapis.com/jax-releases/libtpu_releases.html"
-
-pip download --pre jax==0.8.2.dev20251215 jaxlib==0.8.2.dev20251215 --index https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
+git checkout maxtext-tutorial-v1.5.0
 
 # Build and upload the docker image
-bash dependencies/scripts/docker_build_dependency_image.sh MODE=custom_wheels
+bash dependencies/scripts/docker_build_dependency_image.sh \
+  MODE=nightly \
+  JAX_VERSION=0.8.2.dev20251215 \
+  LIBTPU_VERSION=0.0.32.dev20251215+nightly
 bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
