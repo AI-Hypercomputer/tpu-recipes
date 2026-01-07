@@ -191,7 +191,7 @@ create a node pool with a single TPU v7 node in 2x2x1 configuration.
         - ReadWriteOnce
       resources:
         requests:
-          storage: 500Gi
+          storage: 1000Gi
     ---
     apiVersion: apps/v1
     kind: Deployment
