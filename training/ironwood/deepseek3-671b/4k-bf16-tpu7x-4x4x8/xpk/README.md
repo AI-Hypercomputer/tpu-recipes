@@ -237,7 +237,7 @@ does this for you already):
 ```bash
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
-###Get the recipe
+## Get the recipe
 ```bash
 git clone https://github.com/ai-hypercomputer/tpu-recipes.git
 cd ~/tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x4x8/xpk
