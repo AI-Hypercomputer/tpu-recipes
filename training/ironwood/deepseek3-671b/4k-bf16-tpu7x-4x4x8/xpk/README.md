@@ -291,7 +291,7 @@ and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-kubectl logs -f  ${POD_NAME}
+kubectl logs -f ${POD_NAME}
 ```
 
 You can also monitor your cluster and TPU usage through the Google Cloud
