@@ -256,7 +256,7 @@ nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
-You can customize the run by modifying `run_recipe.sh`:
+You can customize the run by  (nano command) modifying `run_recipe.sh`:
 
 -   **Environment Variables:** Variables like `PROJECT_ID`, `CLUSTER_NAME`,
     `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, and `BASE_OUTPUT_DIR` are defined
