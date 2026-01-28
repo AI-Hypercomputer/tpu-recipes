@@ -250,7 +250,7 @@ cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x4x8/xpk
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the deepseek3-671b pretraining workload.
 
-Before execution, use nano to edit the script and configure the environment variables to match your specific environment.
+Before execution, use 'nano' to edit the script and configure the environment variables to match your specific environment.
 
 To configure and run the benchmark:
 
