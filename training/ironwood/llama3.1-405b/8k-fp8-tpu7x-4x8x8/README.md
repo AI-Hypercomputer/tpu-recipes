@@ -239,6 +239,12 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/llama3.1-405b/8k-fp8-tpu7x-4x8x8
+```
 ### Run llama3.1-405b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
@@ -248,6 +254,7 @@ To run the benchmark, first make the script executable and then run it:
 
 ```bash
 chmod +x run_recipe.sh
+nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -280,7 +287,7 @@ and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-kubectl logs -f -n default jobset/${WORKLOAD_NAME}-0-worker-0
+kubectl logs -f ${POD_NAME}
 ```
 
 You can also monitor your cluster and TPU usage through the Google Cloud
