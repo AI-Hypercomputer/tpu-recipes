@@ -315,8 +315,8 @@ hf download openai/gpt-oss-120b
 
 5.  Interact with the model using curl (from your workstation/laptop)
 
-    Note: Please replace the `volumeHandle` and `MODEL_FOLDER_PATH` values
-    with your specific model bucket name and model folder path.
+    Note: Please replace `MODEL_FOLDER_PATH` value
+    with your specific model folder path.
 
     ```bash
     curl http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
