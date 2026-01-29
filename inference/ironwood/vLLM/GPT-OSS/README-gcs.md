@@ -245,7 +245,7 @@ hf download openai/gpt-oss-120b
             - --gpu-memory-utilization=0.86
             env:
             - name: MODEL_FOLDER_PATH
-              value: {YOUR_MODEL_FOLDER}  #  Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET} prefix.
+              value: {YOUR_MODEL_FOLDER}  #  Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET}/ prefix.
             - name: TPU_BACKEND_TYPE
               value: jax
             - name: MODEL_IMPL_TYPE
@@ -315,9 +315,12 @@ hf download openai/gpt-oss-120b
 
 5.  Interact with the model using curl (from your workstation/laptop)
 
+    Note: Please replace the `volumeHandle` and `MODEL_FOLDER_PATH` values
+    with your specific model bucket name and model folder path.
+
     ```bash
     curl http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
-        "model": "openai/gpt-oss-120b",
+        "model": "/model-vol-mount/{YOUR_MODEL_FOLDER}",  # Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET}/ prefix. Ensure this field matches the model flag specified in your server startup command.
         "prompt": "San Francisco is a",
         "max_tokens": 7,
         "temperature": 0
@@ -361,7 +364,7 @@ hf download openai/gpt-oss-120b
         - --model=/model-vol-mount/$(MODEL_FOLDER_PATH)
         env:
         - name: MODEL_FOLDER_PATH
-          value: {YOUR_MODEL_FOLDER}  #  Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET} prefix.
+          value: {YOUR_MODEL_FOLDER}  #  Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET}/ prefix.
         volumeMounts:
         - mountPath: /model-vol-mount
           name: model-vol
