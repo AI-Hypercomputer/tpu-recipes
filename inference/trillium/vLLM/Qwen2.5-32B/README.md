@@ -12,7 +12,7 @@ Once it is installed, you can login to GCP from your terminal with this command:
 
 ## Step 1: Create a v6e TPU instance
 
-We create a single VM with 4 trillium chips - if you need a different number of chips, you can set a different value for `--topology` such as `1x1`, `2x4`, etc.
+We create a single VM with 4 trillium chips - if you need a different number of chips, you can set a different value for `--topology` such as `2x4`, etc.
 
 To learn more about topologies: [v6e VM Types](https://cloud.google.com/tpu/docs/v6e#vm-types).
 

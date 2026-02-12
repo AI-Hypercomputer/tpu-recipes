@@ -239,15 +239,25 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/deepseek3-671b/4k-fp8-tpu7x-4x8x8/xpk
+```
+
 ### Run deepseek3-671b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the deepseek3-671b pretraining workload.
 
-To run the benchmark, first make the script executable and then run it:
+Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
+
+To configure and run the benchmark:
 
 ```bash
 chmod +x run_recipe.sh
+nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -298,13 +308,19 @@ To realize these gains, the recipe employs a w8a8g8 (8-bit weights, activations 
 ## Monitor the job
 
 To monitor your job's progress, you can use kubectl to check the Jobset status
-and logs:
+and stream logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-kubectl logs -f -n default jobset/${WORKLOAD_NAME}-0-worker-0
-```
 
+# List pods to find the specific name (e.g., deepseek3-0-0-xxxx)
+kubectl get pods | grep ${WORKLOAD_NAME}
+```
+Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
+
+```bash
+kubectl logs -f <POD_NAME>
+```
 You can also monitor your cluster and TPU usage through the Google Cloud
 Console.
 
