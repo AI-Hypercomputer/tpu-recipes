@@ -1,6 +1,6 @@
 # Training Recipes for Ironwood TPU
 
-The training recipes contained in this folder are optimized for Ironwood TPU. Here is a summary of the included.
+The training recipes contained in this folder are optimized for Ironwood TPU. Here is a summary of the included recipes.
 
 | <div style="width:100px;">Model ID</div> | Number of chips | GBS | Sequence length | Precision | Step time (seconds) | TFLOPs/sec/chip | Tokens/sec/chip |
 |-----------------|--------------------|--------------|--------------------------|--------------------|-------------|--------------|-----------------------|
