@@ -30,7 +30,7 @@ xpk workload create \
 
 MFU Calculation.
 
-Above only Unet is trainable modeule, from FLOPS count, Per Step FLOPS = 2.41G FLOPS @BS=1, we get the MFU
+Above only Unet is trainable module, from FLOPS count, Per Step FLOPS = 2.41G FLOPS @BS=1, we get the MFU
 ```
 MFU = Per Step FLOPS * BatchSize Per Device / Step Time / Per Device Peak FLOPS
 ```
