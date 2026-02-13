@@ -129,7 +129,7 @@ def run_bench(
     fn: the function to be benchmarked.
     *args: arguments to the function `fn`.
     num_iter: number of times `fn` will be run.
-    warmup_iter: number of times `fn` will be run before the acutal timing
+    warmup_iter: number of times `fn` will be run before the actual timing
       measurement.
     log_dir: the directory to save the profiler trace to.
     func_label: the trace name of `fn` in the profiler.
