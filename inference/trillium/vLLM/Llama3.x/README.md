@@ -139,7 +139,7 @@ vllm serve meta-llama/Llama-3.3-70B-Instruct \
 |:--- | :--- | :--- | :--- | :--- |
 | Llama-3.x-70B-Instruct | Prefill Heavy | 2048 | 256 | 8 |
 | Llama-3.x-70B-Instruct | Decode Heavy/ Balanced | 512 | 256 | 8 |
-| Llama3.1-8B-Instruct | Prefill Heavy | 1024 | 128 | 1 |
+| Llama-3.1-8B-Instruct | Prefill Heavy | 1024 | 128 | 1 |
 
 Note: In order to accurately reproduce our results use:
 *   **Prefill Heavy:** Input/Output tokens = 1800/128
