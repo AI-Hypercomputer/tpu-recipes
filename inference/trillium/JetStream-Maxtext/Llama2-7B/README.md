@@ -16,6 +16,7 @@ git checkout main
 ## Step 2: Setup JetStream and MaxText
 ```bash
 cd ~
+sudo apt-get update
 sudo apt install python3.10-venv
 python -m venv venv-maxtext
 source venv-maxtext/bin/activate
@@ -36,17 +37,18 @@ bash setup.sh
 ```bash
 # Go to https://llama.meta.com/llama-downloads/ and fill out the form
 git clone https://github.com/meta-llama/llama
+cd ~/maxtext/llama
 bash download.sh # When prompted, choose 7B. This should create a directory llama-2-7b inside the llama directory
 
 
 export CHKPT_BUCKET=gs://...
 export MAXTEXT_BUCKET_SCANNED=gs://...
 export MAXTEXT_BUCKET_UNSCANNED=gs://...
+cd ~/maxtext
 gsutil cp -r llama/llama-2-7b/* ${CHKPT_BUCKET}
 
 
 # Checkpoint conversion
-cd maxtext
 bash ../JetStream/jetstream/tools/maxtext/model_ckpt_conversion.sh llama2 7b ${CHKPT_BUCKET} ${MAXTEXT_BUCKET_SCANNED} ${MAXTEXT_BUCKET_UNSCANNED}
 
 # The path to the unscanned checkpoint should be set by the script, but set it explicitly if it hasn't
