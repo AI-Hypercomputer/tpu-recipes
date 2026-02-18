@@ -99,7 +99,7 @@ You can use the profile
 export PROFILE_SCRIPT_PATH=../../../../utils/
 
 # download the profile from gcp bucket to local
-gsutil cp -r $PROFILE_LOG_DIR ./
+gcloud storage cp --recursive $PROFILE_LOG_DIR ./
 
 # locate the profile output ending with ".pb".
 # Name it xplane.pb file, and process it
