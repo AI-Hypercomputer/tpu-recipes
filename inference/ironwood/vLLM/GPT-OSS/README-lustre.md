@@ -52,7 +52,6 @@ documentation.
     --workload-pool=$PROJECT_ID.svc.id.goog \
     --release-channel=rapid \
     --num-nodes=1 \
-    --gateway-api=standard \
     --addons LustreCsiDriver,HttpLoadBalancing \
     --enable-legacy-lustre-port
   ```
@@ -62,7 +61,7 @@ documentation.
 Check if the following features are enabled in the cluster, if not use the
 following steps to enable the required features.
 
-1. **Enable Workload Identity:**. The cluster and the nodepool needs to have
+1. **Enable Workload Identity:** The cluster and the nodepool needs to have
     workload identity enabled.
 
     To enable in cluster:
@@ -93,6 +92,7 @@ following steps to enable the required features.
 
 2.  **Enable the Managed Lustre CSI Driver:** Enable the Managed Lustre
     CSI driver to access Lustre instance:
+
     ```bash
     gcloud container clusters update ${CLUSTER_NAME} \
       --location ${REGION} \
@@ -100,9 +100,11 @@ following steps to enable the required features.
       --enable-legacy-lustre-port
     ```
 
+    Note:
+
 ### Create nodepool
 
-1. **Create TPU v7 (Ironwood) nodepool**. If a node pool does not already exist
+1. **Create TPU v7 (Ironwood) nodepool**. If a node pool does not already exist,
 create a node pool with a single TPU v7 node in 2x2x1 configuration.
 
     ```bash
@@ -123,12 +125,21 @@ create a node pool with a single TPU v7 node in 2x2x1 configuration.
 
 Create a new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance).
 
+### Grant Storage Permission to Kubernetes Service Account
+
+For a cluster with
+[Workload Identity Federation](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) enabled
+, please follow
+[these instructions](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity#kubernetes-resources-iam-policies)
+to grant `roles/lustre.admin` access to Kubernetes service
+account.
+
 ### Upload the Model Checkpoints
 
 To download the model from HuggingFace, please follow the steps below:
 
 1. Mount the Lustre instance on
-[Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine#dynamic_data.site_values.cloud_name_short-console)
+[Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
 or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume).
 
@@ -144,7 +155,7 @@ hf download openai/gpt-oss-120b
 
 ## Deploy vLLM Workload on GKE
 
-The recipe is using 500 nodes (2000 TPUs).
+The recipe utilizes 500 nodes, totaling 2000 TPUs.
 
 1.  Configure kubectl to communicate with your cluster
 
@@ -152,15 +163,16 @@ The recipe is using 500 nodes (2000 TPUs).
     gcloud container clusters get-credentials ${CLUSTER_NAME} --location=${REGION}
     ```
 
-2.  Save this yaml file as `vllm-tpu.yaml`.
+2.  Create server workload configurations
 
-    Note: Replace the following values in the YAML file below:
+    Identify the following information and update the values in the workload
+    server YAML file below:
 
     | Variable              | Description                                                                                             | Example                                                 |
     | --------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
     | `LUSTRE_INSTANCE_NAME` | The name of your Lustre instance. | `my-lustre` |
-    | `LUSTRE_MODEL_FOLDER_PATH` | The path to the GCS model folder on the Lustre. | `my-model-folder` |
-    | `LUSTRE_XLA_CACHE_PATH` | The path to the GCS XLA cache. Specify the folder where you want to store the XLA cache during the first run; subsequent server startups will then read the cache from that location | `my-model-folder` |
+    | `LUSTRE_MODEL_FOLDER_PATH` | The path to the model folder on the Lustre instance. | `my-model-folder` |
+    | `LUSTRE_XLA_CACHE_PATH` | The path to the XLA compilation cache folder on the Lustre instance. Specify the folder where you want to store the XLA compilation cache during the first run; subsequent server startups will then read the cache from that location. | `my-model-folder` |
     | `LUSTRE_CAPACITY` | The capacity of your Lustre instance. | `9000Gi` |
     | `LUSTRE_PROJECT_ID` | The project where your Lustre instance is located. | `my-project` |
     | `LUSTRE_LOCATION` | The zonal location of your Lustre instance. | `us-central1-a` |
@@ -189,6 +201,8 @@ The recipe is using 500 nodes (2000 TPUs).
     state: ACTIVE
     updateTime: '2025-04-28T22:51:41.559098631Z'
     ```
+
+    Replace the Lustre information and save this yaml file as `vllm-tpu.yaml`:
 
     ```
     apiVersion: v1
@@ -269,7 +283,7 @@ The recipe is using 500 nodes (2000 TPUs).
             - name: MODEL_IMPL_TYPE
               value: vllm
             - name: VLLM_XLA_CACHE_PATH
-              value: {LUSTRE_XLA_CACHE_PATH}  # Please replace this with your actual Lustre XLA cache path.
+              value: {LUSTRE_XLA_CACHE_PATH}  # Please replace this with your actual Lustre XLA compilation cache path.
             ports:
             - containerPort: 8000
             resources:
@@ -341,7 +355,7 @@ The recipe is using 500 nodes (2000 TPUs).
 
     ```bash
     curl http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
-        "model": "/model-vol-mount/{LUSTRE_MODEL_FOLDER_PATH}",  # Please replace this with your actual Lustre instance model folder path. Ensure this field matches the model flag specified in your server startup command.
+        "model": "/model-vol-mount/{LUSTRE_MODEL_FOLDER_PATH}",  # Please replace this with your actual Lustre instance model folder path. Ensure this field matches the --model flag used in your server startup command.
         "prompt": "San Francisco is a",
         "max_tokens": 7,
         "temperature": 0
@@ -365,7 +379,6 @@ The recipe is using 500 nodes (2000 TPUs).
       nodeSelector:
         cloud.google.com/gke-tpu-accelerator: tpu7x
         cloud.google.com/gke-tpu-topology: 2x2x1
-        cloud.google.com/reservation-name: ghostfish-igokzi9m34tvg
       containers:
       - name: vllm-bench
         image: vllm/vllm-tpu:latest
@@ -385,8 +398,6 @@ The recipe is using 500 nodes (2000 TPUs).
         env:
         - name: MODEL_FOLDER_PATH
           value: {LUSTRE_MODEL_FOLDER_PATH}  #  Please replace this with your actual Lustre instance model folder path.
-        - name: VLLM_XLA_CACHE_PATH
-          value: /model-vol-mount/vllm_xla_cache
         volumeMounts:
         - mountPath: /model-vol-mount
           name: model-vol
