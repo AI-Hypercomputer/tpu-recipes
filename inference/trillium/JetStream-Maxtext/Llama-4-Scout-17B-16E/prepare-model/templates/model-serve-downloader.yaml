@@ -106,7 +106,7 @@ spec:
 
             echo "Conversion Job Complete. Unscanned checkpoints should be at ${CHECKPOINT_TPU_UNSCANNED}"
             echo "Copying unscanned checkpoints to GCS bucket..."
-            gsutil -m cp -r ${CHECKPOINT_TPU_UNSCANNED} gs://${GCS_FUSE_BUCKET}/{{ .Values.model.name }}/output/unscanned_ckpt/
+            gcloud storage cp --recursive ${CHECKPOINT_TPU_UNSCANNED} gs://${GCS_FUSE_BUCKET}/{{ .Values.model.name }}/output/unscanned_ckpt/
             echo "Finished copying unscanned checkpoints to gs://${GCS_FUSE_BUCKET}/{{ .Values.model.name }}/output/unscanned_ckpt/"
 
         volumeMounts:

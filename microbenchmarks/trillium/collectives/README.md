@@ -33,7 +33,7 @@ psum_ici: Matrix size: 17408x17408, dtype=<class 'jax.numpy.bfloat16'>, matrix_s
 
 Results will be printed out and also stored at `/tmp/microbenchmarks/collectives`. You can save the stored results to GCS by adding the following to `--command` in the XPK command:
 ```
-gsutil cp -r /tmp/microbenchmarks/collectives gs://<your-gcs-bucket>
+gcloud storage cp --recursive /tmp/microbenchmarks/collectives gs://<your-gcs-bucket>
 ```
 
 ### Run with a custom yaml config
@@ -41,7 +41,7 @@ If you would like to run with a custom defined yaml with modified configurations
 
 Start by creating a yaml file `your_config.yaml`. Take a look at [1x_v6e_256.yaml](https://github.com/AI-Hypercomputer/accelerator-microbenchmarks/blob/35c10a42e8cfab7593157327dd3ad3150e4c001d/configs/1x_v6e_256.yaml) for an example yaml config. Then upload it to your GCS bucket:
 ```
-gsutil cp your_config.yaml gs://<your-gcs-bucket>
+gcloud storage cp your_config.yaml gs://<your-gcs-bucket>
 ```
 
 Then use a modified launch command that pulls the yaml file from GCS and references it in the benchmark command:
@@ -51,7 +51,7 @@ python3 ~/xpk/xpk.py workload create \
     --project=${PROJECT} \
     --zone=${ZONE} \
     --device-type=v6e-256 \
-    --command="git clone https://github.com/AI-Hypercomputer/accelerator-microbenchmarks.git && cd accelerator-microbenchmarks && git checkout trillium-collectives && pip install -r requirements.txt && echo '4096 41943040 314572800' > /proc/sys/net/ipv4/tcp_rmem && export LIBTPU_INIT_ARGS='--megascale_grpc_premap_memory_bytes=17179869184 --xla_tpu_enable_sunk_dcn_allreduce_done_with_host_reduction=true' && gsutil cp gs://<your-gcs-bucket>/your_config.yaml configs/ && python src/run_benchmark.py --config=configs/your_config.yaml" \
+    --command="git clone https://github.com/AI-Hypercomputer/accelerator-microbenchmarks.git && cd accelerator-microbenchmarks && git checkout trillium-collectives && pip install -r requirements.txt && echo '4096 41943040 314572800' > /proc/sys/net/ipv4/tcp_rmem && export LIBTPU_INIT_ARGS='--megascale_grpc_premap_memory_bytes=17179869184 --xla_tpu_enable_sunk_dcn_allreduce_done_with_host_reduction=true' && gcloud storage cp gs://<your-gcs-bucket>/your_config.yaml configs/ && python src/run_benchmark.py --config=configs/your_config.yaml" \
     --num-slices=1 \
     --docker-image=us-docker.pkg.dev/cloud-tpu-images/jax-stable-stack/tpu:jax0.5.2-rev1 \
     --workload=${WORKLOAD_NAME}

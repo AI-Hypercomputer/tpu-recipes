@@ -1,5 +1,3 @@
-
-
 # Instructions for training Mixtral 8x7B on Trillium TPU on multipod using XPK
 
 ## Environment Steup
@@ -87,7 +85,7 @@ You can use the profile
 # this is the place we place the profile processing script
 export PROFILE_SCRIPT_PATH=../../../../utils/
 # download the profile from gcp bucket to local
-gsutil cp -r $PROFILE_LOG_DIR ./
+gcloud storage cp --recursive $PROFILE_LOG_DIR ./
 # locate the xplane.pb file and process
 PYTHONPATH==$PROFILE_SCRIPT_PATH:$PYTHONPATH python $PROFILE_SCRIPT_PATH/profile_convert.py xplane.pb
 ```
@@ -110,4 +108,3 @@ Plane ID: 2, Name: /device:TPU:0
 Got 10 iterations
 1.8454
 ```
-

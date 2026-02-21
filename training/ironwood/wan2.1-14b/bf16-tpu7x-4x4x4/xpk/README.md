@@ -243,7 +243,7 @@ huggingface-cli download RaphaelLiu/PusaV1_training --repo-type dataset --local-
 python src/maxdiffusion/data_preprocessing/wan_pusav1_to_tfrecords.py src/maxdiffusion/configs/base_wan_14b.yml train_data_dir=${HF_DATASET_DIR} tfrecords_dir=${TFRECORDS_DATASET_DIR} no_records_per_shard=10 skip_jax_distributed_system=True
 
 # Upload to gcs
-gsutil -m cp -r ${TFRECORDS_DATASET_DIR} ${DATASET_DIR}
+gcloud storage cp --recursive ${TFRECORDS_DATASET_DIR} ${DATASET_DIR}
 ```
 
 ## Run the recipe
