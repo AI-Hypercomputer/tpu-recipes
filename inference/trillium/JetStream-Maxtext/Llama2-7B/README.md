@@ -47,7 +47,7 @@ gcloud storage cp --recursive llama/llama-2-7b/* ${CHKPT_BUCKET}
 
 # Checkpoint conversion
 cd maxtext
-bash ../JetStream/jetstream/tools/maxtext/model_ckpt_conversion.sh llama2 7b ${CHKPT_BUCKET} ${MAXTEXT_BUCKET_SCANNED} ${MAXTEXT_BUCKET_UNSCANNED}
+bash ../JetStream/jetstream/tools/maxtext/model_ckpt_conversion.sh llama2 7b ${CHKPT_BUCKET} ${MAXTEXT_BUCKET_SCANNED} ${MAXTEXT_BUCKET_UNSCANNED} False
 
 # The path to the unscanned checkpoint should be set by the script, but set it explicitly if it hasn't
 # For example export UNSCANNED_CKPT_PATH=gs://${MAXTEXT_BUCKET_UNSCANNED}/llama2-7b_unscanned_chkpt_2024-08-23-23-17/checkpoints/0/items
@@ -71,7 +71,7 @@ export WEIGHT_DTYPE=bfloat16
 export PER_DEVICE_BATCH_SIZE=11
 
 cd ~/maxtext
-python MaxText/maxengine_server.py \
+python -m MaxText.maxengine_server \
   MaxText/configs/base.yml \
   tokenizer_path=${TOKENIZER_PATH} \
   load_parameters_path=${LOAD_PARAMETERS_PATH} \
@@ -89,6 +89,7 @@ python MaxText/maxengine_server.py \
 In terminal tab 2, run the benchmark:
 ```bash
 source venv-maxtext/bin/activate
+git lfs pull # To pull down the test dataset
 
 python JetStream/benchmarks/benchmark_serving.py   \
 --tokenizer ~/maxtext/assets/tokenizer.llama2  \
@@ -101,7 +102,7 @@ python JetStream/benchmarks/benchmark_serving.py   \
 --dataset openorca
 ```
 
-After the benchmark finishes, you should see something like 
+After the benchmark finishes, you should see something like
 ```bash
 Successful requests: 995
 Benchmark duration: 305.366344 s
