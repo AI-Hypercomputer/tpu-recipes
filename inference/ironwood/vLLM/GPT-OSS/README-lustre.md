@@ -155,7 +155,7 @@ hf download openai/gpt-oss-120b
 
 ## Deploy vLLM Workload on GKE
 
-The recipe utilizes 200 nodes, totaling 800 TPUs.
+The recipe utilizes 50 nodes, totaling 200 TPUs.
 
 1.  Configure kubectl to communicate with your cluster
 
@@ -245,7 +245,7 @@ The recipe utilizes 200 nodes, totaling 800 TPUs.
     metadata:
       name: vllm-tpu
     spec:
-      replicas: 200
+      replicas: 50  # The recipe utilizes 50 nodes, totaling 200 TPUs. Please adjust these values if you intend to run the workload at a different scale.
       selector:
         matchLabels:
           app: vllm-tpu
