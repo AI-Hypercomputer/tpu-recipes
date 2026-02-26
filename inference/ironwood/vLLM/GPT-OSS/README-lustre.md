@@ -147,7 +147,7 @@ or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume).
 
 1. Access into the mount point and create the model folder. This folder will
-serve as the LUSTRE_MODEL_FOLDER_PATH in the subsequent steps.
+serve as the `LUSTRE_MODEL_FOLDER_PATH` in the subsequent steps.
 
 2. Under the model folder,
 [download](https://huggingface.co/docs/hub/en/models-downloading)
