@@ -178,8 +178,8 @@ run the workload at a different scale
     | Variable              | Description                                                                                             | Example                                                 |
     | --------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
     | `LUSTRE_INSTANCE_NAME` | The name of your Lustre instance. | `my-lustre` |
-    | `LUSTRE_MODEL_FOLDER_PATH` | The path to the model folder on the Lustre instance. This path is relative to the Lustre instance root directory "/" (Lustre mount path `/model-vol-mount/` of `vllm-tpu` container). | `my-model-folder` |
-    | `LUSTRE_XLA_CACHE_PATH` | The path to the XLA compilation cache folder on the Lustre instance. This path is relative to the Lustre instance root directory "/" (Lustre mount path `/model-vol-mount/` of `vllm-tpu` container). Specify the folder where you want to store the XLA compilation cache during the first run; subsequent server startups will then read the cache from that location. | `my-xla-cache-folder` |
+    | `LUSTRE_MODEL_FOLDER_PATH` | The path to the model folder on the Lustre instance. This path is relative to the Lustre root directory / (which corresponds to the mount path /model-vol-mount/ within the vllm-tpu container). | `my-model-folder` |
+    | `LUSTRE_XLA_CACHE_PATH` | The path to the XLA compilation cache folder on the Lustre instance. This path is relative to the Lustre root directory / (which corresponds to the mount path /model-vol-mount/ within the vllm-tpu container). Specify the folder where you want to store the XLA compilation cache during the first run; subsequent server startups will then read the cache from that location. | `my-xla-cache-folder` |
     | `LUSTRE_CAPACITY` | The capacity of your Lustre instance. | `9000Gi` |
     | `LUSTRE_PROJECT_ID` | The project where your Lustre instance is located. | `my-project` |
     | `LUSTRE_LOCATION` | The zonal location of your Lustre instance. | `us-central1-a` |
