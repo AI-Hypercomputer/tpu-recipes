@@ -100,7 +100,10 @@ following steps to enable the required features.
       --enable-legacy-lustre-port
     ```
 
-    Note:
+    Note: A node upgrade may be required for existing clusters.
+    Please see
+    [link](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/lustre-csi-driver-existing-instance#node-upgrade-required)
+    for further details.
 
 ### Create nodepool
 
@@ -128,8 +131,8 @@ Create a new Lustre instance following [instructions](https://docs.cloud.google.
 ### Grant Storage Permission to Kubernetes Service Account
 
 For a cluster with
-[Workload Identity Federation](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) enabled
-, please follow
+[Workload Identity Federation](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity)
+enabled, please follow
 [these instructions](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity#kubernetes-resources-iam-policies)
 to grant `roles/lustre.admin` access to Kubernetes service
 account.
@@ -143,9 +146,10 @@ To download the model from HuggingFace, please follow the steps below:
 or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume).
 
-1. Access into the mount point and create the model folder.
+1. Access into the mount point and create the model folder. This folder will
+serve as the LUSTRE_MODEL_FOLDER_PATH in the subsequent steps.
 
-2. Under the mount point,
+2. Under the model folder,
 [download](https://huggingface.co/docs/hub/en/models-downloading)
 the model using the hf command:
 
@@ -155,7 +159,10 @@ hf download openai/gpt-oss-120b
 
 ## Deploy vLLM Workload on GKE
 
-The recipe utilizes 50 nodes, totaling 200 TPUs.
+This recipe utilizes 50 nodes, totaling 200 TPUs. Please adjust the
+`replicas` field in the GKE Deployment configuration below if you intend to
+run the workload at a different scale
+(Min: single node; Max: number of 2x2x1 nodepools in your cluster).
 
 1.  Configure kubectl to communicate with your cluster
 
@@ -171,8 +178,8 @@ The recipe utilizes 50 nodes, totaling 200 TPUs.
     | Variable              | Description                                                                                             | Example                                                 |
     | --------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
     | `LUSTRE_INSTANCE_NAME` | The name of your Lustre instance. | `my-lustre` |
-    | `LUSTRE_MODEL_FOLDER_PATH` | The path to the model folder on the Lustre instance. | `my-model-folder` |
-    | `LUSTRE_XLA_CACHE_PATH` | The path to the XLA compilation cache folder on the Lustre instance. Specify the folder where you want to store the XLA compilation cache during the first run; subsequent server startups will then read the cache from that location. | `my-model-folder` |
+    | `LUSTRE_MODEL_FOLDER_PATH` | The path to the model folder on the Lustre instance. This path is relative to the Lustre instance root directory "/" (Lustre mount path `/model-vol-mount/` of `vllm-tpu` container). | `my-model-folder` |
+    | `LUSTRE_XLA_CACHE_PATH` | The path to the XLA compilation cache folder on the Lustre instance. This path is relative to the Lustre instance root directory "/" (Lustre mount path `/model-vol-mount/` of `vllm-tpu` container). Specify the folder where you want to store the XLA compilation cache during the first run; subsequent server startups will then read the cache from that location. | `my-xla-cache-folder` |
     | `LUSTRE_CAPACITY` | The capacity of your Lustre instance. | `9000Gi` |
     | `LUSTRE_PROJECT_ID` | The project where your Lustre instance is located. | `my-project` |
     | `LUSTRE_LOCATION` | The zonal location of your Lustre instance. | `us-central1-a` |
@@ -245,7 +252,7 @@ The recipe utilizes 50 nodes, totaling 200 TPUs.
     metadata:
       name: vllm-tpu
     spec:
-      replicas: 50  # The recipe utilizes 50 nodes, totaling 200 TPUs. Please adjust these values if you intend to run the workload at a different scale.
+      replicas: 50  # The recipe utilizes 50 nodes, totaling 200 TPUs. Please adjust this value if you intend to run the workload at a different scale.
       selector:
         matchLabels:
           app: vllm-tpu
@@ -283,7 +290,7 @@ The recipe utilizes 50 nodes, totaling 200 TPUs.
             - name: MODEL_IMPL_TYPE
               value: vllm
             - name: VLLM_XLA_CACHE_PATH
-              value: {LUSTRE_XLA_CACHE_PATH}  # Please replace this with your actual Lustre XLA compilation cache path.
+              value: /model-vol-mount/{LUSTRE_XLA_CACHE_PATH}  # Please replace this with your actual Lustre XLA compilation cache path.
             ports:
             - containerPort: 8000
             resources:
