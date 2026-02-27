@@ -52,8 +52,7 @@ documentation.
     --workload-pool=$PROJECT_ID.svc.id.goog \
     --release-channel=rapid \
     --num-nodes=1 \
-    --addons LustreCsiDriver,HttpLoadBalancing \
-    --enable-legacy-lustre-port
+    --addons LustreCsiDriver,HttpLoadBalancing
   ```
 
 ### Updating existing cluster
@@ -91,7 +90,20 @@ following steps to enable the required features.
     ```
 
 2.  **Enable the Managed Lustre CSI Driver:** Enable the Managed Lustre
-    CSI driver to access Lustre instance:
+    CSI driver to access Lustre instance.
+
+    For new GKE clusters that run version `1.33.2-gke.4780000` or later:
+
+    ```bash
+    gcloud container clusters update ${CLUSTER_NAME} \
+      --location ${REGION} \
+      --project ${PROJECT_ID} \
+      --update-addons=LustreCsiDriver=ENABLED
+    ```
+
+    For GKE clusters run a version earlier than `1.33.2-gke.4780000` or an
+    existing Managed Lustre instance that was created with the
+    `gke-support-enabled` flag:
 
     ```bash
     gcloud container clusters update ${CLUSTER_NAME} \
