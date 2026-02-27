@@ -35,7 +35,7 @@ the necessary networking and identity features.
 
 ### Create new cluster
 
-Note: If a cluster already exists follows the steps in next section
+Note: If a cluster already exists follow the steps in next section
 
 The command below creates a cluster with the basic features required for this
 recipe. For a more general guide on cluster creation please follow the GKE
@@ -241,7 +241,7 @@ run the workload at a different scale
         name: vllm-pvc
       csi:
         driver: lustre.csi.storage.gke.io
-        volumeHandle: {LUSTRE_PROJECT_ID}/{LUSTRE_LOCATION}/{LUSTRE_INSTANCE_NAME}. # Please replace this with your actual Lustre instance name, location and project ID.
+        volumeHandle: {LUSTRE_PROJECT_ID}/{LUSTRE_LOCATION}/{LUSTRE_INSTANCE_NAME}  # Please replace this with your actual Lustre instance name, location and project ID.
         volumeAttributes:
           ip: {LUSTRE_IP_ADDRESS}  # Please replace this with your actual Lustre instance IP address.
           filesystem: {LUSTRE_FILE_SYSTEM}   # Please replace this with your actual Lustre instance file system.
