@@ -60,24 +60,6 @@ documentation.
 Check if the following features are enabled in the cluster, if not use the
 following steps to enable the required features.
 
-1. **Enable Workload Identity:** The cluster and the nodepool needs to have
-    workload identity enabled.
-
-    To enable in cluster:
-    ```bash
-    gcloud container clusters update ${CLUSTER_NAME} \
-      --location=${REGION} \
-      --workload-pool=PROJECT_ID.svc.id.goog
-    ```
-
-    To enable in existing nodepool.
-    ```bash
-    gcloud container node-pools update ${NODEPOOL_NAME} \
-    --cluster=${CLUSTER_NAME} \
-    --location=${REGION} \
-    --workload-metadata=GKE_METADATA
-    ```
-
 1.  **Enable HTTP Load Balancing:** The cluster must have the
     `HttpLoadBalancing` add-on enabled. This is typically enabled by default,
     but you can confirm or add it:
@@ -139,15 +121,6 @@ create a node pool with a single TPU v7 node in 2x2x1 configuration.
 ### Create Lustre Instance
 
 Create a new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance).
-
-### Grant Storage Permission to Kubernetes Service Account
-
-For a cluster with
-[Workload Identity Federation](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity)
-enabled, please follow
-[these instructions](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity#kubernetes-resources-iam-policies)
-to grant `roles/lustre.admin` access to Kubernetes service
-account.
 
 ### Upload the Model Checkpoints
 
