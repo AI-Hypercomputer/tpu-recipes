@@ -15,175 +15,327 @@ gcloud storage buckets create gs://${DATASET_BUCKET} --location=${REGION}  --def
 gcloud storage buckets create gs://${CHECKPOINT_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
 ```
 Replace the following values:  
-- `<DATASET_BUCKET>`:the name of your Cloud Storage bucket with training dataset. Do not include the gs:// prefix  
+- `<DATASET_BUCKET>`: the name of your Cloud Storage bucket with training dataset. Do not include the gs:// prefix  
 - `<CHECKPOINT_BUCKET>`: the name of your Cloud Storage bucket where checkpoints will be written. Do not include the gs:// prefix
 - `<REGION>`: the region where your GKE cluster is located ([available locations](https://cloud.google.com/storage/docs/locations#location-r))
 
-2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket.
+2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
+Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
 
-## XPK setup
-1. Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8/xpk/README.md) to create your GKE cluster with XPK.
-2. GCSFuse lets you mount and access Cloud Storage buckets as local file systems, so applications can read and write objects in your bucket using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#storage) for both the dataset and checkpoint buckets in order to mount them to the MaxText workload using GCSFuse. For the dataset bucket and checkpoint bucket use separate manifest files `checkpoint_pvc.yaml` and `dataset_pvc.yaml` from this repo.
-Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and xpk storage is a one time setup.
-```
-export RECIPE_REPO="path-to-this-recipe-repo" # Update
+## Install XPK and dependencies
 
-cd ~/xpk
+### XPK and Dependency Installation
 
-python3 xpk.py storage attach dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mountpoint=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --automount=false --manifest=$RECIPE_REPO/tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8-gcs/xpk/dataset_pvc.yaml
+#### Virtual Python Environment
 
-python3 xpk.py storage attach checkpoint-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mountpoint=/tmp/ckpt --readonly=false --bucket=$CHECKPOINT_BUCKET --size=64 --automount=false --manifest=$RECIPE_REPO/tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8-gcs/xpk/checkpoint_pvc.yaml
-```
+Run the following to create a virtual Python environment:
 
+```bash
+# Set up uv
+sudo apt update
+curl -LsSf https://astral.sh/uv/install.sh -o install-uv.sh
+chmod +x install-uv.sh
+./install-uv.sh
+rm install-uv.sh
+source ${HOME}/.local/bin/env
 
-## Prep for MaxText
-
-### Install MaxText and Build Docker Image
-Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8/MAXTEXT_README.md) to install maxtext and build the docker image.
-
-In step 2, use the jax-stable-stack image containing JAX 0.5.2:
-```
-BASE_IMAGE=us-docker.pkg.dev/cloud-tpu-images/jax-stable-stack/tpu:jax0.5.2-rev1
-bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${BASE_IMAGE}
+# Set up and Activate Python 3.11 virtual environment
+uv venv --seed ${HOME}/.local/bin/venv --python 3.11 --clear
+source ${HOME}/.local/bin/venv/bin/activate
+pip install --upgrade pip
 ```
 
-## Run DeepSeek3-671B Workload on GKE
+#### XPK
 
-### Configuring and Starting workload
+Make sure you have the virtual environment activated when running XPK.
 
-From the MaxText root directory, start your DeepSeek3-671B workload.
+Install XPK and necessary tools:
 
-Edit the Recipe (run_recipe.sh) and populate the exported variables at the top of the file to match your environment.
+```bash
+# Install gcloud, if not already installed, https://cloud.google.com/sdk/docs/install
+# Install kubectl, if not already installed, https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_kubectl
 
+# Ensure to log in to your gcloud
+
+# Install latest xpk
+pip install xpk==0.16.1
+
+# Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.1/tools/install-xpk.sh -o install-xpk.sh
+chmod +x install-xpk.sh
+sudo ./install-xpk.sh
+rm install-xpk.sh
+
+# Follow https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin to install gke-gcloud-auth-plugin
 ```
-# In run_recipe.sh, update these lines:
-export PROJECT_ID="your-project-id"
-export CLUSTER_NAME="your-cluster-name"
-export ZONE="your-zone"
-export BASE_OUTPUT_DIR="gs://${CHECKPOINT_BUCKET}"
-export DATASET_BUCKET="${DATASET_BUCKET}" # e.g. "my-dataset-bucket"
-export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset" # Ensure this matches where XPK mounts the bucket
+
+#### Docker
+
+Install Docker using instructions provided by your administrator. Once
+installed, run the following commands:
+
+```bash
+## Configure docker and test installation
+gcloud auth configure-docker
+sudo usermod -aG docker $USER ## relaunch the terminal and make sure you have the virtual environment activated after running this command
+docker run hello-world # Test docker
 ```
 
-Run the Script:
+## Orchestration and deployment tools
+
+For this recipe, the following setup is used:
+
+-   **Orchestration** -
+    [Google Kubernetes Engine (GKE)](https://cloud.google.com/kubernetes-engine)
+-   **Pretraining job configuration and deployment** - XPK is used to configure
+    and deploy the
+    [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
+    resource, which manages the execution of the deepseek3-671b workload.
+
+## Test environment
+
+This recipe is optimized for and tested with tpu7x-4x8x8.
+
+-   **GKE cluster** To create your GKE cluster, use the XPK instructions.
+    [XPK instructions](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#cluster-create).
+    A sample command to create an XPK cluster is provided below.
+
+### Environment Variables for Cluster Creation
+
+The environment variables required for cluster creation and workload execution
+are defined at the beginning of the `run_recipe.sh` script. **Before running the
+`xpk workload create` command**, please open `run_recipe.sh` and modify the
+`export` statements to set these variables to match your environment. It is
+crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
+across all commands and configurations.
+
+-   `PROJECT_ID`: Your GCP project name.
+-   `CLUSTER_NAME`: The target cluster name.
+-   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
+-   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
+-   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
+    `"gs://<your_gcs_bucket>"`).
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
+    `run_recipe.sh` to
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-deepseek-v3-runner` by
+    default, matching the image built in the
+    [Docker container image](#docker-container-image) section.
+-   `WORKLOAD_NAME`: A unique name for your workload. This is set in
+    `run_recipe.sh` using the following command:
+    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"`
+-   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
+    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
+-   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
+    within the same project. For a shared project, use
+    `"projects/<project_number>/reservations/<reservation_name>"`.
+
+If you don't have a GCS bucket, create one with this command:
+
+```bash
+# Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
+gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
 ```
+
+### Sample XPK Cluster Creation Command
+
+```bash
+xpk cluster create \
+  --cluster=${CLUSTER_NAME} \
+  --project=${PROJECT_ID} \
+  --zone=${ZONE} \
+  --tpu-type=${ACCELERATOR_TYPE} \
+  --num-slices=1 \
+  --reservation=${RESERVATION_NAME}
+```
+
+## Docker container image
+
+To build your own image, follow the steps linked in this section. If you don't
+have Docker installed on your workstation, see the section below for installing
+XPK and its dependencies. Docker installation is part of this process.
+
+### Steps for building workload image
+
+The following software versions are used:
+
+-   Libtpu version: 0.0.32.dev20251215+nightly
+-   Jax version: 0.8.2.dev20251215
+-   Maxtext version: maxtext-tutorial-v1.5.0
+-   Python: 3.11
+-   XPK: 0.16.1
+
+Docker Image Building Command:
+
+```bash
+export CONTAINER_REGISTRY="" # Initialize with your registry
+export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
+export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
+
+# Set up and Activate Python 3.12 virtual environment for Docker build
+uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
+source ${HOME}/.local/bin/venv-docker/bin/activate
+pip install --upgrade pip
+
+# Make sure you're running on a Virtual Environment with python 3.12
+if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12"; false;} fi
+
+# Clone MaxText Repository and Checkout Recipe Branch
+git clone https://github.com/AI-Hypercomputer/maxtext.git
+cd maxtext
+git checkout maxtext-tutorial-v1.5.0
+
+# Build and upload the docker image
+bash dependencies/scripts/docker_build_dependency_image.sh \
+  MODE=nightly \
+  JAX_VERSION=0.8.2.dev20251215 \
+  LIBTPU_VERSION=0.0.32.dev20251215+nightly
+bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+
+# Deactivate the virtual environment
+deactivate
+```
+
+## Training dataset
+
+This recipe uses a mock pretraining dataset provided by the MaxText framework.
+
+## Run the recipe
+
+### Configure environment settings
+
+Before running any commands in this section, ensure you have set the environment
+variables as described in
+[Environment Variables for Cluster Creation](#environment-variables-for-cluster-creation).
+
+### Connect to an existing cluster (Optional)
+
+If you want to connect to your GKE cluster to see its current state before
+running the benchmark, you can use the following gcloud command. (Note that XPK
+does this for you already):
+
+```bash
+gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+```
+
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8/xpk
+```
+
+### Run deepseek3-671b Pretraining Workload
+
+The `run_recipe.sh` script contains all the necessary environment variables and
+configurations to launch the deepseek3-671b pretraining workload.
+
+Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
+
+To configure and run the benchmark:
+
+```bash
 chmod +x run_recipe.sh
+nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
-### Workload Details
+You can customize the run by modifying `run_recipe.sh`:
 
-For reference, here are the deepseek3-671b workload details configured in the recipe:
+-   **Environment Variables:** Variables like `PROJECT_ID`, `CLUSTER_NAME`,
+    `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, and `BASE_OUTPUT_DIR` are defined
+    at the beginning of the script. Adjust these to match your environment.
+-   **XLA Flags:** The `XLA_FLAGS` variable contains a set of XLA configurations
+    optimized for this workload. These can be tuned for performance or
+    debugging.
+-   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
+    arguments passed to the `python3 -m src.MaxText.train` command. This
+    includes model-specific settings like `per_device_batch_size`,
+    `max_target_length`, and others. You can modify these to experiment with
+    different model configurations.
+-   **Virtual Environment:** The script activates the virtual environment
+    created during the
+    [Install XPK and dependencies](#install-xpk-and-dependencies) steps. If you
+    used a different virtual environment, modify the `source` command at the top
+    of `run_recipe.sh`.
 
+Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
+are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
+
+## Monitor the job
+
+To monitor your job's progress, you can use kubectl to check the Jobset status
+and stream logs:
+
+```bash
+kubectl get jobset -n default ${WORKLOAD_NAME}
+
+# List pods to find the specific name (e.g., deepseek3-0-0-xxxx)
+kubectl get pods | grep ${WORKLOAD_NAME}
 ```
-  MaxTextModel(
-        model_name="deepseek3-671b",
-        tuning_params={
-            "per_device_batch_size": 8.0,
-            "max_target_length": 4096,
-            "dcn_pipeline_parallelism": 1,
-            "dcn_data_parallelism": -1,
-            "ici_pipeline_parallelism": 1,
-            "ici_fsdp_transpose_parallelism": 2,
-            "ici_fsdp_parallelism": -1,
-            "allow_split_physical_axes": True,
-            "use_iota_embed": True,
-            "remat_policy": "custom",
-            "decoder_layer_input": "offload",
-            "opt_type": "adamw",
-            "mu_dtype": "bfloat16",
-            "grad_dtype": "bfloat16",
-            "use_random_routing": True,
-            "megablox": True,
-            "sparse_matmul": True,
-            "use_custom_sort_vjp": True,
-            "shard_exp_on_fsdp": False,
-            "use_2d_fsdp_sharding": True,
-            "sa_use_fused_bwd_kernel": True,
-            "sa_block_q": 2048,
-            "sa_block_kv": 2048,
-            "sa_block_q_dkv": 2048,
-            "sa_block_kv_dkv": 2048,
-            "sa_block_kv_dkv_compute": 2048,
-            "sa_block_kv_dq": 2048,
-            "sa_block_q_dq": 2048,
-            "attention": "flash",
-            "use_tokamax_splash": True,
-            "use_max_logit_estimate": -1,
-            "cost_estimate_flops_fwd": 5000000000000,
-            "cost_estimate_flops_bwd": 5000000000000,
-            "float32_weight_sum": False,
-            "use_tokamax_gmm": True,
-            "tokenizer_path": "deepseek-ai/DeepSeek-V3-Base",
-            "tokenizer_type": "huggingface",
-            "enable_checkpointing": True,
-            "checkpoint_storage_concurrent_gb": 400,
-            "async_checkpointing": True,
-            "enableSingleReplicaCkptRestoring": True,
-            "checkpointStorageTargetDataFileSizeBytes": 209715200,
-            "dataset_type": "grain",
-            "grain_file_type": "arrayrecord",
-            "grain_train_files": "${DATASET_BUCKET_MOUNTED_PATH}",
-            "grain_worker_count": 2,
-            "steps": 30,
-            "checkpoint_period": 25,
-            "base_output_directory": "${BASE_OUTPUT_DIR}",
-            "run_name": "${WORKLOAD_NAME}",
-        },
-        xla_flags=(
-             "--xla_tpu_dvfs_p_state=3 "
-             "--xla_tpu_scoped_vmem_limit_kib=65536 "
-             "--xla_tpu_bf16_emission_mode=NATIVE_EMISSION "
-             "--xla_tpu_enable_sparse_core_reduce_scatter_v2=true "
-             "--xla_tpu_enable_sparse_core_collective_offload_all_gather=true "
-             "--xla_tpu_enable_sparse_core_collective_offload_2d_all_gather=true "
-             "--xla_tpu_enable_all_gather_offload_tracing=true "
-             "--xla_tpu_use_tc_device_shape_on_sc=True "
-             "--xla_sc_disable_megacore_partitioning=True "
-             "--xla_tpu_enable_async_collective_fusion_fuse_all_gather=false "
-             "--xla_enable_async_all_gather=true "
-             "--xla_tpu_prefer_async_allgather_to_allreduce=true "
-             "--xla_tpu_enable_sparse_core_collective_offload_all_reduce=true "
-             "--xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true "
-             "--xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true "
-             "--xla_tpu_use_single_sparse_core_for_all_gather_offload=true "
-             "--xla_tpu_enable_concurrent_sparse_core_offloading=true "
-             "--xla_tpu_aggressive_opt_barrier_removal=true "
-             "--xla_tpu_enable_offloading_gather_to_sparsecore=true "
-             "--xla_tpu_sparse_core_all_gather_latency_multiplier=1 "
-             "--xla_tpu_sparse_core_reduce_scatter_latency_multiplier=3 "
-             "--xla_tpu_enable_sparse_core_collective_aggregator=true "
-             "--xla_tpu_enable_latency_hiding_layer_scheduler=true "
-             "--xla_tpu_scheduler_percent_shared_memory_limit=150 "
-             "--xla_tpu_enable_layer_scheduler_for_dependent_collectives=true "
-             "--xla_tpu_pcie_bandwidth_multiplier=0.03 "
-             "--xla_tpu_enable_multi_compute_overlap_in_layer_scheduler=false "
-             "--xla_tpu_enable_sparse_core_offload_queuing_in_lhs=true "
-             "--xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true "
-             "--xla_tpu_enable_3d_reduce_scatter_decomposer=false "
-        ),
-  )
+Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
+
+```bash
+kubectl logs -f <POD_NAME>
+```
+You can also monitor your cluster and TPU usage through the Google Cloud
+Console.
+
+### Follow Workload and View Metrics
+
+After running `xpk workload create`, you will get a link to the Google Cloud
+Console to view your workload logs. Example: `[XPK] Follow your workload here:
+https://console.cloud.google.com/kubernetes/service/${ZONE}/${PROJECT_ID}/default/${WORKLOAD_NAME}/details?project=${PROJECT_ID}`
+Alternatively, list workloads: (`xpk workload list`)
+
+```bash
+xpk workload list --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-## Clean-up
+For more in-depth debugging, use xpk inspector: (`xpk inspector`)
 
-To delete the workload and free up resources:
-
+```bash
+xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload ${WORKLOAD_NAME}]
 ```
-# Delete the specific workload
+
+### Delete resources
+
+#### Delete a specific workload
+
+```bash
 xpk workload delete --workload ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+# Or filter and delete:
+xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} --filter-by-job=${USER}
+```
 
-# Or delete the entire cluster
+#### Delete the entire XPK cluster
+
+```bash
 xpk cluster delete --cluster ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 ```
 
-You can run the following commands to detach the XPK storage resources (this removes the PersistentVolumes and PersistentVolumeClaims created by the `xpk storage attach` commands from your GKE cluster).
-```
-# Detach dataset storage
-python3 xpk.py storage detach dataset-bucket \
-  --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE
+## Check results
 
-# Detach checkpoint storage
-python3 xpk.py storage detach checkpoint-bucket \
-  --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE
-```
+After the job completes, you can check the results by:
+
+-   Accessing output logs from your job.
+-   Checking any data stored in the Google Cloud Storage bucket specified by the
+    `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
+-   Reviewing metrics in Cloud Monitoring, if configured.
+
+## Next steps: deeper exploration and customization
+
+This recipe is designed to provide a simple, reproducible "0-to-1" experience
+for running a MaxText pre-training workload. Its primary purpose is to help you
+verify your environment and achieve a first success with TPUs quickly and
+reliably.
+
+For deeper exploration, including customizing model configurations, tuning
+performance with different XLA flags, and running custom experiments, we
+recommend using the benchmark_runner.py script directly from the MaxText
+repository. This script offers the full range of MaxText's flexibility and is
+the ideal tool for power users and researchers who want to move beyond the
+initial benchmark and tailor the workload to their specific needs. To learn
+more, see the
+[MaxText Benchmark Runner Guide](https://github.com/AI-Hypercomputer/maxtext/blob/main/benchmarks/Getting_Started_Benchmarking.md)
+on using benchmark_runner.py for advanced benchmarking.
