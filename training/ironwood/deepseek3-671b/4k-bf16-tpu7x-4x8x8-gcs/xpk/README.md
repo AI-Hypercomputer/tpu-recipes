@@ -1,5 +1,47 @@
 # Instructions for training DeepSeek3-671B on TPU Ironwood (tpu7x-4x8x8) with Google Cloud Storage (GCS)
 
+This recipe outlines the steps for running a deepseek3-671b
+[MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
+[Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
+[XPK](https://github.com/AI-Hypercomputer/xpk) with Google Cloud Storage (GCS) configured as the primary storage system for the dataset and checkpoints.
+
+## Workload Details
+
+This workload is configured with the following details:
+
+-   Sequence Length: 4096
+-   Precision: bf16
+-   Chips: 256 (4x8x8 topology)
+
+## Prerequisites
+
+To run this recipe, you need the following:
+
+-   **GCP Project Setup:** Ensure you have a GCP project with billing enabled
+    and are allowlisted for Ironwood access.
+-   **User Project Permissions:** The account used requires the following IAM
+    Roles:
+    -   Artifact Registry Writer
+    -   Compute Admin
+    -   Kubernetes Engine Admin
+    -   Logging Admin
+    -   Monitoring Admin
+    -   Service Account User
+    -   Storage Admin
+    -   Vertex AI Administrator
+    -   Service Usage Consumer
+    -   TPU Viewer
+-   **Docker:** Docker must be installed on your workstation. Follow the steps
+    in the [Install XPK and dependencies](#install-xpk-and-dependencies) section
+    to install Docker.
+-   **Python 3.11 Virtual Environment:** A Python
+    3.11 virtual environment is required. Instructions
+    for setting this up are also in the
+    [Install XPK and dependencies](#install-xpk-and-dependencies) section.
+-   **XPK and Dependencies:** Follow the steps in the
+    [Install XPK and dependencies](#install-xpk-and-dependencies) section to
+    install XPK, `kubectl`, `kubectl-kueue`, and `kubectl-kjob`.
+
 ## GCS Bucket setup
 1. Create two buckets: one to hold the dataset and one to use for checkpoints. To create regional HNS buckets use the following commands:
 ```
