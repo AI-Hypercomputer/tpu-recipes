@@ -35,6 +35,11 @@ In this directory, run:
 helm install ${RUN_NAME} . --set hf_token=${HF_TOKEN}
 ```
 
+> [!IMPORTANT]
+> Before running the Helm install, make sure you update the following placeholders in `values.yaml`:
+> - `gcp_service_account`: Set this to your GCP service account that has access to the model GCS bucket.
+> - `server.model`: Set this to the GCS path of your model (e.g., `gs://my-bucket/model`) or a Hugging Face model ID.
+
 The benchmark will launch a client and server pod.
 
 On the server pod, at the end of the server startup you’ll see logs such as:
