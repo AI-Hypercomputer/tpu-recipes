@@ -531,3 +531,10 @@ vllm-benchmark.yaml`.
     kubectl delete -f vllm-benchmark.yaml
     kubectl delete -f vllm-tpu.yaml
     ```
+
+## (Alternative) Deploy using Helm
+
+A Helm chart is also available in the [helm/](helm/) directory. This provides a more structured way to deploy and customize the workload.
+
+Follow the instructions in [helm/README.md](helm/README.md) for more details.
+
