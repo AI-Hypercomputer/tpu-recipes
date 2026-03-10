@@ -64,6 +64,20 @@ Replace the following values:
 2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
 Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
 
+3. Set up the PV/PVC for the storage buckets for dataset and checkpoint.
+```
+# Set variables
+export PROJECT=cloud-tpu-multipod-dev
+export CLUSTER=bodaborg-tpu7x-nap-users
+export ZONE=us-central1-c
+
+# Dataset Bucket PV/PVC
+python3 xpk.py storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
+
+# Checkpoint Bucket PV/PVC
+python3 xpk.py storage attach my-checkpoint-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/ckpt --readonly=false --bucket=$CHECKPOINT_BUCKET --size=64 --auto-mount=false --manifest=checkpoint_pvc.yaml
+```
+
 ## Install XPK and dependencies
 
 ### XPK and Dependency Installation
