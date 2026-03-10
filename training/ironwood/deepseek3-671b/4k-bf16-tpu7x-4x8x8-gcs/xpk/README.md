@@ -274,6 +274,25 @@ configurations to launch the deepseek3-671b pretraining workload.
 
 Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
 
+### Configuring and Starting workload
+
+From the MaxText root directory, start your DeepSeek3-671B workload.
+
+The `run_recipe.sh` script contains all the necessary environment variables and
+configurations to launch the deepseek3-671b pretraining workload.
+
+Edit the Recipe (run_recipe.sh) and populate the exported variables at the top of the file to match your environment.
+
+```
+# In run_recipe.sh, update these lines:
+export PROJECT_ID="your-project-id"
+export CLUSTER_NAME="your-cluster-name"
+export ZONE="your-zone"
+export BASE_OUTPUT_DIR="gs://${CHECKPOINT_BUCKET}"
+export DATASET_BUCKET="${DATASET_BUCKET}" # e.g. "my-dataset-bucket"
+export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset" # Ensure this matches where XPK mounts the bucket
+```
+
 To configure and run the benchmark:
 
 ```bash
