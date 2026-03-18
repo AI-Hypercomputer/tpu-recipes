@@ -65,7 +65,7 @@ Replace the following values:
 Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
 
 3. GCSFuse lets you mount and access Cloud Storage buckets as local file systems, so applications can read and write objects in your bucket using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#storage) for both the dataset and checkpoint buckets in order to mount them to the MaxText workload using GCSFuse. For the dataset bucket and checkpoint bucket use separate manifest files `dataset_pvc.yaml` and `checkpoint_pvc.yaml` from this repo.
-Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and xpk storage is a one time setup.
+Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and attaching xpk storage is a one time setup.
 ```
 # Set variables
 export PROJECT=cloud-tpu-multipod-dev
@@ -118,7 +118,7 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==0.16.1
+pip install xpk==1.8.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
 curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.1/tools/install-xpk.sh -o install-xpk.sh
@@ -223,7 +223,7 @@ The following software versions are used:
 -   Jax version: 0.8.2.dev20251215
 -   Maxtext version: maxtext-tutorial-v1.5.0
 -   Python: 3.11
--   XPK: 0.16.1
+-   XPK: 1.8.0
 
 Docker Image Building Command:
 
@@ -306,9 +306,8 @@ Edit the Recipe (run_recipe.sh) and populate the exported variables at the top o
 export PROJECT_ID="your-project-id"
 export CLUSTER_NAME="your-cluster-name"
 export ZONE="your-zone"
-export BASE_OUTPUT_DIR="gs://${CHECKPOINT_BUCKET}"
-export DATASET_BUCKET="${DATASET_BUCKET}" # e.g. "my-dataset-bucket"
-export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset" # Ensure this matches where XPK mounts the bucket
+export BASE_OUTPUT_DIR="/tmp/ckpt/${USER}" # Ensure this matches where XPK mounts the checkpoint bucket
+export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset" # Ensure this matches where XPK mounts the dataset bucket
 ```
 
 To configure and run the benchmark:

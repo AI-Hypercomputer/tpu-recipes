@@ -22,7 +22,7 @@ spec:
     - machine-type:a3-highgpu-8
   csi:
     driver: gcsfuse.csi.storage.gke.io
-    volumeHandle: ${CHECKPOINT_BUCKET}
+    volumeHandle: tess-tpu-checkpointing-us-central1
     volumeAttributes:
       gcsfuseMetadataPrefetchOnMount: "true"
 ---

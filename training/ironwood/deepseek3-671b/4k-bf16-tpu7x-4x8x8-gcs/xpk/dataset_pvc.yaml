@@ -22,7 +22,7 @@ spec:
     - machine-type:a3-highgpu-8 # known machine for setting purpose
   csi:
     driver: gcsfuse.csi.storage.gke.io
-    volumeHandle: ${DATASET_BUCKET}
+    volumeHandle: tess-tpu-dataloading-us-central1
     volumeAttributes:
       #skipCSIBucketAccessCheck: "true"
       gcsfuseMetadataPrefetchOnMount: "true"

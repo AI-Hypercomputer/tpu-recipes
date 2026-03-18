@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.16.1"
+    echo "pip install xpk==1.8.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -24,14 +24,16 @@ fi
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID=""
-export CLUSTER_NAME=""
-export ZONE=""
-export BASE_OUTPUT_DIR=""
+export PROJECT_ID=${PROJECT_ID}
+export CLUSTER_NAME=${CLUSTER_NAME}
+export ZONE=${ZONE}
+export BASE_OUTPUT_DIR="/tmp/ckpt/"
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"
-export DATASET_BUCKET=""
-export DATASET_BUCKET_MOUNTED_PATH=""
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-gcs")-$(date +%Y%m%d-%H%M)"
+export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset"
+
+export MAXTEXT_ROOT="${HOME}/maxtext" # Update this to your maxtext root
+cd "$MAXTEXT_ROOT"
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -109,11 +111,11 @@ tokenizer_type=huggingface \
 enable_checkpointing=True \
 checkpoint_storage_concurrent_gb=400 \
 async_checkpointing=true \
-enableSingleReplicaCkptRestoring=true \
-checkpointStorageTargetDataFileSizeBytes=209715200 \
+enable_single_replica_ckpt_restoring=true \
+checkpoint_storage_target_data_file_size_bytes=209715200 \
 dataset_type='grain' \
 grain_file_type=arrayrecord \
-grain_train_files=${DATASET_BUCKET_MOUNTED_PATH} \
+grain_train_files=${DATASET_BUCKET_MOUNTED_PATH}/multilingual-c4/array-record/c4/multilingual/3.0.1/*.arrayrecord \
 grain_worker_count=2 \
 steps=30 \
 checkpoint_period=25 \
@@ -126,13 +128,18 @@ xpk workload create \
   --zone=$ZONE \
   --priority=very-high \
   --max-restarts=0 \
-  --device-type=tpu7x-4x8x8 \
+  --tpu-type=tpu7x-4x8x8 \
   --num-slices=1 \
-  --docker-image="${WORKLOAD_IMAGE}" \
+  --base-docker-image="${WORKLOAD_IMAGE}" \
   --enable-debug-logs \
-  --workload="${WORKLOAD_NAME}" \
-  --storage="${DATASET_BUCKET}" \
-  --command="set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
-export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
-export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS}"
+  --workload=$WORKLOAD_NAME \
+  --storage=dataset-bucket \
+  --storage=checkpoint-bucket \
+  --command="set -e && \
+    export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+    export ENABLE_PATHWAYS_PERSISTENCE=1 && \
+    export JAX_PLATFORMS=tpu,cpu && \
+    export ENABLE_PJRT_COMPATIBILITY=true && \
+    export MAXTEXT_ASSETS_ROOT=/deps/src/MaxText/assets MAXTEXT_PKG_DIR=/app/src/maxtext && \
+    cd /app && pip install --no-deps -e . && \
+    python3 -m src.maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS}"
