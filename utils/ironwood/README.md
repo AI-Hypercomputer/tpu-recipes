@@ -1,50 +1,27 @@
 # Ironwood GKE TPU v7 Utility Scripts
 
-This folder contains scripts for automating the lifecycle of GKE clusters and TPU v7 node pools. These scripts are designed for robustness, providing pre-flight checks and interactive menus for a seamless experience.
+This directory contains utility scripts for automating the lifecycle of GKE clusters and TPU v7 node pools. It provides two distinct implementation patterns for managing TPU resources:
 
-## Scripts Overview
+## Directory Structure
 
-### [clustersetup_gke_tpuv7.sh](clustersetup_gke_tpuv7.sh)
-Automates the creation and management of infrastructure and node pools. It is divided into three sections:
-- **Section 1: Infrastructure Deployment**: Sets up VPC Networking (Network, Subnet, Firewall, Router, NAT), GKE Cluster (with multi-networking and DPv2), and installs the JobSet CRD.
-- **Section 2: NodePool Creation**: Interactive creation of TPU v7 node pools using either DWS Flex Start or specific reservations. Supports various topologies and automatically creates required workload policies.
-- **Section 3: NodePool Deletion**: Interactive selection and deletion of existing TPU v7 node pools.
+| Directory | Description |
+| :--- | :--- |
+| **[standard/](standard/README.md)** | Uses a **standard node pool based approach** for managing TPU v7 resources. This includes interactive scripts for creating and deleting node pools. |
+| **[ccc/](ccc/README.md)** | Uses the **Cloud Compute Class (CCC)** / [ComputeClass](https://cloud.google.com/kubernetes-engine/docs/concepts/compute-class) based approach. This approach focuses on defining TPU topologies as reusable templates. |
 
-### [clustercleanup_gke_tpuv7.sh](clustercleanup_gke_tpuv7.sh)
-Automates the teardown of the entire environment. It deletes:
-- GKE Cluster
-- Compute Resource Policies (Workload Policies)
-- Cloud NAT & Router
-- Firewall Rules
-- Subnet & VPC Network
+## Highlights
 
----
+- **Robust Automation**: Scripts include pre-flight checks and automated VPC/Subnet/NAT setup.
+- **Support for TPU v7**: Tailored to the latest TPU v7 configurations and topologies.
+- **Interactive Experience**: Menus for selecting infrastructure deployment, resource creation, and cleanup.
+- **Workload Integration**: Documentation on how to target these resources using `nodeSelector`.
 
-## Configuration
+## Core Scripts
 
-Before running the scripts, ensure the following variables are set at the top of the scripts or exported in your environment:
-
-- `PROJECT_ID`: Your GCP Project ID.
-- `REGION` / `ZONE`: The GCP region/zone for resources (e.g., `us-central1`, `us-central1-c`).
-- `RESOURCE_NAME`: A unique prefix for naming all created resources.
-- `GKE_VERSION`: The GKE cluster version.
-- `MAINTENANCE_EXCLUSION_START` / `END`: Time window to prevent cluster upgrades during experiments.
+- `standard/clustersetup_gke_tpuv7.sh`: Main entry point for the standard approach.
+- `ccc/clustersetup_gke_ccc_tpuv7.sh`: Main entry point for the Custom Compute Class (CCC) approach.
+- `clustercleanup_gke_tpuv7.sh`: A shared cleanup script to tear down the entire infrastructure (Network, Cluster, etc.).
 
 ---
 
-## Getting Started
-
-1.  **Grant Permissions**:
-    ```bash
-    chmod +x clustersetup_gke_tpuv7.sh clustercleanup_gke_tpuv7.sh
-    ```
-2.  **Run Setup**:
-    ```bash
-    ./clustersetup_gke_tpuv7.sh
-    ```
-    Select a section from the interactive menu to begin.
-3.  **Run Cleanup**:
-    ```bash
-    ./clustercleanup_gke_tpuv7.sh
-    ```
-    Run this when you are finished to avoid unnecessary GCP costs.
+For detailed instructions, please refer to the READMEs in the respective subdirectories.

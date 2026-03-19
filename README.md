@@ -15,6 +15,8 @@ and software stack on TPUs.
 - `./microbenchmarks`: instructions for low-level TPU benchmarks such as
   matrix multiplication performance and memory bandwidth.
 
+- `./utils`: utility scripts for cluster and resource management (e.g., [Ironwood](utils/ironwood/README.md) for GKE TPU v7).
+
 ## Contributor notes
 
 Note: This is not an officially supported Google product. This project is not
