@@ -1,7 +1,7 @@
-# Run vLLM qwen3_coder_480b_a35b_instruct on tpu7x on GKE
+# Run vLLM Qwen3-Coder-480B-A35B-Instruct on tpu7x on GKE
 
 This recipe covers running a vLLM inference workload on tpu7x on
-GKE.
+GKE using the Qwen3-Coder-480B-A35B-Instruct model.
 
 ## Create the GKE Cluster
 Create your tpu7x cluster using [XPK](https://github.com/AI-Hypercomputer/xpk).
