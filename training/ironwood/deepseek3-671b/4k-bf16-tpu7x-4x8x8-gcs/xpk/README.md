@@ -12,6 +12,8 @@ This workload is configured with the following details:
 -   Sequence Length: 4096
 -   Precision: bf16
 -   Chips: 256 (4x8x8 topology)
+-   GCS buckets for dataset and checkpoints
+    -   C4 Multi-Lingual dataset (~12TB) with ArrayRecord format
 
 ## Prerequisites
 
@@ -64,7 +66,7 @@ Replace the following values:
 2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
 Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
 
-3. GCSFuse lets you mount and access Cloud Storage buckets as local file systems, so applications can read and write objects in your bucket using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#storage) for both the dataset and checkpoint buckets in order to mount them to the MaxText workload using GCSFuse. For the dataset bucket and checkpoint bucket use separate manifest files `dataset_pvc.yaml` and `checkpoint_pvc.yaml` from this repo.
+3. GCSFuse lets you mount and access Cloud Storage buckets as local file systems, so applications can read and write objects in your bucket using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#storage) for the dataset bucket in order to mount them to the MaxText workload using GCSFuse. For the dataset bucket use separate manifest file `dataset_pvc.yaml` from this repo.
 Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and attaching xpk storage is a one time setup.
 ```
 # Set variables
@@ -77,9 +79,6 @@ cd ~/xpk
 
 # Dataset Bucket PV/PVC
 python3 xpk.py storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
-
-# Checkpoint Bucket PV/PVC
-python3 xpk.py storage attach my-checkpoint-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/ckpt --readonly=false --bucket=$CHECKPOINT_BUCKET --size=64 --auto-mount=false --manifest=checkpoint_pvc.yaml
 ```
 
 ## Install XPK and dependencies
@@ -220,8 +219,8 @@ XPK and its dependencies. Docker installation is part of this process.
 The following software versions are used:
 
 -   Libtpu version: 0.0.32.dev20251215+nightly
--   Jax version: 0.8.2.dev20251215
--   Maxtext version: maxtext-tutorial-v1.5.0
+-   Jax version: 0.8.1
+-   Maxtext version: maxtext-tutorial-v1.1.0-1109-gcf051eb03
 -   Python: 3.11
 -   XPK: 1.8.0
 
@@ -232,23 +231,23 @@ export CONTAINER_REGISTRY="" # Initialize with your registry
 export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
-# Set up and Activate Python 3.12 virtual environment for Docker build
-uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
+# Set up and Activate Python 3.11 virtual environment for Docker build
+uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.11 --clear
 source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
-# Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12"; false;} fi
+# Make sure you're running on a Virtual Environment with python 3.11
+if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.11" ]]; then { echo "You have the correct Python version 3.11"; } else { >&2 echo "Error: Python version must be 3.11"; false;} fi
 
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.5.0
+git checkout maxtext-tutorial-v1.1.0-1109-gcf051eb03
 
 # Build and upload the docker image
 bash dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.8.2.dev20251215 \
+  JAX_VERSION=0.8.1 \
   LIBTPU_VERSION=0.0.32.dev20251215+nightly
 bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 

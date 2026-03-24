@@ -19,10 +19,9 @@ spec:
     - metadata-cache:stat-cache-max-size-mb:-1
     - metadata-cache:type-cache-max-size-mb:-1
     - write:enable-streaming-writes:true
-    - machine-type:a3-highgpu-8
   csi:
     driver: gcsfuse.csi.storage.gke.io
-    volumeHandle: tess-tpu-checkpointing-us-central1
+    volumeHandle: your-bucket-name # replace with your checkpoinitng bucket name
     volumeAttributes:
       gcsfuseMetadataPrefetchOnMount: "true"
 ---
