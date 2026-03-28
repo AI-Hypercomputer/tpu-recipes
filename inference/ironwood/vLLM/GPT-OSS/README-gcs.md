@@ -53,7 +53,7 @@ documentation.
     --release-channel=rapid \
     --num-nodes=1 \
     --gateway-api=standard \
-    --addons GcsFuseCsiDriver,HttpLoadBalancing
+    --addons HttpLoadBalancing
   ```
 
 ### Updating existing cluster
@@ -90,26 +90,6 @@ following steps to enable the required features.
       --update-addons=HttpLoadBalancing=ENABLED
     ```
 
-1.  **Enable Gateway API:** Enable the Gateway API on the cluster to allow GKE
-    to manage Gateway resources.
-    Note: This step is optional and needed only if inference gateway will be used.
-    More details about the inference gateway can be found at [GKE Inference Gateway](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/about-gke-inference-gateway).
-    ```bash
-    gcloud container clusters update ${CLUSTER_NAME} \
-      --region ${REGION} \
-      --project ${PROJECT_ID} \
-      --gateway-api=standard
-    ```
-
-2.  **Enable Cloud Storage FUSE CSI Driver:** Enable the Cloud Storage FUSE
-    CSI driver to accss GCS bucket with GCSFuse:
-    ```bash
-    gcloud container clusters update ${CLUSTER_NAME} \
-      --location ${REGION} \
-      --project ${PROJECT_ID} \
-      --update-addons GcsFuseCsiDriver=ENABLED
-    ```
-
 ### Create nodepool
 
 1. **Create TPU v7 (Ironwood) nodepool**. If a node pool does not already exist
@@ -142,13 +122,22 @@ to your local system.
 
 2. Access into the mount point and create the model folder.
 
-3. Under the mount point,
+3. Under the model folder,
 [download](https://huggingface.co/docs/hub/en/models-downloading)
 the model using the hf command:
 
 ```
 hf download openai/gpt-oss-120b
 ```
+
+### Grant Storage Permission to Kubernetes Service Account
+
+For a cluster with
+[Workload Identity Federation](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity) enabled
+, please follow
+[these instructions](https://cloud.google.com/kubernetes-engine/docs/concepts/workload-identity#kubernetes-resources-iam-policies)
+to grant `roles/storage.objectAdmin` access to Kubernetes service
+account.
 
 ## Deploy vLLM Workload on GKE
 
@@ -160,52 +149,11 @@ hf download openai/gpt-oss-120b
 
 2.  Save this yaml file as `vllm-tpu.yaml`.
 
-    Note: Please replace the `volumeHandle` and `MODEL_FOLDER_PATH` values
-    with your specific model bucket name and model folder path.
+    Note: Please replace the `YOUR_GCS_BUCKET`, `YOUR_MODEL_FOLDER`
+    and `YOUR_XLA_CACHE_FOLDER` values with your specific GCS bucket
+    name and folder paths.
 
     ```
-    apiVersion: v1
-    kind: PersistentVolume
-    metadata:
-      name: vllm-pv
-    spec:
-      accessModes:
-      - ReadWriteMany
-      capacity:
-        storage: 64Gi
-      persistentVolumeReclaimPolicy: Retain
-      storageClassName: gcsfuse-sc
-      claimRef:
-        namespace: default
-        name: vllm-pvc
-      mountOptions:
-        - implicit-dirs
-        - metadata-cache:negative-ttl-secs:0
-        - metadata-cache:ttl-secs:-1
-        - metadata-cache:stat-cache-max-size-mb:-1
-        - metadata-cache:type-cache-max-size-mb:-1
-        - file-system:kernel-list-cache-ttl-secs:-1
-      csi:
-        driver: gcsfuse.csi.storage.gke.io
-        volumeHandle: {YOUR_MODEL_BUCKET}  # Replace the value with your actual model bucket.
-        volumeAttributes:
-          skipCSIBucketAccessCheck: "true"
-          gcsfuseMetadataPrefetchOnMount: "true"
-    ---
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: vllm-pvc
-      namespace: default
-    spec:
-      accessModes:
-      - ReadWriteMany
-      resources:
-        requests:
-          storage: 64Gi
-      volumeName: vllm-pv
-      storageClassName: gcsfuse-sc
-    ---
     apiVersion: apps/v1
     kind: Deployment
     metadata:
@@ -219,15 +167,13 @@ hf download openai/gpt-oss-120b
         metadata:
           labels:
             app: vllm-tpu
-          annotations:
-            gke-gcsfuse/volumes: "true"
         spec:
           nodeSelector:
             cloud.google.com/gke-tpu-accelerator: tpu7x
             cloud.google.com/gke-tpu-topology: 2x2x1
           containers:
           - name: vllm-tpu
-            image: vllm/vllm-tpu:nightly-ironwood-20251217-baf570b-0cd5353  # Can be replaced with vllm/vllm-tpu:ironwood once mxfp4 quantization is added to it.
+            image: vllm/vllm-tpu:nightly-20260316-e778980-57a314d
             command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
             args:
             - --host=0.0.0.0
@@ -239,17 +185,19 @@ hf download openai/gpt-oss-120b
             - --max-num-seqs=2048
             - --no-enable-prefix-caching
             - --load-format=runai_streamer
-            - --model=/model-vol-mount/$(MODEL_FOLDER_PATH)
+            - --model=$(GCS_MODEL_FOLDER_PATH)
             - --kv-cache-dtype=fp8
             - --async-scheduling
             - --gpu-memory-utilization=0.86
             env:
-            - name: MODEL_FOLDER_PATH
-              value: {YOUR_MODEL_FOLDER}  #  Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET}/ prefix.
+            - name: GCS_MODEL_FOLDER_PATH
+              value: gs://{YOUR_GCS_BUCKET}/{YOUR_MODEL_FOLDER}  #  Please replace this with your actual GCS bucket name and model folder path.
             - name: TPU_BACKEND_TYPE
               value: jax
             - name: MODEL_IMPL_TYPE
               value: vllm
+            - name: VLLM_XLA_CACHE_PATH
+              value: gs://{YOUR_GCS_BUCKET}/{YOUR_XLA_CACHE_FOLDER} # Please replace this with your actual GCS bucket name and XLA cache folder path. Provide a name for a new folder where the XLA cache will be saved if this is your first run.
             ports:
             - containerPort: 8000
             resources:
@@ -263,17 +211,12 @@ hf download openai/gpt-oss-120b
               initialDelaySeconds: 15
               periodSeconds: 10
             volumeMounts:
-            - mountPath: /model-vol-mount
-              name: model-vol
             - mountPath: /dev/shm
               name: dshm
           volumes:
           - emptyDir:
               medium: Memory
             name: dshm
-          - name: model-vol
-            persistentVolumeClaim:
-              claimName: vllm-pvc
     ---
     apiVersion: v1
     kind: Service
@@ -299,7 +242,7 @@ hf download openai/gpt-oss-120b
     At the end of the server startup you’ll see logs such as:
 
     ```
-    $ kubectl logs deployment/vllm-tpu -f
+    $ kubectl logs -f deployment/vllm-tpu
     …
     …
     (APIServer pid=1) INFO:     Started server process [1]
@@ -315,12 +258,12 @@ hf download openai/gpt-oss-120b
 
 5.  Interact with the model using curl (from your workstation/laptop)
 
-    Note: Please replace `MODEL_FOLDER_PATH` value
-    with your specific model folder path.
+    Note: Please replace `YOUR_GCS_BUCKET` and `YOUR_MODEL_FOLDER` values
+    with your specific model path.
 
     ```bash
     curl http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
-        "model": "/model-vol-mount/{YOUR_MODEL_FOLDER}",  # Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET}/ prefix. Ensure this field matches the model flag specified in your server startup command.
+        "model": "gs://{YOUR_GCS_BUCKET}/{YOUR_MODEL_FOLDER}",  # Please replace this with your actual GCS bucket and model folder path. Ensure this field matches the GCS_MODEL_FOLDER_PATH env var in your deployment.
         "prompt": "San Francisco is a",
         "max_tokens": 7,
         "temperature": 0
@@ -331,7 +274,7 @@ hf download openai/gpt-oss-120b
 
 1.  Execute a short benchmark against the server using:
 
-    Note: Please replace the MODEL_FOLDER_PATH values
+    Note: Please replace `YOUR_GCS_BUCKET` and `YOUR_MODEL_FOLDER` values
     with your specific model folder path.
 
     ```
@@ -339,8 +282,6 @@ hf download openai/gpt-oss-120b
     kind: Pod
     metadata:
       name: vllm-bench
-      annotations:
-        gke-gcsfuse/volumes: "true"
     spec:
       terminationGracePeriodSeconds: 60
       nodeSelector:
@@ -361,17 +302,8 @@ hf download openai/gpt-oss-120b
         - --ignore-eos
         - --host=vllm-service
         - --port=8000
-        - --model=/model-vol-mount/$(MODEL_FOLDER_PATH)
-        env:
-        - name: MODEL_FOLDER_PATH
-          value: {YOUR_MODEL_FOLDER}  #  Please replace this with your actual GCS model folder path, omitting the gs://{YOUR_MODEL_BUCKET}/ prefix.
-        volumeMounts:
-        - mountPath: /model-vol-mount
-          name: model-vol
-      volumes:
-      - name: model-vol
-        persistentVolumeClaim:
-          claimName: vllm-pvc
+        - --model=gs://{YOUR_GCS_BUCKET}/{YOUR_MODEL_FOLDER} # Please replace this with your actual GCS bucket and model folder path. Ensure this field matches the GCS_MODEL_FOLDER_PATH env var in your deployment.
+        - --tokenizer=openai/gpt-oss-120b
     ```
 
 Save this file as `vllm-benchmark.yaml`, then apply it using `kubectl apply -f
