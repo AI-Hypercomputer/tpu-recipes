@@ -201,10 +201,8 @@ export PROJECT=cloud-tpu-multipod-dev
 export CLUSTER=bodaborg-tpu7x-nap-users
 export ZONE=us-central1-c
 
-cd ~/xpk
-
 # Dataset Bucket PV/PVC
-python3 xpk.py storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
+xpk storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
 ```
 
 ## Docker container image
