@@ -44,43 +44,6 @@ To run this recipe, you need the following:
     [Install XPK and dependencies](#install-xpk-and-dependencies) section to
     install XPK, `kubectl`, `kubectl-kueue`, and `kubectl-kjob`.
 
-## GCS Bucket setup
-1. Create two buckets: one to hold the dataset and one to use for checkpoints. To create regional HNS buckets use the following commands:
-```
-# Set variables
-export DATASET_BUCKET="dataloading-bucket-name"
-export CHECKPOINT_BUCKET="checkpoint-bucket-name"
-export REGION="us-central1"
-
-# Create dataset bucket
-gcloud storage buckets create gs://${DATASET_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
-
-# Create checkpoint bucket  
-gcloud storage buckets create gs://${CHECKPOINT_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
-```
-Replace the following values:  
-- `<DATASET_BUCKET>`: the name of your Cloud Storage bucket with training dataset. Do not include the gs:// prefix  
-- `<CHECKPOINT_BUCKET>`: the name of your Cloud Storage bucket where checkpoints will be written. Do not include the gs:// prefix
-- `<REGION>`: the region where your GKE cluster is located ([available locations](https://cloud.google.com/storage/docs/locations#location-r))
-
-2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
-Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
-
-3. GCSFuse lets you mount and access Cloud Storage buckets as local file systems, so applications can read and write objects in your bucket using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#storage) for the dataset bucket in order to mount them to the MaxText workload using GCSFuse. For the dataset bucket use separate manifest file `dataset_pvc.yaml` from this repo.
-Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and attaching xpk storage is a one time setup.
-```
-# Set variables
-export PROJECT=cloud-tpu-multipod-dev
-export CLUSTER=bodaborg-tpu7x-nap-users
-export ZONE=us-central1-c
-export RECIPE_REPO="path-to-this-recipe-repo" # Update
-
-cd ~/xpk
-
-# Dataset Bucket PV/PVC
-python3 xpk.py storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
-```
-
 ## Install XPK and dependencies
 
 ### XPK and Dependency Installation
@@ -208,6 +171,42 @@ xpk cluster create \
   --reservation=${RESERVATION_NAME}
 ```
 
+## GCS Bucket setup
+1. Create two buckets: one to hold the dataset and one to use for checkpoints. To create regional HNS buckets use the following commands:
+```
+# Set variables
+export DATASET_BUCKET="dataloading-bucket-name"
+export CHECKPOINT_BUCKET="checkpoint-bucket-name"
+export REGION="us-central1"
+
+# Create dataset bucket
+gcloud storage buckets create gs://${DATASET_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
+
+# Create checkpoint bucket  
+gcloud storage buckets create gs://${CHECKPOINT_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
+```
+Replace the following values:  
+- `<DATASET_BUCKET>`: the name of your Cloud Storage bucket with training dataset. Do not include the gs:// prefix  
+- `<CHECKPOINT_BUCKET>`: the name of your Cloud Storage bucket where checkpoints will be written. Do not include the gs:// prefix
+- `<REGION>`: the region where your GKE cluster is located ([available locations](https://cloud.google.com/storage/docs/locations#location-r))
+
+2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
+Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
+
+3. GCSFuse lets you mount and access Cloud Storage buckets as local file systems, so applications can read and write objects in your bucket using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#storage) for the dataset bucket in order to mount them to the MaxText workload using GCSFuse. For the dataset bucket use separate manifest file `dataset_pvc.yaml` from this repo.
+Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and attaching xpk storage is a one time setup.
+```
+# Set variables
+export PROJECT=cloud-tpu-multipod-dev
+export CLUSTER=bodaborg-tpu7x-nap-users
+export ZONE=us-central1-c
+
+cd ~/xpk
+
+# Dataset Bucket PV/PVC
+python3 xpk.py storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
+```
+
 ## Docker container image
 
 To build your own image, follow the steps linked in this section. If you don't
@@ -218,7 +217,7 @@ XPK and its dependencies. Docker installation is part of this process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.32.dev20251215+nightly
+-   Libtpu version: 0.0.35.dev20260121+nightly
 -   Jax version: 0.8.1
 -   Maxtext version: maxtext-tutorial-v1.1.0-1109-gcf051eb03
 -   Python: 3.11
@@ -248,7 +247,7 @@ git checkout maxtext-tutorial-v1.1.0-1109-gcf051eb03
 bash dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
   JAX_VERSION=0.8.1 \
-  LIBTPU_VERSION=0.0.32.dev20251215+nightly
+  LIBTPU_VERSION=0.0.35.dev20260121+nightly
 bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
