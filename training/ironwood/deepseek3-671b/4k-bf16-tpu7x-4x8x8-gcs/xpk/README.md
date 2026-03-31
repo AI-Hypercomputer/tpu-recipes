@@ -83,7 +83,7 @@ Install XPK and necessary tools:
 pip install xpk==1.8.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.1/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.8.0/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
 sudo ./install-xpk.sh
 rm install-xpk.sh
