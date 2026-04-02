@@ -137,6 +137,7 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
+-   `MAXTEXT_ROOT`: The absolute path where you cloned the MaxText repository.
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
     `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-deepseek-v3-runner` by
@@ -177,7 +178,7 @@ xpk cluster create \
 # Set variables
 export DATASET_BUCKET="dataloading-bucket-name"
 export CHECKPOINT_BUCKET="checkpoint-bucket-name"
-export REGION="us-central1"
+export REGION=""
 
 # Create dataset bucket
 gcloud storage buckets create gs://${DATASET_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
@@ -197,9 +198,9 @@ Then follow these [instructions](https://github.com/google/array_record/tree/mai
 Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and attaching xpk storage is a one time setup.
 ```
 # Set variables
-export PROJECT=cloud-tpu-multipod-dev
-export CLUSTER=bodaborg-tpu7x-nap-users
-export ZONE=us-central1-c
+export PROJECT=""
+export CLUSTER=""
+export ZONE=""
 
 # Dataset Bucket PV/PVC
 xpk storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml

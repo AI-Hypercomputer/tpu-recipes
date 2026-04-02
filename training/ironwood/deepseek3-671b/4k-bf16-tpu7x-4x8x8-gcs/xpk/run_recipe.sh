@@ -24,15 +24,14 @@ fi
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID=${PROJECT_ID}
-export CLUSTER_NAME=${CLUSTER_NAME}
-export ZONE=${ZONE}
-export BASE_OUTPUT_DIR="/tmp/ckpt/"
+export PROJECT_ID=""
+export CLUSTER_NAME=""
+export ZONE=""
+export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-gcs")-$(date +%Y%m%d-%H%M)"
-export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset"
-
-export MAXTEXT_ROOT="${HOME}/maxtext" # Update this to your maxtext root
+export DATASET_BUCKET_MOUNTED_PATH=""
+export MAXTEXT_ROOT="" # e.g., ${HOME}/maxtext. Update this to the absolute path where you cloned the MaxText repository
 cd "$MAXTEXT_ROOT"
 
 # XLA Flags
