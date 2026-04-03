@@ -296,7 +296,7 @@ Edit the Recipe (run_recipe.sh) and populate the exported variables at the top o
 export PROJECT_ID="your-project-id"
 export CLUSTER_NAME="your-cluster-name"
 export ZONE="your-zone"
-export BASE_OUTPUT_DIR="/tmp/ckpt/${USER}" # Ensure this matches where XPK mounts the checkpoint bucket
+export BASE_OUTPUT_DIR="gs://<your_gcs_bucket>"
 export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset" # Ensure this matches where XPK mounts the dataset bucket
 ```
 
