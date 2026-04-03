@@ -133,7 +133,6 @@ across all commands and configurations.
 
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
--   `LOCATION`: Location for the bucket (e.g., `US`).
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
@@ -153,13 +152,6 @@ across all commands and configurations.
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
-
-If you don't have a GCS bucket, create one with this command:
-
-```bash
-# Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
-gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=${LOCATION} --default-storage-class=STANDARD --uniform-bucket-level-access
-```
 
 ### Sample XPK Cluster Creation Command
 
