@@ -31,8 +31,6 @@ export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-gcs")-$(date +%Y%m%d-%H%M)"
 export DATASET_BUCKET_MOUNTED_PATH=""
-export MAXTEXT_ROOT="" # e.g., ${HOME}/maxtext. Update this to the absolute path where you cloned the MaxText repository
-cd "$MAXTEXT_ROOT"
 
 # XLA Flags
 XLA_FLAGS=" \
