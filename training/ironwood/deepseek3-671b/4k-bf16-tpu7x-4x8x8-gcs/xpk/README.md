@@ -236,11 +236,11 @@ cd maxtext
 git checkout maxtext-tutorial-v1.1.0-1109-gcf051eb03
 
 # Build and upload the docker image
-bash dependencies/scripts/docker_build_dependency_image.sh \
+bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
   JAX_VERSION=0.8.1 \
   LIBTPU_VERSION=0.0.35.dev20260121+nightly
-bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate

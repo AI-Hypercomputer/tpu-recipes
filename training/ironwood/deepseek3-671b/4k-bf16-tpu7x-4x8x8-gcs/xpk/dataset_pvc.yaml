@@ -21,7 +21,7 @@ spec:
     - write:enable-streaming-writes:true
   csi:
     driver: gcsfuse.csi.storage.gke.io
-    volumeHandle: your-bucket-name # replace with your dataloading bucket name
+    volumeHandle: your-dataset-bucket-name # replace with your dataset bucket name
     volumeAttributes:
       gcsfuseMetadataPrefetchOnMount: "true"
 ---
