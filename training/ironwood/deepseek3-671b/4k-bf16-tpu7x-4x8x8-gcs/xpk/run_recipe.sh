@@ -30,7 +30,7 @@ export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-gcs")-$(date +%Y%m%d-%H%M)"
-export DATASET_BUCKET_NAME="your-dataset-bucket-name" # replace with your dataset bucket name
+export DATASET_VOLUME_NAME="dataset-gcsfuse-volume" # replace with your dataset bucket name
 export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset"
 
 # XLA Flags
@@ -131,7 +131,7 @@ xpk workload create \
   --base-docker-image="${WORKLOAD_IMAGE}" \
   --enable-debug-logs \
   --workload=$WORKLOAD_NAME \
-  --storage=$DATASET_BUCKET_NAME \
+  --storage=$DATASET_VOLUME_NAME \
   --command="set -e && \
     export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
     export ENABLE_PATHWAYS_PERSISTENCE=1 && \

@@ -196,7 +196,7 @@ export CLUSTER=""
 export ZONE=""
 
 # Dataset Bucket PV/PVC
-xpk storage attach my-dataset-bucket --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
+xpk storage attach dataset-gcsfuse-volume --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
 ```
 
 ## Docker container image
