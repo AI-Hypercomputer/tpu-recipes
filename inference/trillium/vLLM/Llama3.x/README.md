@@ -125,7 +125,6 @@ export TP=8 # number of chips
 
 vllm serve meta-llama/Llama-3.3-70B-Instruct \
     --seed 42 \
-    --disable-log-requests \
     --no-enable-prefix-caching \
     --async-scheduling \
     --gpu-memory-utilization 0.98 \

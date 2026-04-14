@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: dataset-bucket-pv
+spec:
+  accessModes:
+  - ReadWriteMany
+  capacity:
+    storage: 64Gi
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: gcsfuse-sc # dummy storage class
+  claimRef:
+    namespace: default
+    name: dataset-bucket-pvc
+  mountOptions:
+    - implicit-dirs                      
+    - metadata-cache:negative-ttl-secs:0
+    - metadata-cache:ttl-secs:-1          
+    - metadata-cache:stat-cache-max-size-mb:-1
+    - metadata-cache:type-cache-max-size-mb:-1    
+    - write:enable-streaming-writes:true
+  csi:
+    driver: gcsfuse.csi.storage.gke.io
+    volumeHandle: your-dataset-bucket-name # replace with your dataset bucket name
+    volumeAttributes:
+      gcsfuseMetadataPrefetchOnMount: "true"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dataset-bucket-pvc
+  namespace: default
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 64Gi
+  volumeName: dataset-bucket-pv
+  storageClassName: gcsfuse-sc # dummy storage class
