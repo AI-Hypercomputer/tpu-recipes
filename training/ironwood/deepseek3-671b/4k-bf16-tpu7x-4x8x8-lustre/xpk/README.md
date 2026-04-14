@@ -166,7 +166,7 @@ xpk cluster create \
   --reservation=${RESERVATION_NAME}
 ```
 
-## Storage Prerequisites
+## Lustre Instance Setup
 
 ### Create Lustre Instance
 
@@ -177,6 +177,20 @@ or
 
 2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
 Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
+
+### Mount Lustre Instance
+
+Managed Lustre lets you mount and access it as local file systems, so applications can read and write objects using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk/blob/main/docs/usage/storage.md#managed-lustre) for the instance in order to mount it to the MaxText workload. For the lustre instance, use manifest file `lustre_pvc.yaml` from this repo.
+Be sure to update `volumeHandle` in the yamls with your correct lustre instance names. Creating a lustre instance and attaching xpk storage is a one time setup.
+```
+# Set variables
+export PROJECT=""
+export CLUSTER=""
+export ZONE=""
+
+# Lustre PV/PVC
+xpk storage attach lustre-volume --type=lustre --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/mnt/lustre --readonly=false --auto-mount=false --manifest=lustre_pvc.yaml
+```
 
 ## Docker container image
 
