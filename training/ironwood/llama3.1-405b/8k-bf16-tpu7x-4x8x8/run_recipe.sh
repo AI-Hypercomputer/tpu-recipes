@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.16.1"
+    echo "pip install xpk==1.2.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -28,12 +28,13 @@ export PROJECT_ID=""
 export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
+export ARTIFACT_DIR="${BASE_OUTPUT_DIR}"
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-405b-8192-4x8x8")-$(date +%Y%m%d-%H%M)"
 
 # XLA Flags
 XLA_FLAGS=" \
-  --xla_tpu_impure_enable_packed_bf16_math_ops=true \
+  --xla_tpu_bf16_emission_mode=NATIVE_EMISSION \
   --xla_tpu_enable_sparse_core_reduce_scatter_v2=true \
   --xla_tpu_use_single_sparse_core_for_all_gather_offload=true \
   --xla_tpu_enable_sparse_core_collective_offload_all_gather=true \
@@ -47,7 +48,9 @@ XLA_FLAGS=" \
   --xla_tpu_prefer_async_allgather_to_allreduce=true \
   --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true \
   --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true \
-  --xla_tpu_scoped_vmem_limit_kib=65536 "
+  --xla_tpu_scoped_vmem_limit_kib=65536 \
+  --xla_tpu_enable_sparse_core_offload_queuing_in_lhs=true \
+  --xla_tpu_enable_ici_ar_pipelining=true "
 
 # MaxText Workload Overrides
 MAXTEXT_ARGS="\
@@ -59,31 +62,39 @@ profile_periodically_period=10000 \
 async_checkpointing=False \
 enable_checkpointing=False \
 use_iota_embed=True \
+ici_fsdp_parallelism=-1 \
 remat_policy=custom \
 decoder_layer_input=offload \
-ici_fsdp_parallelism=-1 \
+mlpwo=offload \
+key_proj=device \
+value_proj=device \
+attention=flash \
+sa_block_q=2048 \
+sa_block_kv=2048 \
+sa_block_kv_compute=1024 \
+sa_block_q_dkv=2048 \
+sa_block_kv_dkv=2048 \
+sa_block_kv_dkv_compute=512 \
+sa_use_fused_bwd_kernel=True \
+sa_q_layout=SEQ_MINOR \
+sa_k_layout=SEQ_MINOR \
+sa_v_layout=HEAD_DIM_MINOR \
+use_splash_scheduler=True \
+use_tokamax_splash=True \
 dataset_type=synthetic \
 opt_type=adamw \
 mu_dtype=bfloat16 \
-use_tokamax_splash=True \
-use_max_logit_estimate=-1 \
-sa_block_kv=2048 \
-sa_block_kv_compute=256 \
-sa_block_q=1024 \
-sa_block_kv_dkv=2048 \
-sa_block_kv_dkv_compute=1024 \
-sa_block_q_dkv=2048 \
-sa_k_layout=SEQ_MINOR \
-sa_q_layout=HEAD_DIM_MINOR \
-sa_v_layout=SEQ_MINOR \
-attention=flash \
-sa_use_fused_bwd_kernel=True \
+num_vocab_tiling=4 \
 max_target_length=8192 \
 profiler=xplane \
+skip_first_n_steps_for_profiler=8 \
+profiler_steps=1 \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME} \
 output_dir=${BASE_OUTPUT_DIR}"
+
+
 
 xpk workload create \
   --cluster=$CLUSTER_NAME \
@@ -95,8 +106,13 @@ xpk workload create \
   --num-slices=1 \
   --docker-image="${WORKLOAD_IMAGE}" \
   --enable-debug-logs \
+   \
   --workload="${WORKLOAD_NAME}" \
-  --command="set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+   \
+  --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS}"
+ \
+python3 -m MaxText.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
+gsutil cp train.log ${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}/logs/train-\${TPU_WORKER_ID}.log"

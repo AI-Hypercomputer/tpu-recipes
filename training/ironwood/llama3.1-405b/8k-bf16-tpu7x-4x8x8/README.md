@@ -1,9 +1,10 @@
-# Pretrain llama3.1-405b workload on Ironwood GKE clusters with XPK
+# Pretrain llama3-1-405b workload on Ironwood GKE clusters with XPK
 
-This recipe outlines the steps for running a llama3.1-405b
+This recipe outlines the steps for running a llama3-1-405b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [XPK](https://github.com/AI-Hypercomputer/xpk).
+
 
 ## Workload Details
 
@@ -42,6 +43,7 @@ To run this recipe, you need the following:
     [Install XPK and dependencies](#install-xpk-and-dependencies) section to
     install XPK, `kubectl`, `kubectl-kueue`, and `kubectl-kjob`.
 
+
 ## Install XPK and dependencies
 
 ### XPK and Dependency Installation
@@ -78,10 +80,10 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==0.16.1
+pip install xpk==1.2.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.1/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.2.0/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
 sudo ./install-xpk.sh
 rm install-xpk.sh
@@ -101,6 +103,7 @@ sudo usermod -aG docker $USER ## relaunch the terminal and make sure you have th
 docker run hello-world # Test docker
 ```
 
+
 ## Orchestration and deployment tools
 
 For this recipe, the following setup is used:
@@ -110,7 +113,8 @@ For this recipe, the following setup is used:
 -   **Pretraining job configuration and deployment** - XPK is used to configure
     and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
-    resource, which manages the execution of the llama3.1-405b workload.
+    resource, which manages the execution of the llama3-1-405b workload.
+
 
 ## Test environment
 
@@ -141,8 +145,7 @@ across all commands and configurations.
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-405b-8192-4x8x8")-$(date +%Y%m%d-%H%M)"`
+    `run_recipe.sh` to `${USER}-llama3-1-405b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x8x8`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -169,6 +172,7 @@ xpk cluster create \
   --reservation=${RESERVATION_NAME}
 ```
 
+
 ## Docker container image
 
 To build your own image, follow the steps linked in this section. If you don't
@@ -179,11 +183,11 @@ XPK and its dependencies. Docker installation is part of this process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.33.dev20251218+nightly
--   Jax version: 0.8.2
--   Maxtext version: maxtext-tutorial-v1.5.0
+-   Libtpu version: 0.0.37.dev20260224+nightly
+-   Jax version: 0.9.1.dev20260225
+-   Maxtext version: bf174d6
 -   Python: 3.11
--   XPK: 0.16.1
+-   XPK: 1.2.0
 
 Docker Image Building Command:
 
@@ -198,18 +202,18 @@ source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
 # Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12"; false;} fi
+if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
 
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.5.0
+git checkout bf174d6
 
 # Build and upload the docker image
 bash dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.8.2 \
-  LIBTPU_VERSION=0.0.33.dev20251218+nightly
+  JAX_VERSION=0.9.1.dev20260225 \
+  LIBTPU_VERSION=0.0.37.dev20260224+nightly
 bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
@@ -244,19 +248,15 @@ cd ~
 git clone https://github.com/ai-hypercomputer/tpu-recipes.git
 cd tpu-recipes/training/ironwood/llama3.1-405b/8k-bf16-tpu7x-4x8x8
 ```
-
-### Run llama3.1-405b Pretraining Workload
+### Run llama3-1-405b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the llama3.1-405b pretraining workload.
+configurations to launch the llama3-1-405b pretraining workload.
 
-Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
-
-To configure and run the benchmark:
+To run the benchmark, first make the script executable and then run it:
 
 ```bash
 chmod +x run_recipe.sh
-nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -285,19 +285,13 @@ are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
 ## Monitor the job
 
 To monitor your job's progress, you can use kubectl to check the Jobset status
-and stream logs:
+and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-
-# List pods to find the specific name (e.g., deepseek3-0-0-xxxx)
-kubectl get pods | grep ${WORKLOAD_NAME}
+kubectl logs -f -n default jobset/${WORKLOAD_NAME}-0-worker-0
 ```
-Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
 
-```bash
-kubectl logs -f <POD_NAME>
-```
 You can also monitor your cluster and TPU usage through the Google Cloud
 Console.
 
@@ -318,6 +312,7 @@ For more in-depth debugging, use xpk inspector: (`xpk inspector`)
 xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload ${WORKLOAD_NAME}]
 ```
 
+
 ### Delete resources
 
 #### Delete a specific workload
@@ -334,6 +329,7 @@ xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${Z
 xpk cluster delete --cluster ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 ```
 
+
 ## Check results
 
 After the job completes, you can check the results by:
@@ -342,6 +338,7 @@ After the job completes, you can check the results by:
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
+
 
 ## Next steps: deeper exploration and customization
 
