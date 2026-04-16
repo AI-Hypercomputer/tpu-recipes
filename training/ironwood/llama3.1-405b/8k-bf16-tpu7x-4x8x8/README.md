@@ -181,16 +181,6 @@ XPK and its dependencies. Docker installation is part of this process.
 
 ### Steps for building workload image
 
-**Warning:** If any of the software versions below show as "N/A", you *must*
-fill in the correct versions. To find the missing versions (e.g., for MaxText
-commit hash, Libtpu, and Jax/Jaxlib), you may need to:
-1.  Pull the Docker image from the workload that this recipe is based on.
-2.  Start the Docker container.
-3.  Run commands within the container to get the specific versions. For example,
-to find the MaxText commit, you can use `git rev-parse HEAD` inside the cloned
-MaxText repository within the container. For Python package versions, use
-`pip show <package_name>`.
-
 The following software versions are used:
 
 -   Libtpu version: 0.0.37.dev20260224+nightly
