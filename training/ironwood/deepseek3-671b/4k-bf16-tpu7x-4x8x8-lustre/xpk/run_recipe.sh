@@ -24,12 +24,12 @@ fi
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID=""
-export CLUSTER_NAME=""
-export ZONE=""
+export PROJECT_ID="cloud-tpu-multipod-dev"
+export CLUSTER_NAME="bodaborg-tpu7x-auto-nap2"
+export ZONE="us-central1-c"
 export BASE_OUTPUT_DIR="/mnt/lustre/checkpoints"
-export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-lustre")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_IMAGE="us-docker.pkg.dev/tess-playground/gcr.io/seonjun-maxtext-runner@sha256:8edd7104ff7fc6de11bbc448adee1c223c05747770170fb9908442e547ee7850"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-lustre-5")"
 export LUSTRE_VOLUME_NAME="lustre-volume"
 export DATASET_BUCKET_MOUNTED_PATH="/mnt/lustre/datasets"
 
@@ -137,6 +137,6 @@ xpk workload create \
     export ENABLE_PATHWAYS_PERSISTENCE=1 && \
     export JAX_PLATFORMS=tpu,cpu && \
     export ENABLE_PJRT_COMPATIBILITY=true && \
-    export MAXTEXT_ASSETS_ROOT=/deps/src/MaxText/assets MAXTEXT_PKG_DIR=/app/src/maxtext && \
-    cd /app && pip install --no-deps -e . && \
+    export MAXTEXT_ASSETS_ROOT=/deps/src/MaxText/assets MAXTEXT_PKG_DIR=/deps/src/maxtext && \
+    cd /deps && pip install --no-deps -e . && \
     python3 -m src.maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS}"

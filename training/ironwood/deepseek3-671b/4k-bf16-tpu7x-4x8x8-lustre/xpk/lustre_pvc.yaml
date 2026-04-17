@@ -5,7 +5,7 @@ metadata:
 spec:
   storageClassName: ""
   capacity:
-    storage: 774000Gi
+    storage: <INSTANCE CAPACITY SIZE>
   accessModes:
     - ReadWriteMany
   persistentVolumeReclaimPolicy: Retain
@@ -15,13 +15,10 @@ spec:
     name: lustre-volume
   csi:
     driver: lustre.csi.storage.gke.io
-    volumeHandle: "cloud-tpu-multipod-dev/us-central1-c/lustre-next"
     # volumeHandle: "<PROJECT>/<ZONE>/<LUSTRE INSTANCE NAME>"
     volumeAttributes:
-      ip: "10.157.144.17"    # From mountPoint
-      filesystem: "nextfs"      # From filesystem
-      # ip: <INSTANCE IP>
-      # filesystem: <FILE SYSTEM NAME>
+      ip: <INSTANCE IP>
+      filesystem: <FILE SYSTEM NAME>
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -33,6 +30,6 @@ spec:
   - ReadWriteMany
   resources:
     requests:
-      storage: 774000Gi
+      storage: <INSTANCE CAPACITY SIZE>
   volumeName: lustre-pv
   storageClassName: ""

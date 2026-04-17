@@ -174,8 +174,9 @@ xpk cluster create \
 [Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
 or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume).
+Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
 
-2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
+2. Prepare your dataset in the Lustre instance. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this instance. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the Lustre instance.
 Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
 
 ### Mount Lustre Instance
@@ -290,7 +291,7 @@ export PROJECT_ID="your-project-id"
 export CLUSTER_NAME="your-cluster-name"
 export ZONE="your-zone"
 export BASE_OUTPUT_DIR="<your_lustre_instance>"
-export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset" # Ensure this matches where XPK mounts the dataset bucket
+export DATASET_BUCKET_MOUNTED_PATH="/mnt/lustre/path-to-dataset-on-lustre-instance" # Ensure this matches where XPK mounts the dataset
 ```
 
 To configure and run the benchmark:
