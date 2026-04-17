@@ -176,8 +176,7 @@ or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume).
 Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
 
-2. Prepare your dataset in the Lustre instance. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this instance. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the Lustre instance.
-Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
+2. Prepare your dataset in the Lustre instance. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this instance. You would first need to download the AllenAI C4 dataset dataset from its source. Follow these [instructions](https://docs.cloud.google.com/managed-lustre/docs/transfer-data) to transfer the dataset to the Lustre instance.
 
 ### Mount Lustre Instance
 
