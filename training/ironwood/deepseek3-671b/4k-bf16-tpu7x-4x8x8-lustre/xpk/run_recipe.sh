@@ -24,12 +24,12 @@ fi
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID="cloud-tpu-multipod-dev"
-export CLUSTER_NAME="bodaborg-tpu7x-auto-nap2"
-export ZONE="us-central1-c"
+export PROJECT_ID=""
+export CLUSTER_NAME=""
+export ZONE=""
 export BASE_OUTPUT_DIR="/mnt/lustre/checkpoints"
-export WORKLOAD_IMAGE="us-docker.pkg.dev/tess-playground/gcr.io/seonjun-maxtext-runner@sha256:8edd7104ff7fc6de11bbc448adee1c223c05747770170fb9908442e547ee7850"
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-lustre-5")"
+export WORKLOAD_IMAGE=""
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-lustre")-$(date +%Y%m%d-%H%M)"
 export LUSTRE_VOLUME_NAME="lustre-volume"
 export DATASET_BUCKET_MOUNTED_PATH="/mnt/lustre/datasets"
 
