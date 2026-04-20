@@ -1,17 +1,19 @@
-# Pretrain deepseek-v3 workload on Ironwood GKE clusters with Kubernetes JobSet
+# Pretrain gemma4-26b workload on Ironwood GKE clusters with Kubernetes JobSet
 
-This recipe outlines the steps for running a deepseek-v3
+This recipe outlines the steps for running a gemma4-26b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine)
 by applying a Kubernetes manifest to deploy a JobSet resource.
+
+
 
 ## Workload Details
 
 This workload is configured with the following details:
 
 -   Sequence Length: 4096
--   Precision: bf16
--   Chips: 256 (4x8x8 topology)
+-   Precision: bfloat16
+-   Chips: 64 (4x4x4 topology)
 
 ## Prerequisites
 
@@ -68,10 +70,10 @@ export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
 
 # Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseek-v3")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-26b")-$(date +%Y%m%d-%H%M)"
 ```
 
-### 2. Run deepseek-v3 Pretraining Workload
+### 2. Run gemma4-26b Pretraining Workload
 
 Once the environment variables are set, run the following commands to fetch
 cluster credentials and deploy the JobSet:

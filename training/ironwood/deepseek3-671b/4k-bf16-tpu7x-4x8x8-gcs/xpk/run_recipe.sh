@@ -28,12 +28,14 @@ export PROJECT_ID=""
 export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
-export ARTIFACT_DIR="${BASE_OUTPUT_DIR}"
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-gcs")-$(date +%Y%m%d-%H%M)"
+export DATASET_VOLUME_NAME="dataset-gcsfuse-volume"
+export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset"
 
 # XLA Flags
 XLA_FLAGS=" \
+  --xla_tpu_dvfs_p_state=3 \
   --xla_tpu_scoped_vmem_limit_kib=65536 \
   --xla_tpu_bf16_emission_mode=NATIVE_EMISSION \
   --xla_tpu_enable_sparse_core_reduce_scatter_v2=true \
@@ -66,7 +68,7 @@ XLA_FLAGS=" \
 
 # MaxText Workload Overrides
 MAXTEXT_ARGS="\
-model_name=deepseek3-671b-2dfsdp \
+model_name=deepseek3-671b \
 per_device_batch_size=8.0 \
 max_target_length=4096 \
 dcn_pipeline_parallelism=1 \
@@ -102,15 +104,21 @@ cost_estimate_flops_fwd=5000000000000 \
 cost_estimate_flops_bwd=5000000000000 \
 float32_weight_sum=False \
 use_tokamax_gmm=True \
-tokenizer_path=assets/tokenizer.mistral-v3 \
-dataset_type=synthetic \
-enable_checkpointing=False \
+tokenizer_path='deepseek-ai/DeepSeek-V3-Base' \
+tokenizer_type=huggingface \
+enable_checkpointing=True \
+checkpoint_storage_concurrent_gb=400 \
+async_checkpointing=true \
+enable_single_replica_ckpt_restoring=true \
+checkpoint_storage_target_data_file_size_bytes=209715200 \
+dataset_type='grain' \
+grain_file_type=arrayrecord \
+grain_train_files=${DATASET_BUCKET_MOUNTED_PATH}/multilingual-c4/array-record/c4/multilingual/3.0.1/*.arrayrecord \
+grain_worker_count=2 \
 steps=30 \
+checkpoint_period=25 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME} \
-output_dir=${BASE_OUTPUT_DIR}"
-
-
+run_name=${WORKLOAD_NAME}"
 
 xpk workload create \
   --cluster=$CLUSTER_NAME \
@@ -118,18 +126,17 @@ xpk workload create \
   --zone=$ZONE \
   --priority=very-high \
   --max-restarts=0 \
-  --device-type=tpu7x-4x8x8 \
+  --tpu-type=tpu7x-4x8x8 \
   --num-slices=1 \
-  --docker-image="${WORKLOAD_IMAGE}" \
+  --base-docker-image="${WORKLOAD_IMAGE}" \
   --enable-debug-logs \
-   \
-   \
-  --workload="${WORKLOAD_NAME}" \
-   \
-  --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
-export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
-export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
-export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
- \
-python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
-gsutil cp train.log ${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}/logs/train-\${TPU_WORKER_ID}.log"
+  --workload=$WORKLOAD_NAME \
+  --storage=$DATASET_VOLUME_NAME \
+  --command="set -e && \
+    export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+    export ENABLE_PATHWAYS_PERSISTENCE=1 && \
+    export JAX_PLATFORMS=tpu,cpu && \
+    export ENABLE_PJRT_COMPATIBILITY=true && \
+    export MAXTEXT_ASSETS_ROOT=/deps/src/MaxText/assets MAXTEXT_PKG_DIR=/app/src/maxtext && \
+    cd /app && pip install --no-deps -e . && \
+    python3 -m src.maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS}"

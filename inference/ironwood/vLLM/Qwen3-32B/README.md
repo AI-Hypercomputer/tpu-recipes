@@ -68,7 +68,7 @@ following steps to enable the required features.
     ```bash
     gcloud container clusters update ${CLUSTER_NAME} \
       --location=${REGION} \
-      --workload-pool=PROJECT_ID.svc.id.goog
+      --workload-pool=$PROJECT_ID.svc.id.goog
     ```
 
     To enable in existing nodepool.

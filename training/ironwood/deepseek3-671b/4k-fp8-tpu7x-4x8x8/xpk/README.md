@@ -1,11 +1,13 @@
-# Pretrain deepseek3-671b workload on Ironwood GKE clusters with XPK
+# Pretrain deepseek-v3 workload on Ironwood GKE clusters with XPK
 
-This recipe outlines the steps for running a deepseek3-671b
+This recipe outlines the steps for running a deepseek-v3
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [XPK](https://github.com/AI-Hypercomputer/xpk).
 
 ## Workload Details
+
+**Note:** Internal tokens and GCS buckets have been replaced with placeholders like `<your-dataset-path>` and `<your-gcs-bucket-path>`. Please replace these with your own values before running.
 
 This workload is configured with the following details:
 
@@ -79,10 +81,10 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==0.16.1
+pip install xpk==1.8.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.1/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.8.0/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
 sudo ./install-xpk.sh
 rm install-xpk.sh
@@ -102,6 +104,7 @@ sudo usermod -aG docker $USER ## relaunch the terminal and make sure you have th
 docker run hello-world # Test docker
 ```
 
+
 ## Orchestration and deployment tools
 
 For this recipe, the following setup is used:
@@ -112,6 +115,7 @@ For this recipe, the following setup is used:
     and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
     resource, which manages the execution of the deepseek-v3 workload.
+
 
 ## Test environment
 
@@ -142,8 +146,7 @@ across all commands and configurations.
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-fp8")-$(date +%Y%m%d-%H%M)"`
+    `run_recipe.sh` to `${USER}-deepseekv3-671b-4096-fsdp-fp8-$(date +%Y%m%d-%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -170,6 +173,7 @@ xpk cluster create \
   --reservation=${RESERVATION_NAME}
 ```
 
+
 ## Docker container image
 
 To build your own image, follow the steps linked in this section. If you don't
@@ -180,11 +184,11 @@ XPK and its dependencies. Docker installation is part of this process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.32.dev20251215+nightly
--   Jax version: 0.8.2.dev20251215
--   Maxtext version: maxtext-tutorial-v1.5.0
+-   Libtpu version: 0.0.37
+-   Jax version: 0.9.2.dev20260306
+-   Maxtext version: a0fceb5
 -   Python: 3.11
--   XPK: 0.16.1
+-   XPK: 1.8.0
 
 Docker Image Building Command:
 
@@ -199,19 +203,19 @@ source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
 # Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12"; false;} fi
+if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
 
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.5.0
+git checkout a0fceb5
 
 # Build and upload the docker image
-bash dependencies/scripts/docker_build_dependency_image.sh \
+bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.8.2.dev20251215 \
-  LIBTPU_VERSION=0.0.32.dev20251215+nightly
-bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+  JAX_VERSION=0.9.2.dev20260306 \
+  LIBTPU_VERSION=0.0.37
+bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate
@@ -239,25 +243,15 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-## Get the recipe
-```bash
-cd ~
-git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/deepseek3-671b/4k-fp8-tpu7x-4x8x8/xpk
-```
-
-### Run deepseek3-671b Pretraining Workload
+### Run deepseek-v3 Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the deepseek3-671b pretraining workload.
+configurations to launch the deepseek-v3 pretraining workload.
 
-Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
-
-To configure and run the benchmark:
+To run the benchmark, first make the script executable and then run it:
 
 ```bash
 chmod +x run_recipe.sh
-nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -270,8 +264,8 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m src.MaxText.train` command. This
-    includes model-specific settings like `per_device_batch_size`,
+    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
+    command. This includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
 -   **Virtual Environment:** The script activates the virtual environment
@@ -283,44 +277,16 @@ You can customize the run by modifying `run_recipe.sh`:
 Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
 are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
 
-## DeepSeek V3 FP8 Recipe
-To optimize the performance of DeepSeek V3, we developed a custom recipe optimized for FP8 throughput. The method applies to specific compute-intensive and bandwidth-heavy components while preserving training stability through a fine-grained scaling strategy.
-
-### Quantization Scope
-To realize these gains, the recipe employs a w8a8g8 (8-bit weights, activations and gradients) strategy targeting three primary areas:
-
-* Megablox Kernels: Specifically the `gmm` and `tgmm` operations.
-
-* Attention Projections: Utilizing convolution fusion,which involves combining a convolution operation with one or more subsequent operations.
-
-* Communication: Specifically the weight All-Gathers.
-
-### FP8 Recipe
-* Rounding: rounding to nearest even
-* Precision
-  * Activations and weights: e4m3fn
-  * Gradients:e5m2
-* Scaling granularity: per-axis
-* Scaling mode:
-  * static for weights and activations
-  * dynamic for gradients
-
 ## Monitor the job
 
 To monitor your job's progress, you can use kubectl to check the Jobset status
-and stream logs:
+and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-
-# List pods to find the specific name (e.g., deepseek3-0-0-xxxx)
-kubectl get pods | grep ${WORKLOAD_NAME}
+kubectl logs -f -n default jobset/${WORKLOAD_NAME}-0-worker-0
 ```
-Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
 
-```bash
-kubectl logs -f <POD_NAME>
-```
 You can also monitor your cluster and TPU usage through the Google Cloud
 Console.
 
@@ -341,6 +307,7 @@ For more in-depth debugging, use xpk inspector: (`xpk inspector`)
 xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload ${WORKLOAD_NAME}]
 ```
 
+
 ### Delete resources
 
 #### Delete a specific workload
@@ -357,6 +324,7 @@ xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${Z
 xpk cluster delete --cluster ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 ```
 
+
 ## Check results
 
 After the job completes, you can check the results by:
@@ -365,6 +333,7 @@ After the job completes, you can check the results by:
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
+
 
 ## Next steps: deeper exploration and customization
 

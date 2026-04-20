@@ -1,11 +1,13 @@
-# Pretrain deepseek3-671b workload on Ironwood GKE clusters with Kubernetes JobSet
+# Pretrain deepseek-v3 workload on Ironwood GKE clusters with Kubernetes JobSet
 
-This recipe outlines the steps for running a deepseek3-671b
+This recipe outlines the steps for running a deepseek-v3
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine)
 by applying a Kubernetes manifest to deploy a JobSet resource.
 
 ## Workload Details
+
+**Note:** Internal tokens and GCS buckets have been replaced with placeholders like `<your-dataset-path>` and `<your-gcs-bucket-path>`. Please replace these with your own values before running.
 
 This workload is configured with the following details:
 
@@ -68,10 +70,10 @@ export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
 
 # Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-fp8")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseek-v3")-$(date +%Y%m%d-%H%M)"
 ```
 
-### 2. Run deepseek3-671b Pretraining Workload
+### 2. Run deepseek-v3 Pretraining Workload
 
 Once the environment variables are set, run the following commands to fetch
 cluster credentials and deploy the JobSet:

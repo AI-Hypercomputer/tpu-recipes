@@ -1,10 +1,9 @@
-# Pretrain llama3-1-405b workload on Ironwood GKE clusters with XPK
+# Pretrain gemma4-31b workload on Ironwood GKE clusters with XPK
 
-This recipe outlines the steps for running a llama3-1-405b
+This recipe outlines the steps for running a gemma4-31b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [XPK](https://github.com/AI-Hypercomputer/xpk).
-
 
 ## Workload Details
 
@@ -12,7 +11,7 @@ This workload is configured with the following details:
 
 -   Sequence Length: 8192
 -   Precision: bf16
--   Chips: 256 (4x8x8 topology)
+-   Chips: 64 (4x4x4 topology)
 
 ## Prerequisites
 
@@ -35,8 +34,8 @@ To run this recipe, you need the following:
 -   **Docker:** Docker must be installed on your workstation. Follow the steps
     in the [Install XPK and dependencies](#install-xpk-and-dependencies) section
     to install Docker.
--   **Python 3.11 Virtual Environment:** A Python
-    3.11 virtual environment is required. Instructions
+-   **Python 3.12 Virtual Environment:** A Python
+    3.12 virtual environment is required. Instructions
     for setting this up are also in the
     [Install XPK and dependencies](#install-xpk-and-dependencies) section.
 -   **XPK and Dependencies:** Follow the steps in the
@@ -61,8 +60,8 @@ chmod +x install-uv.sh
 rm install-uv.sh
 source ${HOME}/.local/bin/env
 
-# Set up and Activate Python 3.11 virtual environment
-uv venv --seed ${HOME}/.local/bin/venv --python 3.11 --clear
+# Set up and Activate Python 3.12 virtual environment
+uv venv --seed ${HOME}/.local/bin/venv --python 3.12 --clear
 source ${HOME}/.local/bin/venv/bin/activate
 pip install --upgrade pip
 ```
@@ -80,10 +79,10 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==1.2.0
+pip install xpk==1.4.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.2.0/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.4.0/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
 sudo ./install-xpk.sh
 rm install-xpk.sh
@@ -113,12 +112,12 @@ For this recipe, the following setup is used:
 -   **Pretraining job configuration and deployment** - XPK is used to configure
     and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
-    resource, which manages the execution of the llama3-1-405b workload.
+    resource, which manages the execution of the gemma4-31b workload.
 
 
 ## Test environment
 
-This recipe is optimized for and tested with tpu7x-4x8x8.
+This recipe is optimized for and tested with tpu7x-4x4x4.
 
 -   **GKE cluster** To create your GKE cluster, use the XPK instructions.
     [XPK instructions](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#cluster-create).
@@ -141,13 +140,13 @@ across all commands and configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-llama3-1-405b-runner` by
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-gemma4-31b-runner` by
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-llama3-1-405b-$(date +%H%M)` by default.
+    `run_recipe.sh` to `${USER}-gemma4-31b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x8x8`). See topologies
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
@@ -183,11 +182,11 @@ XPK and its dependencies. Docker installation is part of this process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.37.dev20260224+nightly
--   Jax version: 0.9.1.dev20260225
--   Maxtext version: bf174d6
--   Python: 3.11
--   XPK: 1.2.0
+-   Libtpu version: 0.0.40.dev20260411+nightly
+-   Jax version: 0.10.0.dev20260411
+-   Maxtext version: c73595a
+-   Python: 3.12
+-   XPK: 1.4.0
 
 Docker Image Building Command:
 
@@ -207,14 +206,14 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout bf174d6
+git checkout c73595a
 
 # Build and upload the docker image
-bash dependencies/scripts/docker_build_dependency_image.sh \
+bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.9.1.dev20260225 \
-  LIBTPU_VERSION=0.0.37.dev20260224+nightly
-bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+  JAX_VERSION=0.10.0.dev20260411 \
+  LIBTPU_VERSION=0.0.40.dev20260411+nightly
+bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate
@@ -242,16 +241,10 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-## Get the recipe
-```bash
-cd ~
-git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/llama3.1-405b/8k-bf16-tpu7x-4x8x8
-```
-### Run llama3-1-405b Pretraining Workload
+### Run gemma4-31b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the llama3-1-405b pretraining workload.
+configurations to launch the gemma4-31b pretraining workload.
 
 To run the benchmark, first make the script executable and then run it:
 
@@ -269,8 +262,8 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m src.MaxText.train` command. This
-    includes model-specific settings like `per_device_batch_size`,
+    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
+    command. This includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
 -   **Virtual Environment:** The script activates the virtual environment
