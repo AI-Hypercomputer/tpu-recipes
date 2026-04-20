@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==1.2.0"
+    echo "pip install xpk==1.4.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -28,7 +28,7 @@ export PROJECT_ID=""
 export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
-export ARTIFACT_DIR="${BASE_OUTPUT_DIR}"
+export ARTIFACT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-405b-8192-4x8x8")-$(date +%Y%m%d-%H%M)"
 
@@ -91,8 +91,7 @@ skip_first_n_steps_for_profiler=8 \
 profiler_steps=1 \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME} \
-output_dir=${BASE_OUTPUT_DIR}"
+run_name=${WORKLOAD_NAME}"
 
 
 
@@ -107,6 +106,7 @@ xpk workload create \
   --docker-image="${WORKLOAD_IMAGE}" \
   --enable-debug-logs \
    \
+   \
   --workload="${WORKLOAD_NAME}" \
    \
   --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
@@ -114,5 +114,5 @@ export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
  \
-python3 -m MaxText.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
-gsutil cp train.log ${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}/logs/train-\${TPU_WORKER_ID}.log"
+python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
+gsutil cp train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
