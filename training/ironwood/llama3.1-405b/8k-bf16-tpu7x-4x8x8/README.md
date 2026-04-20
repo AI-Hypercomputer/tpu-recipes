@@ -11,7 +11,7 @@ This recipe outlines the steps for running a llama3-1-405b
 This workload is configured with the following details:
 
 -   Sequence Length: 8192
--   Precision: bfloat16
+-   Precision: bf16
 -   Chips: 256 (4x8x8 topology)
 
 ## Prerequisites
