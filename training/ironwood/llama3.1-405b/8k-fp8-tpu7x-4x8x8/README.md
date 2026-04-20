@@ -235,7 +235,11 @@ deactivate
 This recipe uses a mock pretraining dataset provided by the MaxText framework.
 
 ## Run the recipe
-
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/llama3.1-405b/8k-fp8-tpu7x-4x8x8
+```
 ### Configure environment settings
 
 Before running any commands in this section, ensure you have set the environment
