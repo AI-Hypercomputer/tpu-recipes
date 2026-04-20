@@ -147,7 +147,7 @@ across all commands and configurations.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` to `${USER}-llama3-1-405b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x8x8`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
