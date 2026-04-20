@@ -46,7 +46,7 @@ spec:
       # TODO: Update the topology to match your allocated TPU node pool (e.g., 2x2x1 is 4 chips)
       nodeSelector:
         cloud.google.com/gke-tpu-accelerator: tpu7x
-        cloud.google.com/gke-tpu-topology: 2x2x1
+        cloud.google.com/gke-tpu-topology: 1x1x1
       containers:
       - name: vllm-tpu
         image: vllm/vllm-tpu:gemma4
@@ -57,7 +57,7 @@ spec:
         - --port=8000
         - --seed=42
         # TODO: Update tensor-parallel-size to match the number of chips in your topology
-        - --tensor-parallel-size=8
+        - --tensor-parallel-size=1
         - --max-model-len=16384
         - --download-dir=/data
         - --no-enable-prefix-caching
@@ -82,9 +82,9 @@ spec:
         - containerPort: 8000
         resources:
           limits:
-            google.com/tpu: '4' # Number of chips required by topology
+            google.com/tpu: '1' # Number of chips required by topology
           requests:
-            google.com/tpu: '4'
+            google.com/tpu: '1'
         readinessProbe:
           tcpSocket:
             port: 8000
