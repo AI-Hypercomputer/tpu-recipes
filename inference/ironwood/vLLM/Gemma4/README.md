@@ -60,7 +60,6 @@ gcloud container node-pools create ${NODEPOOL_NAME} \
     ```bash
     export HF_TOKEN=YOUR_TOKEN
     kubectl create secret generic hf-secret \
-        --namespace=gemma4-test \
         --from-literal=hf_api_token=${HF_TOKEN}
     ```
 
