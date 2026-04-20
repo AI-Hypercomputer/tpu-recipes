@@ -235,11 +235,7 @@ deactivate
 This recipe uses a mock pretraining dataset provided by the MaxText framework.
 
 ## Run the recipe
-```bash
-cd ~
-git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/llama3.1-405b/8k-fp8-tpu7x-4x8x8
-```
+
 ### Configure environment settings
 
 Before running any commands in this section, ensure you have set the environment
@@ -254,6 +250,13 @@ does this for you already):
 
 ```bash
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+```
+
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/llama3.1-405b/8k-fp8-tpu7x-4x8x8
 ```
 
 ### Run llama3-1-405b Pretraining Workload
