@@ -1,6 +1,6 @@
-# Pretrain llama3.1-405b workload on Ironwood GKE clusters with XPK
+# Pretrain llama3-1-405b workload on Ironwood GKE clusters with XPK
 
-This recipe outlines the steps for running a llama3.1-405b
+This recipe outlines the steps for running a llama3-1-405b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [XPK](https://github.com/AI-Hypercomputer/xpk).
@@ -43,6 +43,7 @@ To run this recipe, you need the following:
     [Install XPK and dependencies](#install-xpk-and-dependencies) section to
     install XPK, `kubectl`, `kubectl-kueue`, and `kubectl-kjob`.
 
+
 ## Install XPK and dependencies
 
 ### XPK and Dependency Installation
@@ -79,10 +80,10 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==0.16.1
+pip install xpk==1.4.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v0.16.1/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.4.0/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
 sudo ./install-xpk.sh
 rm install-xpk.sh
@@ -102,6 +103,7 @@ sudo usermod -aG docker $USER ## relaunch the terminal and make sure you have th
 docker run hello-world # Test docker
 ```
 
+
 ## Orchestration and deployment tools
 
 For this recipe, the following setup is used:
@@ -112,6 +114,7 @@ For this recipe, the following setup is used:
     and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
     resource, which manages the execution of the llama3-1-405b workload.
+
 
 ## Test environment
 
@@ -142,10 +145,9 @@ across all commands and configurations.
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-405b-8192-fp8-4x8x8")-$(date +%Y%m%d-%H%M)"`
+    `run_recipe.sh` to `${USER}-llama3-1-405b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x8x8`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
@@ -170,6 +172,7 @@ xpk cluster create \
   --reservation=${RESERVATION_NAME}
 ```
 
+
 ## Docker container image
 
 To build your own image, follow the steps linked in this section. If you don't
@@ -178,13 +181,23 @@ XPK and its dependencies. Docker installation is part of this process.
 
 ### Steps for building workload image
 
+**Warning:** If any of the software versions below show as "N/A", you *must*
+fill in the correct versions. To find the missing versions (e.g., for MaxText
+commit hash, Libtpu, and Jax/Jaxlib), you may need to:
+1.  Pull the Docker image from the workload that this recipe is based on.
+2.  Start the Docker container.
+3.  Run commands within the container to get the specific versions. For example,
+to find the MaxText commit, you can use `git rev-parse HEAD` inside the cloned
+MaxText repository within the container. For Python package versions, use
+`pip show <package_name>`.
+
 The following software versions are used:
 
--   Libtpu version: 0.0.33.dev20251219+nightly
--   Jax version: 0.8.3.dev20251219
--   Maxtext version: maxtext-tutorial-v1.5.0
+-   Libtpu version: 0.0.37
+-   Jax version: 0.9.2.dev20260306
+-   Maxtext version: a0fceb5
 -   Python: 3.11
--   XPK: 0.16.1
+-   XPK: 1.4.0
 
 Docker Image Building Command:
 
@@ -204,14 +217,14 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.5.0
+git checkout a0fceb5
 
 # Build and upload the docker image
-bash dependencies/scripts/docker_build_dependency_image.sh \
+bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.8.3.dev20251219 \
-  LIBTPU_VERSION=0.0.33.dev20251219+nightly
-bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+  JAX_VERSION=0.9.2.dev20260306 \
+  LIBTPU_VERSION=0.0.37
+bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate
@@ -239,25 +252,15 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-## Get the recipe
-```bash
-cd ~
-git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/llama3.1-405b/8k-fp8-tpu7x-4x8x8
-```
-
-### Run llama3.1-405b Pretraining Workload
+### Run llama3-1-405b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the llama3.1-405b pretraining workload.
+configurations to launch the llama3-1-405b pretraining workload.
 
-Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
-
-To configure and run the benchmark:
+To run the benchmark, first make the script executable and then run it:
 
 ```bash
 chmod +x run_recipe.sh
-nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -270,8 +273,8 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m src.MaxText.train` command. This
-    includes model-specific settings like `per_device_batch_size`,
+    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
+    command. This includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
 -   **Virtual Environment:** The script activates the virtual environment
@@ -286,19 +289,13 @@ are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
 ## Monitor the job
 
 To monitor your job's progress, you can use kubectl to check the Jobset status
-and stream logs:
+and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-
-# List pods to find the specific name (e.g., deepseek3-0-0-xxxx)
-kubectl get pods | grep ${WORKLOAD_NAME}
+kubectl logs -f -n default jobset/${WORKLOAD_NAME}-0-worker-0
 ```
-Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
 
-```bash
-kubectl logs -f <POD_NAME>
-```
 You can also monitor your cluster and TPU usage through the Google Cloud
 Console.
 
@@ -319,6 +316,7 @@ For more in-depth debugging, use xpk inspector: (`xpk inspector`)
 xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload ${WORKLOAD_NAME}]
 ```
 
+
 ### Delete resources
 
 #### Delete a specific workload
@@ -335,6 +333,7 @@ xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${Z
 xpk cluster delete --cluster ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 ```
 
+
 ## Check results
 
 After the job completes, you can check the results by:
@@ -343,6 +342,7 @@ After the job completes, you can check the results by:
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
+
 
 ## Next steps: deeper exploration and customization
 
