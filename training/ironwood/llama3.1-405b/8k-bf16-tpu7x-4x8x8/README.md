@@ -242,6 +242,12 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/llama3.1-405b/8k-bf16-tpu7x-4x8x8
+```
 ### Run llama3-1-405b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
