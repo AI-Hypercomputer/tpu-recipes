@@ -11,7 +11,7 @@ This recipe outlines the steps for running a llama3-1-405b
 This workload is configured with the following details:
 
 -   Sequence Length: 8192
--   Precision: bf16
+-   Precision: bfloat16
 -   Chips: 256 (4x8x8 topology)
 
 ## Prerequisites
@@ -80,10 +80,10 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==1.2.0
+pip install xpk==1.4.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.2.0/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.4.0/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
 sudo ./install-xpk.sh
 rm install-xpk.sh
@@ -147,7 +147,7 @@ across all commands and configurations.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` to `${USER}-llama3-1-405b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x8x8`). See topologies
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
@@ -183,11 +183,11 @@ XPK and its dependencies. Docker installation is part of this process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.37.dev20260224+nightly
--   Jax version: 0.9.1.dev20260225
--   Maxtext version: bf174d6
+-   Libtpu version: 0.0.37
+-   Jax version: 0.9.2.dev20260306
+-   Maxtext version: a0fceb5
 -   Python: 3.11
--   XPK: 1.2.0
+-   XPK: 1.4.0
 
 Docker Image Building Command:
 
@@ -207,14 +207,14 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout bf174d6
+git checkout a0fceb5
 
 # Build and upload the docker image
-bash dependencies/scripts/docker_build_dependency_image.sh \
+bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.9.1.dev20260225 \
-  LIBTPU_VERSION=0.0.37.dev20260224+nightly
-bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+  JAX_VERSION=0.9.2.dev20260306 \
+  LIBTPU_VERSION=0.0.37
+bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate
@@ -242,12 +242,6 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-## Get the recipe
-```bash
-cd ~
-git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/llama3.1-405b/8k-bf16-tpu7x-4x8x8
-```
 ### Run llama3-1-405b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
@@ -269,8 +263,8 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m src.MaxText.train` command. This
-    includes model-specific settings like `per_device_batch_size`,
+    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
+    command. This includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
 -   **Virtual Environment:** The script activates the virtual environment
