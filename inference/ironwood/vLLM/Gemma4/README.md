@@ -12,8 +12,8 @@ The following larger Gemma 4 models are verified for deployment on TPU.
 
 | Model | Parameters | Min TPUs (Chips) | HuggingFace |
 | :---- | :---- | :---- | :---- |
-| Gemma 4 31B IT | 31B | 1× | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
-| Gemma 4 26B-A4B IT (MoE) | 26B (4B active) | 1× | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
+| Gemma 4 31B IT | 31B | 4× | [google/gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) |
+| Gemma 4 26B-A4B IT (MoE) | 26B (4B active) | 4× | [google/gemma-4-26B-A4B-it](https://huggingface.co/google/gemma-4-26B-A4B-it) |
 
 > [!NOTE]
 > Gemma 4 E2B IT, Gemma 4 E4B IT are currently not verified for TPU deployment.
