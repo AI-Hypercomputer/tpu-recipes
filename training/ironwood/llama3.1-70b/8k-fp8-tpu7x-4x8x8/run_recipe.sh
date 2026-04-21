@@ -35,7 +35,7 @@ export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-70b-8192-fp8-4x8x8
 # XLA Flags
 XLA_FLAGS=" \
   --xla_tpu_scoped_vmem_limit_kib=61440 \
-  --xla_tpu_fp8_emission_mode=NATIVE_EMISSION \
+  --xla_tpu_bf16_emission_mode=NATIVE_EMISSION \
   --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true \
   --xla_tpu_use_single_sparse_core_for_all_gather_offload=true "
 
