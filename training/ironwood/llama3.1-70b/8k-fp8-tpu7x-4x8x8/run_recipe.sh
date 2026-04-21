@@ -83,7 +83,7 @@ use_qwix_quantization=True \
 weight_quantization_calibration_method='fixed,-224,224' \
 act_quantization_calibration_method='fixed,-224,224' \
 steps=30 \
-base_output_directory=gs://ubench-logs \
+base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME} \
 output_dir=${BASE_OUTPUT_DIR}"
 
