@@ -11,7 +11,7 @@ This recipe outlines the steps for running a llama3-1-70b
 This workload is configured with the following details:
 
 -   Sequence Length: 8192
--   Precision: bf16
+-   Precision: fp8
 -   Chips: 64 (4x4x4 topology)
 
 ## Prerequisites
@@ -250,6 +250,13 @@ does this for you already):
 
 ```bash
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+```
+
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/llama3.1-70b/8k-fp8-tpu7x-4x4x4/xpk
 ```
 
 ### Run llama3-1-70b Pretraining Workload
