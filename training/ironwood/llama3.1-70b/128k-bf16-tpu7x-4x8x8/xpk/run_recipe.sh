@@ -91,7 +91,7 @@ skip_first_n_steps_for_profiler=5 \
 profiler_steps=2 \
 attention=flash \
 steps=30 \
-base_output_directory=gs://ubench-logs \
+base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME} \
 output_dir=${BASE_OUTPUT_DIR}"
 
