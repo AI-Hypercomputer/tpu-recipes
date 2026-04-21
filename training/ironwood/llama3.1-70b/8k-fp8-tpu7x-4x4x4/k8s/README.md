@@ -1,9 +1,10 @@
-# Pretrain llama3.1-70b workload on Ironwood GKE clusters with Kubernetes JobSet
+# Pretrain llama3-1-70b workload on Ironwood GKE clusters with Kubernetes JobSet
 
-This recipe outlines the steps for running a llama3.1-70b
+This recipe outlines the steps for running a llama3-1-70b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine)
 by applying a Kubernetes manifest to deploy a JobSet resource.
+
 
 
 ## Workload Details
@@ -18,7 +19,9 @@ This workload is configured with the following details:
 
 This recipe assumes the following prerequisites are met:
 
--   **GKE Cluster:** A GKE cluster with [JobSet](https://jobset.sigs.k8s.io/docs/installation/) installed and running.
+-   **GKE Cluster:** A GKE cluster with
+    [JobSet](https://jobset.sigs.k8s.io/docs/installation/) installed and
+    running.
 -   **Container Image:** A pre-built container image (such as
     `gcr.io/my-project/my-maxtext-runner:latest`) containing the MaxText
     workload, accessible by the GKE cluster.
@@ -47,13 +50,16 @@ This recipe uses a mock pretraining dataset provided by the MaxText framework.
 
 This recipe uses a Kubernetes manifest (`k8s_manifest.yaml`) to deploy the
 workload. The following commands will set the required environment variables,
-substitute them into `k8s_manifest.yaml`, and apply the resulting
-configuration to your cluster.
+substitute them into `k8s_manifest.yaml`, and apply the resulting configuration
+to your cluster.
 
 ### 1. Configure Environment Variables
 
 Open a terminal and set the following environment variables to match your setup.
-**Note:** `k8s_manifest.yaml` is in the same directory as this README.
+
+**Note:**
+
+-   `k8s_manifest.yaml` is in the same directory as this README.
 
 ```bash
 # Set variables for your environment
@@ -64,7 +70,7 @@ export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
 
 # Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-70b-8192-fp8-4x4x4")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-70b")-$(date +%Y%m%d-%H%M)"
 ```
 
 ### 2. Run llama3-1-70b Pretraining Workload
