@@ -61,8 +61,8 @@ chmod +x install-uv.sh
 rm install-uv.sh
 source ${HOME}/.local/bin/env
 
-# Set up and Activate Python 3.11 virtual environment
-uv venv --seed ${HOME}/.local/bin/venv --python 3.11 --clear
+# Set up and Activate Python 3.12 virtual environment
+uv venv --seed ${HOME}/.local/bin/venv --python 3.12 --clear
 source ${HOME}/.local/bin/venv/bin/activate
 pip install --upgrade pip
 ```
@@ -181,13 +181,12 @@ XPK and its dependencies. Docker installation is part of this process.
 
 ### Steps for building workload image
 
-
 The following software versions are used:
 
 -   Libtpu version: 0.0.37
 -   Jax version: 0.9.2.dev20260306
 -   Maxtext version: a0fceb5
--   Python: 3.11
+-   Python: 3.12
 -   XPK: 1.4.0
 
 Docker Image Building Command:
@@ -247,7 +246,7 @@ gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID
 ```bash
 cd ~
 git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/llama3.1-70b/8k-fp8-tpu7x-4x4x4/xpk
+cd tpu-recipes/training/ironwood/llama3.1-70b/128k-bf16-tpu7x-4x8x8/xpk
 ```
 
 ### Run llama3-1-70b Pretraining Workload
