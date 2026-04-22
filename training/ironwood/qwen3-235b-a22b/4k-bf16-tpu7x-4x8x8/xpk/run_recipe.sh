@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.11 virtual environment with xpk installed.
+# This script requires uv and a Python 3.12 virtual environment with xpk installed.
 # If you haven't set up uv and the environment, please refer to the README.md.
 
 UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.11"
+UV_PYTHON_VERSION="3.12"
 
 # Activate the virtual environment
 source "${UV_VENV_PATH}/bin/activate"
@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.16.1"
+    echo "pip install xpk==1.4.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -28,6 +28,7 @@ export PROJECT_ID=""
 export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
+export ARTIFACT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-qwen3-235b-a22b-4096-fsdp-4x8x8")-$(date +%Y%m%d-%H%M)"
 
@@ -61,6 +62,7 @@ opt_type=adamw \
 steps=20 \
 profiler=xplane \
 skip_first_n_steps_for_profiler=5 \
+profiler_steps=3 \
 profile_periodically_period=10000 \
 async_checkpointing=False \
 enable_checkpointing=False \
@@ -68,7 +70,7 @@ remat_policy=custom \
 decoder_layer_input=offload \
 use_custom_sort_vjp=True \
 use_random_routing=True \
-fsdp_shard_on_exp=False \
+shard_exp_on_fsdp=False \
 megablox=False \
 sparse_matmul=True \
 use_tokamax_gmm=True \
@@ -96,6 +98,8 @@ dataset_path=gs://max-datasets-rogue \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
+
+
 xpk workload create \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
@@ -106,8 +110,14 @@ xpk workload create \
   --num-slices=1 \
   --docker-image="${WORKLOAD_IMAGE}" \
   --enable-debug-logs \
+   \
+   \
   --workload="${WORKLOAD_NAME}" \
-  --command="set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+   \
+  --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS}"
+ \
+python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
+gsutil cp train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
