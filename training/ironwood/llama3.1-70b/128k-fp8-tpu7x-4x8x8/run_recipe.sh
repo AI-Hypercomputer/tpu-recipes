@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.11 virtual environment with xpk installed.
+# This script requires uv and a Python 3.12 virtual environment with xpk installed.
 # If you haven't set up uv and the environment, please refer to the README.md.
 
 UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.11"
+UV_PYTHON_VERSION="3.12"
 
 # Activate the virtual environment
 source "${UV_VENV_PATH}/bin/activate"
@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.16.0"
+    echo "pip install xpk==1.4.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -28,6 +28,7 @@ export PROJECT_ID=""
 export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
+export ARTIFACT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3-1-70b-131072-fp8-4x8x8")-$(date +%Y%m%d-%H%M)"
 
@@ -65,16 +66,21 @@ context=device \
 query_proj=device \
 key_proj=device \
 value_proj=device \
+mlpwo=device \
+num_vocab_tiling=4 \
 ici_fsdp_parallelism=-1 \
 ici_context_parallelism=8 \
 dataset_type=synthetic \
 opt_type=adam_pax \
-sa_block_q=4096 \
+sa_block_q=2048 \
 sa_block_kv=2048 \
-sa_block_kv_compute=1024 \
-sa_block_q_dkv=2048 \
-sa_block_kv_dkv=2048 \
-sa_block_kv_dkv_compute=2048 \
+sa_block_kv_compute=512 \
+sa_block_q_dkv=1024 \
+sa_block_kv_dkv=4096 \
+sa_block_kv_dkv_compute=256 \
+sa_q_layout=SEQ_MINOR \
+sa_k_layout=HEAD_DIM_MINOR \
+sa_v_layout=SEQ_MINOR \
 sa_use_fused_bwd_kernel=True \
 dq_reduction_steps=3 \
 use_tokamax_splash=True \
@@ -90,6 +96,8 @@ steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
+
+
 xpk workload create \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
@@ -100,8 +108,14 @@ xpk workload create \
   --num-slices=1 \
   --docker-image="${WORKLOAD_IMAGE}" \
   --enable-debug-logs \
+   \
+   \
   --workload="${WORKLOAD_NAME}" \
-  --command="set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+   \
+  --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS}"
+ \
+python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
+gsutil cp train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
