@@ -35,8 +35,8 @@ To run this recipe, you need the following:
 -   **Docker:** Docker must be installed on your workstation. Follow the steps
     in the [Install XPK and dependencies](#install-xpk-and-dependencies) section
     to install Docker.
--   **Python 3.11 Virtual Environment:** A Python
-    3.11 virtual environment is required. Instructions
+-   **Python 3.12 Virtual Environment:** A Python
+    3.12 virtual environment is required. Instructions
     for setting this up are also in the
     [Install XPK and dependencies](#install-xpk-and-dependencies) section.
 -   **XPK and Dependencies:** Follow the steps in the
@@ -61,8 +61,8 @@ chmod +x install-uv.sh
 rm install-uv.sh
 source ${HOME}/.local/bin/env
 
-# Set up and Activate Python 3.11 virtual environment
-uv venv --seed ${HOME}/.local/bin/venv --python 3.11 --clear
+# Set up and Activate Python 3.12 virtual environment
+uv venv --seed ${HOME}/.local/bin/venv --python 3.12 --clear
 source ${HOME}/.local/bin/venv/bin/activate
 pip install --upgrade pip
 ```
@@ -186,7 +186,7 @@ The following software versions are used:
 -   Libtpu version: 0.0.37
 -   Jax version: 0.9.2.dev20260306
 -   Maxtext version: a0fceb5
--   Python: 3.11
+-   Python: 3.12
 -   XPK: 1.4.0
 
 Docker Image Building Command:
