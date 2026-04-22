@@ -186,7 +186,7 @@ The following software versions are used:
 -   Libtpu version: 0.0.37
 -   Jax version: 0.9.2.dev20260306
 -   Maxtext version: a0fceb5
--   Python: 3.11
+-   Python: 3.12
 -   XPK: 1.4.0
 
 Docker Image Building Command:
