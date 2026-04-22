@@ -251,7 +251,7 @@ run the workload at a different scale
             cloud.google.com/gke-tpu-topology: 2x2x1
           containers:
           - name: vllm-tpu
-            image: vllm/vllm-tpu:nightly-ironwood-20251217-baf570b-0cd5353
+            image: vllm/vllm-tpu:nightly-20260316-e778980-57a314d
             command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
             args:
             - --host=0.0.0.0
