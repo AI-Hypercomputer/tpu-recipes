@@ -12,7 +12,7 @@ by applying a Kubernetes manifest to deploy a JobSet resource.
 This workload is configured with the following details:
 
 -   Sequence Length: 4096
--   Precision: bfloat16
+-   Precision: bf16
 -   Chips: 256 (4x8x8 topology)
 
 ## Prerequisites
