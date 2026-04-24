@@ -3,7 +3,7 @@
 This recipe outlines the steps for running a deepseek3-671b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
-[XPK](https://github.com/AI-Hypercomputer/xpk) with Lustre configured as the primary storage system for the dataset and checkpoints.
+[XPK](https://github.com/AI-Hypercomputer/xpk) with Google Cloud Managed Lustre as the primary storage system for the dataset and checkpoints.
 
 ## Workload Details
 
@@ -25,11 +25,12 @@ To run this recipe, you need the following:
     Roles:
     -   Artifact Registry Writer
     -   Compute Admin
+    -   Google Cloud Managed Lustre Admin 
     -   Kubernetes Engine Admin
     -   Logging Admin
     -   Monitoring Admin
     -   Service Account User
-    -   Storage Admin
+    -   Storage Object Viewer
     -   Vertex AI Administrator
     -   Service Usage Consumer
     -   TPU Viewer
@@ -170,7 +171,7 @@ xpk cluster create \
 
 ### Create Lustre Instance
 
-1. Create new Lustre instancea following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance), one to hold the dataset and one to use for checkpoints. Mount the Lustre instance on
+1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance), one to hold the dataset and one to use for checkpoints. Mount the Lustre instance on
 [Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
 or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume).
@@ -241,7 +242,7 @@ deactivate
 
 ## Training dataset
 
-This recipe uses a mock pretraining dataset provided by the MaxText framework.
+This recipe uses the AllenAI C4 dataset with the [grain loader](https://github.com/google/grain). Ensure your dataset files are accessible in your Lustre instance following the instructions in the [Lustre Instance Setup](#lustre-instance-setup) section.
 
 ## Run the recipe
 
