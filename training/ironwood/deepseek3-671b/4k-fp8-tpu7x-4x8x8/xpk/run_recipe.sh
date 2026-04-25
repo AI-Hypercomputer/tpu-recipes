@@ -170,6 +170,6 @@ xpk workload create \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-pip install git+https://github.com/openxla/tokamax.git@4936e75cb40bac9a746f0f10c4bb6887f4c217d8 &&  \
+pip install git+https://github.com/openxla/tokamax.git@4936e75cb40bac9a746f0f10c4bb6887f4c217d8 --no-deps &&  \
 python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
 gsutil cp train.log ${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}/logs/train-\${TPU_WORKER_ID}.log"
