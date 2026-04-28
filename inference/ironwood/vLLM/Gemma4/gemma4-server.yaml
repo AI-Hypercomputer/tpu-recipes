@@ -65,6 +65,7 @@ spec:
         - --no-enable-prefix-caching
         - --additional_config='{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}'
         # TODO: Update the model if you wish to switch to MoE or another variant
+        # For google/gemma-4-26B-A4B-it, it's recommended to remove above qwix quantization flags, and use TP size 4
         - --model=google/gemma-4-31B-it
         - --async-scheduling
         - --gpu-memory-utilization=0.90
