@@ -59,10 +59,11 @@ spec:
         # TODO: Update tensor-parallel-size to match the number of chips in your topology
         - --tensor-parallel-size=2
         - --max-model-len=16384
-        - --max-num-batched-tokens=16384
+        - --max-num-batched-tokens=4096
         - --block-size=256
         - --download-dir=/data
         - --no-enable-prefix-caching
+        - --additional_config='{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}'
         # TODO: Update the model if you wish to switch to MoE or another variant
         - --model=google/gemma-4-31B-it
         - --async-scheduling
