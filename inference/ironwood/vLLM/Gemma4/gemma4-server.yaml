@@ -46,10 +46,10 @@ spec:
       # TODO: Update the topology to match your allocated TPU node pool (e.g., 2x2x1 is 4 chips)
       nodeSelector:
         cloud.google.com/gke-tpu-accelerator: tpu7x
-        cloud.google.com/gke-tpu-topology: 2x2x1
+        cloud.google.com/gke-tpu-topology: 1x1x1
       containers:
       - name: vllm-tpu
-        image: vllm/vllm-tpu:gemma4
+        image: vllm/vllm-tpu:nightly
         command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 
         args:
@@ -57,11 +57,15 @@ spec:
         - --port=8000
         - --seed=42
         # TODO: Update tensor-parallel-size to match the number of chips in your topology
-        - --tensor-parallel-size=8
+        - --tensor-parallel-size=2
         - --max-model-len=16384
+        - --max-num-batched-tokens=4096
+        - --block-size=256
         - --download-dir=/data
         - --no-enable-prefix-caching
+        - --additional_config='{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}'
         # TODO: Update the model if you wish to switch to MoE or another variant
+        # For google/gemma-4-26B-A4B-it, it's recommended to remove above qwix quantization flags, and use TP size 4
         - --model=google/gemma-4-31B-it
         - --async-scheduling
         - --gpu-memory-utilization=0.90
@@ -70,6 +74,8 @@ spec:
         - --tool-call-parser=gemma4
 
         env:
+        - name: USE_BATCHED_RPA_KERNEL
+          value: 1
         - name: HF_HOME
           value: /data
         - name: HF_TOKEN
@@ -82,9 +88,9 @@ spec:
         - containerPort: 8000
         resources:
           limits:
-            google.com/tpu: '4' # Number of chips required by topology
+            google.com/tpu: '1' # Number of chips required by topology
           requests:
-            google.com/tpu: '4'
+            google.com/tpu: '1'
         readinessProbe:
           tcpSocket:
             port: 8000
