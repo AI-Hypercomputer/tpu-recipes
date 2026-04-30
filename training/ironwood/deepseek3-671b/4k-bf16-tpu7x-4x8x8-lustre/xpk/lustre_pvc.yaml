@@ -15,7 +15,7 @@ spec:
     name: lustre-volume
   csi:
     driver: lustre.csi.storage.gke.io
-    volumeHandle: "${PROJECT_ID}/${ZONE}/${LUSTRE_INSTANCE_NAME}"
+    volumeHandle: <PROJECT_ID>/<ZONE>/<LUSTRE_INSTANCE_NAME>
     volumeAttributes:
       ip: <INSTANCE IP>
       filesystem: <FILE SYSTEM NAME>

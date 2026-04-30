@@ -167,6 +167,28 @@ xpk cluster create \
   --reservation=${RESERVATION_NAME}
 ```
 
+### Enable Managed Lustre CSI Driver on Cluster
+
+If your GKE cluster is already created, ensure the Managed Lustre CSI driver is enabled.
+
+1. For GKE clusters that run version `1.33.2-gke.4780000` or later:
+
+   ```bash
+   gcloud container clusters update ${CLUSTER_NAME} \
+     --location ${ZONE} \
+     --project ${PROJECT_ID} \
+     --update-addons=LustreCsiDriver=ENABLED
+   ```
+
+2. For GKE clusters that run a version earlier than `1.33.2-gke.4780000` or an existing Managed Lustre instance that was created with the `gke-support-enabled` flag:
+
+   ```bash
+   gcloud container clusters update ${CLUSTER_NAME} \
+     --location ${ZONE} \
+     --project ${PROJECT_ID} \
+     --enable-legacy-lustre-port
+   ```
+
 ## Lustre Instance Setup
 
 ### Create Lustre Instance
@@ -174,8 +196,7 @@ xpk cluster create \
 1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance), one to hold the dataset and one to use for checkpoints. Mount the Lustre instance on
 [Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
 or
-[Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume).
-Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
+[Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume). It is important to use the same network as the GKE cluster when creating the Lustre instance. Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
 
 2. Prepare your dataset in the Lustre instance. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this instance. You would first need to download the AllenAI C4 dataset dataset from its source. Follow these [instructions](https://docs.cloud.google.com/managed-lustre/docs/transfer-data) to transfer the dataset to the Lustre instance.
 
@@ -291,7 +312,7 @@ export PROJECT_ID="your-project-id"
 export CLUSTER_NAME="your-cluster-name"
 export ZONE="your-zone"
 export BASE_OUTPUT_DIR="<your_lustre_instance>"
-export DATASET_BUCKET_MOUNTED_PATH="/mnt/lustre/path-to-dataset-on-lustre-instance" # Ensure this matches where XPK mounts the dataset
+export DATASET_BUCKET_MOUNTED_PATH="/mnt/lustre/path-to-dataset-on-lustre-instance" # The path after /mnt/lustre/ should match the path to the dataset on the Lustre instance root
 ```
 
 To configure and run the benchmark:
@@ -311,7 +332,7 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m src.MaxText.train` command. This
+    arguments passed to the `python3 -m src.maxtext.trainers.pre_train.train` command. This
     includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
@@ -368,6 +389,12 @@ xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [
 xpk workload delete --workload ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 # Or filter and delete:
 xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} --filter-by-job=${USER}
+```
+
+#### Delete the XPK storage resource
+
+```bash
+xpk storage detach lustre-volume --project ${PROJECT_ID} --cluster ${CLUSTER_NAME} --zone ${ZONE}
 ```
 
 #### Delete the entire XPK cluster
