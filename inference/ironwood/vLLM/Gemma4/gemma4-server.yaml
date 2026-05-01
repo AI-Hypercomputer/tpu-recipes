@@ -49,7 +49,7 @@ spec:
         cloud.google.com/gke-tpu-topology: 1x1x1
       containers:
       - name: vllm-tpu
-        image: vllm/vllm-tpu:nightly
+        image: vllm/vllm-tpu:nightly-20260428-99e0d15-fd74c90
         command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 
         args:
