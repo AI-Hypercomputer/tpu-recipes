@@ -644,9 +644,9 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
 
     Workload (input tokens/output tokens) | Output Token Throughput (tok/s) Per Chip
     :------- | :---------------------------------------
-    1k/1k    | 1919.04 tok/s (479.76 tok/s/chip)
-    1k/8k    | 2002.62 tok/s (500.66 tok/s/chip)
-    8k/1k    | 967.98 tok/s (242.00 tok/s/chip)
+    1k/1k    | 1996.00 tok/s (499 tok/s/chip)
+    1k/8k    | 2075.47 tok/s (518.86 tok/s/chip)
+    8k/1k    | 1053.10 tok/s (263.27 tok/s/chip)
 
     **Note**: These benchmark results are based on the `InferenceX` client. The
     development team is continuously improving and optimizing performance; as such,
