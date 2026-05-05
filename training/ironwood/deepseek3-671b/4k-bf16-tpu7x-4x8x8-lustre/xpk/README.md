@@ -180,7 +180,7 @@ gcloud container clusters update ${CLUSTER_NAME} \
 
 ### Create Lustre Instance
 
-1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance) to hold dataset and checkpoints. Mount the Lustre instance on
+1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance) to hold the dataset and checkpoints. Mount the Lustre instance on
 [Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
 or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume). It is important to use the same network as the GKE cluster when creating the Lustre instance. Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
