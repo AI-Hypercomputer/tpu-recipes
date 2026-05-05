@@ -1,9 +1,9 @@
-# Instructions for training DeepSeek3-671B on TPU Ironwood (tpu7x-4x8x8) with Google Cloud Storage (GCS)
+# Instructions for training DeepSeek3-671B on TPU Ironwood (tpu7x-4x8x8) with Lustre
 
 This recipe outlines the steps for running a deepseek3-671b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
-[XPK](https://github.com/AI-Hypercomputer/xpk) with Google Cloud Storage (GCS) configured as the primary storage system for the dataset and checkpoints.
+[XPK](https://github.com/AI-Hypercomputer/xpk) with Google Cloud Managed Lustre as the primary storage system for the dataset and checkpoints.
 
 ## Workload Details
 
@@ -12,7 +12,7 @@ This workload is configured with the following details:
 -   Sequence Length: 4096
 -   Precision: bf16
 -   Chips: 256 (4x8x8 topology)
--   GCS buckets for dataset and checkpoints
+-   Lustre for dataset and checkpoints
     -   C4 Multi-Lingual dataset (~12TB) with ArrayRecord format
 
 ## Prerequisites
@@ -25,11 +25,12 @@ To run this recipe, you need the following:
     Roles:
     -   Artifact Registry Writer
     -   Compute Admin
+    -   Google Cloud Managed Lustre Admin 
     -   Kubernetes Engine Admin
     -   Logging Admin
     -   Monitoring Admin
     -   Service Account User
-    -   Storage Admin
+    -   Storage Object Viewer
     -   Vertex AI Administrator
     -   Service Usage Consumer
     -   TPU Viewer
@@ -43,6 +44,7 @@ To run this recipe, you need the following:
 -   **XPK and Dependencies:** Follow the steps in the
     [Install XPK and dependencies](#install-xpk-and-dependencies) section to
     install XPK, `kubectl`, `kubectl-kueue`, and `kubectl-kjob`.
+
 
 ## Install XPK and dependencies
 
@@ -136,7 +138,7 @@ across all commands and configurations.
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
-    `"gs://<your_gcs_bucket>"`).
+    `"<your_lustre_instance>"`).
 -   `MAXTEXT_ROOT`: The absolute path where you cloned the MaxText repository.
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
@@ -147,8 +149,6 @@ across all commands and configurations.
     `run_recipe.sh` using the following command:
     `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
-    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
@@ -160,43 +160,45 @@ xpk cluster create \
   --cluster=${CLUSTER_NAME} \
   --project=${PROJECT_ID} \
   --zone=${ZONE} \
-  --tpu-type=${ACCELERATOR_TYPE} \
+  --tpu-type=tpu7x-4x8x8 \
   --num-slices=1 \
   --reservation=${RESERVATION_NAME}
 ```
 
-## GCS Bucket setup
-1. Create two buckets: one to hold the dataset and one to use for checkpoints. To create regional HNS buckets use the following commands:
+### Enable Managed Lustre CSI Driver on Cluster
+
+Ensure the GKE version is `1.34.0-gke.2201000` or later. If your GKE cluster is already created, ensure the Managed Lustre CSI driver is enabled.
+
+```bash
+gcloud container clusters update ${CLUSTER_NAME} \
+  --location ${ZONE} \
+  --project ${PROJECT_ID} \
+  --update-addons=LustreCsiDriver=ENABLED
 ```
-# Set variables
-export DATASET_BUCKET="dataloading-bucket-name"
-export CHECKPOINT_BUCKET="checkpoint-bucket-name"
-export REGION=""
 
-# Create dataset bucket
-gcloud storage buckets create gs://${DATASET_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
+## Lustre Instance Setup
 
-# Create checkpoint bucket  
-gcloud storage buckets create gs://${CHECKPOINT_BUCKET} --location=${REGION}  --default-storage-class=Standard --enable-hierarchical-namespace --uniform-bucket-level-access
-```
-Replace the following values:  
-- `<DATASET_BUCKET>`: the name of your Cloud Storage bucket with training dataset. Do not include the gs:// prefix  
-- `<CHECKPOINT_BUCKET>`: the name of your Cloud Storage bucket where checkpoints will be written. Do not include the gs:// prefix
-- `<REGION>`: the region where your GKE cluster is located ([available locations](https://cloud.google.com/storage/docs/locations#location-r))
+### Create Lustre Instance
 
-2. Prepare your dataset in the DATASET_BUCKET. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this bucket. Follow these [instructions](https://github.com/AI-Hypercomputer/maxtext/blob/b93beba652db6b3f4e6c82dc48a83b03229f5d3a/getting_started/Data_Input_Pipeline.md#tfds-pipeline) to download the Allenai c4 dataset to the dataset bucket.
-Then follow these [instructions](https://github.com/google/array_record/tree/main/beam) to convert the dataset into ArrayRecord.
+1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance) to hold the dataset and checkpoints. Mount the Lustre instance on
+[Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
+or
+[Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume). It is important to use the same network as the GKE cluster when creating the Lustre instance. Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
 
-3. GCSFuse lets you mount and access Cloud Storage buckets as local file systems, so applications can read and write objects in your bucket using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#storage) for the dataset bucket in order to mount them to the MaxText workload using GCSFuse. For the dataset bucket use separate manifest file `dataset_pvc.yaml` from this repo.
-Be sure to update `volumeHandle` in the yamls with your correct bucket names. Creating a bucket and attaching xpk storage is a one time setup.
+2. Prepare your dataset in the Lustre instance. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this instance. You would first need to download the AllenAI C4 dataset dataset from its source. Follow these [instructions](https://docs.cloud.google.com/managed-lustre/docs/transfer-data) to transfer the dataset to the Lustre instance.
+
+### Mount Lustre Instance
+
+Managed Lustre lets you mount and access it as local file systems, so applications can read and write objects using standard file system semantics. You'll need to use the below commands to create [XPK storage resources](https://github.com/AI-Hypercomputer/xpk/blob/main/docs/usage/storage.md#managed-lustre) for the instance in order to mount it to the MaxText workload. For the lustre instance, use manifest file `lustre_pvc.yaml` from this repo.
+Be sure to update `volumeHandle` in the yamls with your correct lustre instance names. Creating a lustre instance and attaching xpk storage is a one time setup.
 ```
 # Set variables
 export PROJECT=""
 export CLUSTER=""
 export ZONE=""
 
-# Dataset Bucket PV/PVC
-xpk storage attach dataset-gcsfuse-volume --type=gcsfuse --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/tmp/dataset --readonly=false --bucket=$DATASET_BUCKET --size=64 --auto-mount=false --manifest=dataset_pvc.yaml
+# Lustre PV/PVC
+xpk storage attach lustre-volume --type=lustre --project=$PROJECT --cluster=$CLUSTER --zone=$ZONE --mount-point=/mnt/lustre --readonly=false --auto-mount=false --manifest=lustre_pvc.yaml
 ```
 
 ## Docker container image
@@ -248,7 +250,7 @@ deactivate
 
 ## Training dataset
 
-This recipe uses a mock pretraining dataset provided by the MaxText framework.
+This recipe uses the AllenAI C4 dataset with the [grain loader](https://github.com/google/grain). Ensure your dataset files are accessible in your Lustre instance following the instructions in the [Lustre Instance Setup](#lustre-instance-setup) section.
 
 ## Run the recipe
 
@@ -272,7 +274,7 @@ gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID
 ```bash
 cd ~
 git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8-gcs/xpk
+cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8-lustre/xpk
 ```
 
 ### Run deepseek3-671b Pretraining Workload
@@ -296,8 +298,7 @@ Edit the Recipe (run_recipe.sh) and populate the exported variables at the top o
 export PROJECT_ID="your-project-id"
 export CLUSTER_NAME="your-cluster-name"
 export ZONE="your-zone"
-export BASE_OUTPUT_DIR="gs://<your_gcs_bucket>"
-export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset" # Ensure this matches where XPK mounts the dataset bucket
+export DATASET_BUCKET_MOUNTED_PATH="/mnt/lustre/path-to-dataset-on-lustre-instance" # The path after /mnt/lustre/ should match the path to the dataset on the Lustre instance root
 ```
 
 To configure and run the benchmark:
@@ -317,7 +318,7 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m src.MaxText.train` command. This
+    arguments passed to the `python3 -m src.maxtext.trainers.pre_train.train` command. This
     includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
@@ -374,6 +375,12 @@ xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [
 xpk workload delete --workload ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 # Or filter and delete:
 xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} --filter-by-job=${USER}
+```
+
+#### Delete the XPK storage resource
+
+```bash
+xpk storage detach lustre-volume --project ${PROJECT_ID} --cluster ${CLUSTER_NAME} --zone ${ZONE}
 ```
 
 #### Delete the entire XPK cluster
