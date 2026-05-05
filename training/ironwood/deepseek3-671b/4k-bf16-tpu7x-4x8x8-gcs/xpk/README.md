@@ -272,7 +272,7 @@ gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID
 ```bash
 cd ~
 git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8/xpk
+cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8-gcs/xpk
 ```
 
 ### Run deepseek3-671b Pretraining Workload

@@ -149,8 +149,6 @@ across all commands and configurations.
     `run_recipe.sh` using the following command:
     `export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
-    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
@@ -162,38 +160,27 @@ xpk cluster create \
   --cluster=${CLUSTER_NAME} \
   --project=${PROJECT_ID} \
   --zone=${ZONE} \
-  --tpu-type=${ACCELERATOR_TYPE} \
+  --tpu-type=tpu7x-4x8x8 \
   --num-slices=1 \
   --reservation=${RESERVATION_NAME}
 ```
 
 ### Enable Managed Lustre CSI Driver on Cluster
 
-If your GKE cluster is already created, ensure the Managed Lustre CSI driver is enabled.
+Ensure the GKE version is `1.34.0-gke.2201000` or later. If your GKE cluster is already created, ensure the Managed Lustre CSI driver is enabled.
 
-1. For GKE clusters that run version `1.33.2-gke.4780000` or later:
-
-   ```bash
-   gcloud container clusters update ${CLUSTER_NAME} \
-     --location ${ZONE} \
-     --project ${PROJECT_ID} \
-     --update-addons=LustreCsiDriver=ENABLED
-   ```
-
-2. For GKE clusters that run a version earlier than `1.33.2-gke.4780000` or an existing Managed Lustre instance that was created with the `gke-support-enabled` flag:
-
-   ```bash
-   gcloud container clusters update ${CLUSTER_NAME} \
-     --location ${ZONE} \
-     --project ${PROJECT_ID} \
-     --enable-legacy-lustre-port
-   ```
+```bash
+gcloud container clusters update ${CLUSTER_NAME} \
+  --location ${ZONE} \
+  --project ${PROJECT_ID} \
+  --update-addons=LustreCsiDriver=ENABLED
+```
 
 ## Lustre Instance Setup
 
 ### Create Lustre Instance
 
-1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance), one to hold the dataset and one to use for checkpoints. Mount the Lustre instance on
+1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance) to hold dataset and checkpoints. Mount the Lustre instance on
 [Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
 or
 [Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume). It is important to use the same network as the GKE cluster when creating the Lustre instance. Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
@@ -287,7 +274,7 @@ gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID
 ```bash
 cd ~
 git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8/xpk
+cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x8x8-lustre/xpk
 ```
 
 ### Run deepseek3-671b Pretraining Workload
@@ -311,7 +298,6 @@ Edit the Recipe (run_recipe.sh) and populate the exported variables at the top o
 export PROJECT_ID="your-project-id"
 export CLUSTER_NAME="your-cluster-name"
 export ZONE="your-zone"
-export BASE_OUTPUT_DIR="<your_lustre_instance>"
 export DATASET_BUCKET_MOUNTED_PATH="/mnt/lustre/path-to-dataset-on-lustre-instance" # The path after /mnt/lustre/ should match the path to the dataset on the Lustre instance root
 ```
 
