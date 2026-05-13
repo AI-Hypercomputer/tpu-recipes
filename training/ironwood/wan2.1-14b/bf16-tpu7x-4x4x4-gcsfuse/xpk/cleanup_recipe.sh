@@ -11,7 +11,7 @@ source ~/.local/bin/venv/bin/activate
 export PROJECT_ID=""
 export CLUSTER_NAME=""
 export ZONE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-wan")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="<YOUR_RUNNING_WORKLOAD_NAME>"
 
 xpk storage detach ${WORKLOAD_NAME}-maxdiffusion-data --project=${PROJECT_ID} --cluster=${CLUSTER_NAME} --zone=${ZONE}
 xpk storage detach ${WORKLOAD_NAME}-checkpoint --project=${PROJECT_ID} --cluster=${CLUSTER_NAME} --zone=${ZONE}
