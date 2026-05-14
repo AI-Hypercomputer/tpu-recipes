@@ -49,7 +49,7 @@ spec:
         cloud.google.com/gke-tpu-topology: 1x1x1
       containers:
       - name: vllm-tpu
-        image: vllm/vllm-tpu:nightly-20260428-99e0d15-fd74c90
+        image: vllm/vllm-tpu:nightly-20260514-4690ef3-bf0d2dc
         command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 
         args:
@@ -58,15 +58,15 @@ spec:
         - --seed=42
         # TODO: Update tensor-parallel-size to match the number of chips in your topology
         - --tensor-parallel-size=2
-        - --max-model-len=16384
+        - --max-model-len=9216
         - --max-num-batched-tokens=4096
         - --block-size=256
         - --download-dir=/data
         - --no-enable-prefix-caching
         - --additional_config='{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}'
         # TODO: Update the model if you wish to switch to MoE or another variant
-        # For google/gemma-4-26B-A4B-it, it's recommended to remove above qwix quantization flags, and use TP size 4
         - --model=google/gemma-4-31B-it
+        - --kv-cache-dtype=fp8
         - --async-scheduling
         - --gpu-memory-utilization=0.90
         - --disable_chunked_mm_input
@@ -76,6 +76,8 @@ spec:
         env:
         - name: USE_BATCHED_RPA_KERNEL
           value: 1
+        - name: MOE_REQUANTIZE_WEIGHT_DTYPE
+          value: float8_e4m3fn
         - name: HF_HOME
           value: /data
         - name: HF_TOKEN
