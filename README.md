@@ -67,8 +67,8 @@ repeated. We maintain and update the recipes in this repository on a best-effort
 For general guidance on using Google Cloud compute products, see the official documentation
 and tutorials:
 
-- [Official Compute Engine tutorials](https://docs.cloud.google.com/compute/docs/overview)
-- [Official Compute Engine samples](https://docs.cloud.google.com/compute/docs/samples)
+- [Compute Engine overview](https://docs.cloud.google.com/compute/docs/overview)
+- [Compute Engine samples](https://docs.cloud.google.com/compute/docs/samples)
 - [Cloud TPU documentation](https://docs.cloud.google.com/tpu/docs)
 - [AI Hypercomputer documentation](https://docs.cloud.google.com/ai-hypercomputer/docs)
 - [Automated TPU environment deployment with Cluster Toolkit](https://cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview)
