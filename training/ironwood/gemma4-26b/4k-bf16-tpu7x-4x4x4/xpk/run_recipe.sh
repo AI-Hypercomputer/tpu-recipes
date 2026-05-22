@@ -96,7 +96,6 @@ sa_block_q_dkv=2048 \
 sa_block_kv_dkv=2048 \
 sa_block_kv_dkv_compute=256 \
 dataset_type=synthetic \
-dataset_path=<your_gcs_dataset_path> \
 opt_type=adamw \
 mu_dtype=bfloat16 \
 grad_dtype=bfloat16 \

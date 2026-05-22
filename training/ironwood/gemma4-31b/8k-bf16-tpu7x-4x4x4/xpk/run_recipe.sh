@@ -81,7 +81,6 @@ ici_fsdp_parallelism=16 \
 ici_fsdp_transpose_parallelism=8 \
 gcs_metrics=True \
 dataset_type=synthetic \
-dataset_path=<your_gcs_dataset_path> \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
