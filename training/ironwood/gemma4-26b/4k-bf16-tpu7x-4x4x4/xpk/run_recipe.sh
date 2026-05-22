@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.12 virtual environment with xpk installed.
+# This script requires uv and a Python 3.13 virtual environment with xpk installed.
 # If you haven't set up uv and the environment, please refer to the README.md.
 
 UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.12"
+UV_PYTHON_VERSION="3.13"
 
 # Activate the virtual environment
 source "${UV_VENV_PATH}/bin/activate"
@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==1.4.0"
+    echo "pip install xpk==1.11.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -31,6 +31,7 @@ export BASE_OUTPUT_DIR=""
 export ARTIFACT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-26b")-$(date +%Y%m%d-%H%M)"
+
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -59,16 +60,29 @@ MAXTEXT_ARGS="\
 model_name=gemma4-26b \
 skip_jax_distributed_system=True \
 dtype=bfloat16 \
-per_device_batch_size=8 \
+per_device_batch_size=16 \
 max_target_length=4096 \
 async_checkpointing=False \
 enable_checkpointing=False \
 use_iota_embed=True \
-remat_policy=custom \
+num_vocab_tiling=8 \
+remat_policy=full \
 decoder_layer_input=offload \
 allow_split_physical_axes=True \
 ici_fsdp_transpose_parallelism=1 \
 ici_fsdp_parallelism=-1 \
+wi_tile_fwd_embed_dim=2816 \
+wi_tile_dlhs_embed_dim=2816 \
+wi_tile_drhs_embed_dim=2816 \
+wo_tile_fwd_embed_dim=2816 \
+wo_tile_dlhs_embed_dim=2816 \
+wo_tile_drhs_embed_dim=2816 \
+wi_tile_fwd_mlp_dim=704 \
+wi_tile_dlhs_mlp_dim=704 \
+wi_tile_drhs_mlp_dim=704 \
+wo_tile_fwd_mlp_dim=704 \
+wo_tile_dlhs_mlp_dim=704 \
+wo_tile_drhs_mlp_dim=704 \
 megablox=True \
 sparse_matmul=True \
 use_custom_sort_vjp=True \
@@ -111,4 +125,4 @@ export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
  \
 python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
-gsutil cp train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
+gcloud storage cp --no-user-output-enabled train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
