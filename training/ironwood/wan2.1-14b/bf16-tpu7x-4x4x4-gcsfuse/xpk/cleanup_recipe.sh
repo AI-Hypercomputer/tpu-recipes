@@ -13,5 +13,7 @@ export CLUSTER_NAME=""
 export ZONE=""
 export WORKLOAD_NAME="<YOUR_RUNNING_WORKLOAD_NAME>"
 
+echo "=== Detaching storage volume maxdiffusion-data ==="
 xpk storage detach ${WORKLOAD_NAME}-maxdiffusion-data --project=${PROJECT_ID} --cluster=${CLUSTER_NAME} --zone=${ZONE}
+echo "=== Detaching storage volume checkpoint ==="
 xpk storage detach ${WORKLOAD_NAME}-checkpoint --project=${PROJECT_ID} --cluster=${CLUSTER_NAME} --zone=${ZONE}

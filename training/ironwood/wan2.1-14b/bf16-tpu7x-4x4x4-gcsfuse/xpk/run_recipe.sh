@@ -18,6 +18,9 @@ if ! pip show xpk &> /dev/null; then
 fi
 # --- End Environment Setup ---
 
+set -e
+set -o pipefail
+
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
 # to match your specific GCP project and cluster setup.
@@ -92,14 +95,18 @@ ici_tensor_parallelism=1 \
 allow_split_physical_axes=True \
 flash_block_sizes='{\"block_q\":2048,\"block_kv_compute\":512,\"block_kv\":2048,\"block_q_dkv\":2048,\"block_kv_dkv\":2048,\"block_kv_dkv_compute\":512,\"use_fused_bwd_kernel\":true}' \
 checkpoint_every=30 \
+enable_single_replica_ckpt_restoring=True \
 max_train_steps=150 \
 base_output_directory=${ARTIFACT_DIR} \
 output_dir=${OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
+echo "=== Attaching storage volume maxdiffusion-data ==="
 xpk storage attach ${WORKLOAD_NAME}-maxdiffusion-data --type=gcsfuse --project=${PROJECT_ID} --cluster=${CLUSTER_NAME} --zone=${ZONE} --mount-point=/mnt/data --bucket=${DATA_BUCKET} --mount-options=logging:severity:info --readonly=false --auto-mount=false --size=1_000_000 
-xpk storage attach ${WORKLOAD_NAME}-checkpoint --type=gcsfuse --project=${PROJECT_ID} --cluster=${CLUSTER_NAME} --zone=${ZONE} --mount-point=/mnt/ckpt --bucket=${CHECKPOINT_BUCKET} --mount-options=logging:severity:info,enable-atomic-rename-object:true --readonly=false --auto-mount=false --size=1_000_000 
+echo "=== Attaching storage volume checkpoint ==="
+xpk storage attach ${WORKLOAD_NAME}-checkpoint --type=gcsfuse --project=${PROJECT_ID} --cluster=${CLUSTER_NAME} --zone=${ZONE} --mount-point=/mnt/ckpt --bucket=${CHECKPOINT_BUCKET} --mount-options=logging:severity:info,enable-atomic-rename-object:false --readonly=false --auto-mount=false --size=1_000_000 
 
+echo "=== Creating XPK Workload: $WORKLOAD_NAME ==="
 xpk workload create \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
