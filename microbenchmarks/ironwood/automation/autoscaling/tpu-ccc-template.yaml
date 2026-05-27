@@ -1,0 +1,19 @@
+apiVersion: cloud.google.com/v1
+kind: ComputeClass
+metadata:
+  name: tpuv7-${TPU_TOPOLOGY}-class
+spec:
+  priorities:
+    - tpu:
+        type: tpu7x
+        topology: ${TPU_TOPOLOGY}
+        count: 4
+      reservations:
+        specific:
+        - name: ${RESERVATION_NAME}
+          project: ${PROJECT_ID}
+        affinity: Specific
+      placement:
+        policyName: ${POLICY_NAME}
+  nodePoolAutoCreation:
+    enabled: true

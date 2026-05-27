@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: headless-svc
+spec:
+  clusterIP: None
+  selector:
+    job-name: tpu7x-2x2x2-ici-all-gather-microbenchmark
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tpu7x-2x2x2-ici-all-gather-microbenchmark
+spec:
+  completionMode: Indexed
+  parallelism: 2
+  completions: 2
+  backoffLimit: 0
+  template:
+    spec:
+      subdomain: headless-svc
+      restartPolicy: Never
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: 2x2x2
+      containers:
+      - name: jax-tpu
+        image: python:3.12
+        securityContext:
+          privileged: false
+        env:
+        - name: JAX_PLATFORMS
+          value: "tpu,cpu"
+        - name: TPU_VMODULE
+          value: "singleton_tpu_system_manager=10,tpu_version_flag=10,device_util=10,device_scanner=10,mesh_builder=10,master=10"
+        - name: XLA_IR_DEBUG
+          value: "1"
+        - name: XLA_HLO_DEBUG
+          value: "1"
+        command:
+        - bash
+        - -c
+        - |
+          set -ex
+          git clone https://github.com/AI-Hypercomputer/accelerator-microbenchmarks.git
+          cd accelerator-microbenchmarks
+          pip install -r requirements.txt
+          python Ironwood/src/run_benchmark.py --config="Ironwood/configs/collectives/all_gather_tpu7x_2x2x2.yaml"
+        resources:
+          requests:
+            google.com/tpu: 4
+          limits:
+            google.com/tpu: 4

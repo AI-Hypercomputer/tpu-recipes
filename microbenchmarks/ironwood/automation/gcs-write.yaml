@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  generateName: gcs-writer-test-
+  namespace: default
+spec:
+  serviceAccountName: ${SA_NAME}
+  containers:
+  - name: gcs-test-container
+    image: google/cloud-sdk:slim
+    command:
+    - bash
+    - -c
+    - |
+      set -ex
+      TIMESTAMP=$(date +%s)
+      LOCAL_FILE="/tmp/test-file-${TIMESTAMP}.txt"
+      
+      # GCS_CHECK_PATH is substituted by envsubst
+      echo "Using GCS Path: ${GCS_CHECK_PATH}"
+
+      echo "Testing GCS write from pod at $(date)" > "${LOCAL_FILE}"
+
+      echo "--- Configuration ---"
+      gcloud auth list
+      gcloud config list
+      # Try to get service account email, but don't fail if metadata server is slow/unreachable (though it should be reachable)
+      curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email" || echo "Could not fetch SA email"
+      echo
+
+      echo "--- Writing to GCS ---"
+      gsutil cp "${LOCAL_FILE}" "${GCS_CHECK_PATH}"
+
+      echo "--- Verifying from GCS ---"
+      gsutil cat "${GCS_CHECK_PATH}"
+
+      echo "--- Cleaning up GCS object ---"
+      gsutil rm "${GCS_CHECK_PATH}"
+
+      echo "GCS test complete!"
+  restartPolicy: Never
