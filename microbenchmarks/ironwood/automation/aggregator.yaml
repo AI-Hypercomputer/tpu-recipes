@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aggregator
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      serviceAccountName: ${GCS_SA_NAME}
+      containers:
+      - name: main-app
+        image: python:3.12
+        command:
+        - bash
+        - -c
+        - |
+          set -ex
+          git clone https://github.com/AI-Hypercomputer/accelerator-microbenchmarks.git
+          cd accelerator-microbenchmarks
+          git checkout tpu7x-auto
+          pip install gcsfs pandas
+
+          GCS_BUCKET_DIR=${GCS_BUCKET_ROOT_DIR}
+          python Ironwood/guides/automation/aggregator.py --bucket_path=${GCS_BUCKET_DIR}
+      restartPolicy: Never
