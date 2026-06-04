@@ -12,7 +12,7 @@ This workload is configured with the following details:
 
 -   Sequence Length: 4096
 -   Precision: bfloat16
--   Chips: 64 (4x4x4 topology)
+-   Chips: 256 (4x8x8 topology)
 
 ## Prerequisites
 
@@ -118,7 +118,7 @@ For this recipe, the following setup is used:
 
 ## Test environment
 
-This recipe is optimized for and tested with tpu7x-4x4x4.
+This recipe is optimized for and tested with tpu7x-4x8x8.
 
 -   **GKE cluster** To create your GKE cluster, use the XPK instructions.
     [XPK instructions](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#cluster-create).

@@ -18,6 +18,9 @@ if ! pip show xpk &> /dev/null; then
 fi
 # --- End Environment Setup ---
 
+set -e
+set -o pipefail
+
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
 # to match your specific GCP project and cluster setup.
@@ -30,7 +33,7 @@ export ZONE=""
 export BASE_OUTPUT_DIR=""
 export ARTIFACT_DIR=""
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-26b")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-26b-4096-4x4x4")-$(date +%Y%m%d-%H%M)"
 
 
 # XLA Flags
@@ -65,7 +68,7 @@ max_target_length=4096 \
 async_checkpointing=False \
 enable_checkpointing=False \
 use_iota_embed=True \
-num_vocab_tiling=8 \
+num_vocab_tiling=1 \
 remat_policy=full \
 decoder_layer_input=offload \
 allow_split_physical_axes=True \
@@ -92,24 +95,26 @@ sa_use_fused_bwd_kernel=True \
 sa_block_q=1024 \
 sa_block_kv=1024 \
 sa_block_kv_compute=512 \
-sa_block_q_dkv=2048 \
-sa_block_kv_dkv=2048 \
+sa_block_q_dkv=1024 \
+sa_block_kv_dkv=1024 \
 sa_block_kv_dkv_compute=256 \
 dataset_type=synthetic \
 opt_type=adamw \
-mu_dtype=bfloat16 \
-grad_dtype=bfloat16 \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME}"
+run_name=${WORKLOAD_NAME} \
+profiler=xplane \
+skip_first_n_steps_for_profiler=5 \
+profiler_steps=3"
 
 
 
+echo "=== Creating XPK Workload: $WORKLOAD_NAME ==="
 xpk workload create \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
   --zone=$ZONE \
-  --priority=very-high \
+  --priority=medium \
   --max-restarts=0 \
   --device-type=tpu7x-4x4x4 \
   --num-slices=1 \
@@ -123,6 +128,7 @@ xpk workload create \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
+ \
  \
 python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
 gcloud storage cp --no-user-output-enabled train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
