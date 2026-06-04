@@ -12,7 +12,7 @@ This workload is configured with the following details:
 
 -   Sequence Length: 4096
 -   Precision: bfloat16
--   Chips: 64 (4x4x4 topology)
+-   Chips: 256 (4x8x8 topology)
 
 ## Prerequisites
 
@@ -118,7 +118,7 @@ For this recipe, the following setup is used:
 
 ## Test environment
 
-This recipe is optimized for and tested with tpu7x-4x4x4.
+This recipe is optimized for and tested with tpu7x-4x8x8.
 
 -   **GKE cluster** To create your GKE cluster, use the XPK instructions.
     [XPK instructions](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#cluster-create).
@@ -180,16 +180,6 @@ have Docker installed on your workstation, see the section below for installing
 XPK and its dependencies. Docker installation is part of this process.
 
 ### Steps for building workload image
-
-**Warning:** If any of the software versions below show as "N/A", you *must*
-fill in the correct versions. To find the missing versions (e.g., for MaxText
-commit hash, Libtpu, and Jax/Jaxlib), you may need to:
-1.  Pull the Docker image from the workload that this recipe is based on.
-2.  Start the Docker container.
-3.  Run commands within the container to get the specific versions. For example,
-to find the MaxText commit, you can use `git rev-parse HEAD` inside the cloned
-MaxText repository within the container. For Python package versions, use
-`pip show <package_name>`.
 
 The following software versions are used:
 
