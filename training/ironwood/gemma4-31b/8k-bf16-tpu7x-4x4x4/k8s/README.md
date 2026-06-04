@@ -5,20 +5,13 @@ This recipe outlines the steps for running a gemma4-31b
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine)
 by applying a Kubernetes manifest to deploy a JobSet resource.
 
-<!--
-================================================================================
-WARNING: WORKLOAD DETAILS MISSING
-Some workload details (Sequence Length, Precision, or Chips) are showing as "N/A".
-Please ensure these values are correctly configured in the workload or config.yml.
-================================================================================
--->
 
 ## Workload Details
 
 This workload is configured with the following details:
 
 -   Sequence Length: 8192
--   Precision: N/A
+-   Precision: bfloat16
 -   Chips: 64 (4x4x4 topology)
 
 ## Prerequisites
