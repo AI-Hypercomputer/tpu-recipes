@@ -35,8 +35,8 @@ To run this recipe, you need the following:
 -   **Docker:** Docker must be installed on your workstation. Follow the steps
     in the [Install XPK and dependencies](#install-xpk-and-dependencies) section
     to install Docker.
--   **Python 3.12 Virtual Environment:** A Python
-    3.12 virtual environment is required. Instructions
+-   **Python 3.13 Virtual Environment:** A Python
+    3.13 virtual environment is required. Instructions
     for setting this up are also in the
     [Install XPK and dependencies](#install-xpk-and-dependencies) section.
 -   **XPK and Dependencies:** Follow the steps in the
@@ -61,8 +61,8 @@ chmod +x install-uv.sh
 rm install-uv.sh
 source ${HOME}/.local/bin/env
 
-# Set up and Activate Python 3.12 virtual environment
-uv venv --seed ${HOME}/.local/bin/venv --python 3.12 --clear
+# Set up and Activate Python 3.13 virtual environment
+uv venv --seed ${HOME}/.local/bin/venv --python 3.13 --clear
 source ${HOME}/.local/bin/venv/bin/activate
 pip install --upgrade pip
 ```
@@ -80,10 +80,10 @@ Install XPK and necessary tools:
 # Ensure to log in to your gcloud
 
 # Install latest xpk
-pip install xpk==1.4.0
+pip install xpk==1.11.0
 
 # Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.4.0/tools/install-xpk.sh -o install-xpk.sh
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.11.0/tools/install-xpk.sh -o install-xpk.sh
 chmod +x install-xpk.sh
 sudo ./install-xpk.sh
 rm install-xpk.sh
@@ -183,11 +183,11 @@ XPK and its dependencies. Docker installation is part of this process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.40.dev20260411+nightly
--   Jax version: 0.10.0.dev20260411
--   Maxtext version: c73595a
--   Python: 3.12
--   XPK: 1.4.0
+-   Libtpu version: 0.0.42.dev20260603+nightly
+-   Jax version: 0.10.2.dev20260603
+-   Maxtext version: df1b359
+-   Python: 3.13
+-   XPK: 1.11.0
 
 Docker Image Building Command:
 
@@ -207,17 +207,20 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout c73595a
+git checkout df1b359
 
 # Build and upload the docker image
 bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.10.0.dev20260411 \
-  LIBTPU_VERSION=0.0.40.dev20260411+nightly
+  JAX_VERSION=0.10.2.dev20260603 \
+  LIBTPU_VERSION=0.0.42.dev20260603+nightly
 bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate
+
+# Return to the recipe directory
+cd ..
 ```
 
 ## Training dataset
@@ -247,10 +250,12 @@ gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the gemma4-26b pretraining workload.
 
-To run the benchmark, first make the script executable and then run it:
+To run the benchmark, first make the script executable, edit it to configure
+environment variables, and then run it:
 
 ```bash
 chmod +x run_recipe.sh
+nano run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -283,7 +288,12 @@ and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-kubectl logs -f -n default jobset/${WORKLOAD_NAME}-0-worker-0
+
+# Get the name of the first pod in the JobSet
+POD_NAME=$(kubectl get pods -l jobset.sigs.k8s.io/jobset-name=${WORKLOAD_NAME} -n default -o jsonpath='{.items[0].metadata.name}')
+
+# Follow the logs of that pod
+kubectl logs -f -n default ${POD_NAME}
 ```
 
 You can also monitor your cluster and TPU usage through the Google Cloud

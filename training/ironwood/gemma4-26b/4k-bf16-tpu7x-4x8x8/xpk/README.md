@@ -1,6 +1,6 @@
-# Pretrain gemma4-31b workload on Ironwood GKE clusters with XPK
+# Pretrain gemma4-26b workload on Ironwood GKE clusters with XPK
 
-This recipe outlines the steps for running a gemma4-31b
+This recipe outlines the steps for running a gemma4-26b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [XPK](https://github.com/AI-Hypercomputer/xpk).
@@ -10,9 +10,9 @@ This recipe outlines the steps for running a gemma4-31b
 
 This workload is configured with the following details:
 
--   Sequence Length: 8192
+-   Sequence Length: 4096
 -   Precision: bfloat16
--   Chips: 64 (4x4x4 topology)
+-   Chips: 256 (4x8x8 topology)
 
 ## Prerequisites
 
@@ -113,12 +113,12 @@ For this recipe, the following setup is used:
 -   **Pretraining job configuration and deployment** - XPK is used to configure
     and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
-    resource, which manages the execution of the gemma4-31b workload.
+    resource, which manages the execution of the gemma4-26b workload.
 
 
 ## Test environment
 
-This recipe is optimized for and tested with tpu7x-4x4x4.
+This recipe is optimized for and tested with tpu7x-4x8x8.
 
 -   **GKE cluster** To create your GKE cluster, use the XPK instructions.
     [XPK instructions](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#cluster-create).
@@ -141,13 +141,13 @@ across all commands and configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-gemma4-31b-runner` by
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-gemma4-26b-runner` by
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-gemma4-31b-$(date +%H%M)` by default.
+    `run_recipe.sh` to `${USER}-gemma4-26b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x8x8`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
@@ -245,10 +245,10 @@ does this for you already):
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-### Run gemma4-31b Pretraining Workload
+### Run gemma4-26b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the gemma4-31b pretraining workload.
+configurations to launch the gemma4-26b pretraining workload.
 
 To run the benchmark, first make the script executable, edit it to configure
 environment variables, and then run it:
