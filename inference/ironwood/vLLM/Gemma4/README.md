@@ -116,15 +116,16 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
 
 1. Execute a short benchmark against the server using one of the following workloads.
 
-    #### Workload 1k/1k
+    #### Workload 1k/500
 
-    Save the following manifest as `vllm-benchmark-1k1k.yaml` and apply it using `kubectl apply -f vllm-benchmark-1k1k.yaml`.
+    Save the following manifest as `vllm-benchmark-1k500.yaml` and apply it using `kubectl apply -f vllm-benchmark-1k500.yaml`.
 
     ```yaml
     apiVersion: v1
     kind: Pod
     metadata:
-      name: vllm-bench-1k1k
+      name: vllm-bench-1k500
+      namespace: gemma4-test
     spec:
       terminationGracePeriodSeconds: 60
       containers:
@@ -139,17 +140,14 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
           python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
             --backend=vllm \
             --request-rate=inf \
-            --percentile-metrics='ttft,tpot,itl,e2el' \
             --host=vllm-service \
             --port=8000 \
             --model=google/gemma-4-31B-it \
             --tokenizer=google/gemma-4-31B-it \
             --dataset-name=random \
             --random-input-len=1024 \
-            --random-output-len=1024 \
-            --random-range-ratio=0.8 \
-            --num-prompts=320 \
-            --max-concurrency=64 \
+            --random-output-len=500 \
+            --num-prompts=1280 \
             --ignore-eos
         env:
         - name: HUGGING_FACE_HUB_TOKEN
@@ -168,6 +166,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
     kind: Pod
     metadata:
       name: vllm-bench-1k8k
+      namespace: gemma4-test
     spec:
       terminationGracePeriodSeconds: 60
       containers:
@@ -182,7 +181,6 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
           python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
             --backend=vllm \
             --request-rate=inf \
-            --percentile-metrics='ttft,tpot,itl,e2el' \
             --host=vllm-service \
             --port=8000 \
             --model=google/gemma-4-31B-it \
@@ -192,7 +190,6 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
             --random-output-len=8192 \
             --random-range-ratio=0.8 \
             --num-prompts=320 \
-            --max-concurrency=64 \
             --ignore-eos
         env:
         - name: HUGGING_FACE_HUB_TOKEN
@@ -211,6 +208,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
     kind: Pod
     metadata:
       name: vllm-bench-8k1k
+      namespace: gemma4-test
     spec:
       terminationGracePeriodSeconds: 60
       containers:
@@ -225,7 +223,6 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
           python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
             --backend=vllm \
             --request-rate=inf \
-            --percentile-metrics='ttft,tpot,itl,e2el' \
             --host=vllm-service \
             --port=8000 \
             --model=google/gemma-4-31B-it \
@@ -235,7 +232,6 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
             --random-output-len=1024 \
             --random-range-ratio=0.8 \
             --num-prompts=320 \
-            --max-concurrency=64 \
             --ignore-eos
         env:
         - name: HUGGING_FACE_HUB_TOKEN
@@ -248,22 +244,42 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
 2. Check the progress of benchmark:
 
     ```bash
-    kubectl logs -f vllm-bench-1k1k # For 1k/1k workload
+    kubectl logs -f vllm-bench-1k500 # For 1k/500 workload
     ```
 
     Example Output:
     ```
     ============ Serving Benchmark Result ============
-    Successful requests:                     320
-    Failed requests:                         0
-    Benchmark duration (s):                  xx
-    ...
+    Successful requests:                     1280
+    Benchmark duration (s):                  xx.xx
+    Total input tokens:                      xxxx
+    Total generated tokens:                  xxxx
+
+    Request throughput (req/s):              xx.xx
+    Output token throughput (tok/s):         xxxx.xx
+    Total Token throughput (tok/s):          xxxx.xx
+
+    ---------------Time to First Token----------------
+    Mean TTFT (ms):                          xxxx.xx
+    Median TTFT (ms):                        xxxx.xx
+    P99 TTFT (ms):                           xxxx.xx
+
+    -----Time per Output Token (excl. 1st token)------
+    Mean TPOT (ms):                          xx.xx
+    Median TPOT (ms):                        xx.xx
+    P99 TPOT (ms):                           xx.xx
+
+    ---------------Inter-token Latency----------------
+    Mean ITL (ms):                           xx.xx
+    Median ITL (ms):                         xx.xx
+    P99 ITL (ms):                            xx.xx
+    ==================================================
     ```
 
 3. Clean up
 
     ```bash
-    kubectl delete -f vllm-benchmark-1k1k.yaml
+    kubectl delete -f vllm-benchmark-1k500.yaml
     kubectl delete -f vllm-benchmark-1k8k.yaml
     kubectl delete -f vllm-benchmark-8k1k.yaml
     ```
