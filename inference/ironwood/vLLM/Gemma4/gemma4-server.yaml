@@ -46,38 +46,40 @@ spec:
       # TODO: Update the topology to match your allocated TPU node pool (e.g., 2x2x1 is 4 chips)
       nodeSelector:
         cloud.google.com/gke-tpu-accelerator: tpu7x
-        cloud.google.com/gke-tpu-topology: 1x1x1
+        cloud.google.com/gke-tpu-topology: 2x2x1
       containers:
       - name: vllm-tpu
-        image: vllm/vllm-tpu:nightly-20260514-4690ef3-bf0d2dc
+        image: vllm/vllm-tpu:nightly-20260604-2aaa59e-4f423bd
         command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
 
         args:
         - --host=0.0.0.0
         - --port=8000
         - --seed=42
-        # TODO: Update tensor-parallel-size to match the number of chips in your topology
-        - --tensor-parallel-size=2
-        - --max-model-len=9216
-        - --max-num-batched-tokens=4096
-        - --block-size=256
-        - --download-dir=/data
-        - --no-enable-prefix-caching
-        - --additional_config='{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}'
         # TODO: Update the model if you wish to switch to MoE or another variant
         - --model=google/gemma-4-31B-it
+        - --max-model-len=1524
+        - --max-num-seqs=256
+        - --data-parallel-size=4
+        - --tensor-parallel-size=2
+        - --max-num-batched-tokens=16384
+        - --no-enable-prefix-caching
         - --kv-cache-dtype=fp8
+        - --gpu-memory-utilization=0.9
         - --async-scheduling
-        - --gpu-memory-utilization=0.90
-        - --disable_chunked_mm_input
-        - --enable-auto-tool-choice
-        - --tool-call-parser=gemma4
+        - "--limit-mm-per-prompt={\"image\": 0, \"video\": 0, \"audio\": 0}"
+        - --block-size=256
+        - "--additional-config={\"quantization\": { \"qwix\": { \"rules\": [{ \"module_path\": \".*\", \"weight_qtype\": \"float8_e4m3fn\", \"act_qtype\": \"float8_e4m3fn\"}]}}}"
 
         env:
+        - name: VLLM_ENGINE_READY_TIMEOUT_S
+          value: "1800"
+        - name: TPU_MULTIPROCESS_DP
+          value: "1"
         - name: USE_BATCHED_RPA_KERNEL
-          value: 1
-        - name: MOE_REQUANTIZE_WEIGHT_DTYPE
-          value: float8_e4m3fn
+          value: "1"
+        - name: MODEL_IMPL_TYPE
+          value: "flax_nnx"
         - name: HF_HOME
           value: /data
         - name: HF_TOKEN
@@ -90,9 +92,9 @@ spec:
         - containerPort: 8000
         resources:
           limits:
-            google.com/tpu: '1' # Number of chips required by topology
+            google.com/tpu: '4' # Number of chips required by topology
           requests:
-            google.com/tpu: '1'
+            google.com/tpu: '4'
         readinessProbe:
           tcpSocket:
             port: 8000
