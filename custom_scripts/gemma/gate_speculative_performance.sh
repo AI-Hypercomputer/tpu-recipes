@@ -26,10 +26,14 @@ echo "Running MULTIMODAL benchmark with Speculative Decoding..."
 echo "==========================================="
 gcloud compute tpus tpu-vm ssh ${TPU_NAME} --zone=${ZONE} --command="
 sudo docker exec vllm-gemma4 vllm bench serve \
-  --backend openai-chat \
-  --endpoint /v1/chat/completions \
+  --backend openai \
+  --endpoint /v1/completions \
   --model google/gemma-4-31B-it \
-  --dataset-name random-mm \
+  --dataset-name random \
+  --random-input-len 1024 \
+  --random-output-len 128 \
+  --random-mm-base-items-per-request 1 \
+  --random-mm-limit-mm-per-prompt '{\"image\": 1}' \
   --num-prompts 100 \
-  --random-mm-limit-mm-per-prompt '{\"image\": 1, \"video\": 0}'
+  --request-rate 10
 "
