@@ -2,6 +2,8 @@
 
 In this guide, we show how to serve Qwen3.5 397B models (e.g., `Qwen/Qwen3.5-397B-A17B-FP8`) with vLLM on Ironwood (TPU v7x) using GKE.
 
+Since Qwen3.5-397B is a very large mixture-of-experts model (~400GB in FP8), it requires a multi-chip setup. We deploy it on a single **tpu7x-standard-4t** node pool (4 TPU v7x chips, 8 TensorCores) using **Tensor Parallelism (TP) size of 8**.
+
 ## Verified Models
 
 The following larger Qwen 3.5 models are verified for deployment on TPU.
@@ -10,263 +12,312 @@ The following larger Qwen 3.5 models are verified for deployment on TPU.
 
 | Model | Parameters | Min TPUs (Chips) | HuggingFace |
 | :---- | :---- | :---- | :---- |
-| Qwen 3.5 397B FP8 | 397B (17B active) | 8× | [Qwen/Qwen3.5-397B-A17B-FP8](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8) |
+| Qwen 3.5 397B FP8 | 397B (17B active) | 4× | [Qwen/Qwen3.5-397B-A17B-FP8](https://huggingface.co/Qwen/Qwen3.5-397B-A17B-FP8) |
 
-## Cluster Prerequisites
+## Prerequisites
 
-Before deploying the vLLM workload, ensure your GKE cluster is configured with the necessary networking and identity features.
+1. A GKE cluster with TPU v7x support (GKE version `1.34.0-gke.2201000` or later).
+2. GCloud CLI and Kubectl installed and configured.
+3. A Hugging Face account and access token (needed if Qwen3.5-397B-A17B-FP8 requires authentication or for general HF hub usage).
 
-### Define parameters
+---
 
-```bash
-# Set variables
-export CLUSTER_NAME=<YOUR_CLUSTER_NAME>
-export PROJECT_ID=<YOUR_PROJECT_ID>
-export REGION=<YOUR_REGION>
-export ZONE=<YOUR_ZONE>
-export NODEPOOL_NAME=<YOUR_NODEPOOL_NAME>
+## Step 1: Define Parameters
+
+Export the necessary environment variables for your Google Cloud project and GKE cluster:
+
+```shell
+export PROJECT_ID="<YOUR_PROJECT_ID>"
+export CLUSTER_NAME="<YOUR_CLUSTER_NAME>"
+export REGION="<YOUR_REGION>"
+export ZONE="<YOUR_ZONE>"
+export NODEPOOL_NAME="qwen3-5-tpu-pool"
 ```
 
-### Create nodepool
+---
 
-Create a TPU v7 (Ironwood) nodepool. Note that running this model natively requires 8 chips. For `tpu7x` this is achieved using 2 nodes in a 2x2x1 topology.
+## Step 2: Create the TPU Node Pool
 
-```bash
+Create a TPU v7x (Ironwood) nodepool with the `tpu7x-standard-4t` machine type. This machine type provides 4 chips.
+
+```shell
 gcloud container node-pools create ${NODEPOOL_NAME} \
-  --project=${PROJECT_ID} \
-  --location=${REGION} \
-  --node-locations=${ZONE} \
-  --num-nodes=2 \
-  --machine-type=tpu7x-standard-4t \
-  --cluster=${CLUSTER_NAME}
+    --project=${PROJECT_ID} \
+    --location=${REGION} \
+    --node-locations=${ZONE} \
+    --num-nodes=1 \
+    --machine-type=tpu7x-standard-4t \
+    --cluster=${CLUSTER_NAME}
 ```
 
-## Deploy vLLM Workload on GKE
+---
 
-1. Configure kubectl to communicate with your cluster
+## Step 3: Setup Kubernetes Configurations
 
-    ```bash
-    gcloud container clusters get-credentials ${CLUSTER_NAME} --location=${ZONE}
-    ```
+1. Configure `kubectl` to communicate with your cluster:
 
-2. Create a Kubernetes Secret for Hugging Face credentials
+```shell
+gcloud container clusters get-credentials ${CLUSTER_NAME} --location=${ZONE} --project=${PROJECT_ID}
+```
 
-    ```bash
-    export HF_TOKEN=YOUR_TOKEN
-    kubectl create secret generic hf-secret \
-        --from-literal=hf_api_token=${HF_TOKEN}
-    ```
+2. Create the Namespace `qwen3-5-test` if you want to run it in a isolated namespace (recommended):
 
-3. Install LeaderWorkerSet
+```shell
+kubectl create namespace qwen3-5-test
+```
 
-    Because this recipe requires multi-host inference (spanning 2 nodes), you must install LeaderWorkerSet in your cluster if it isn't already installed:
+3. Create a Kubernetes secret for your Hugging Face token in the namespace:
 
-    ```bash
-    kubectl apply -f https://github.com/kubernetes-sigs/lws/releases/download/v0.3.0/install.yaml
-    ```
+```shell
+export HF_TOKEN="YOUR_HUGGING_FACE_API_TOKEN"
+kubectl create secret generic hf-secret \
+    --namespace=qwen3-5-test \
+    --from-literal=hf_api_token=${HF_TOKEN}
+```
 
-4. Apply the vLLM manifest using the provided `vllm-tpu.yaml` file in this directory:
+---
 
-    ```bash
-    kubectl apply -f vllm-tpu.yaml
-    ```
+## Step 4: Apply the vLLM Server Manifest
 
-5. Check the status of the server
+Apply the vLLM server manifest using the provided `qwen3_5-server.yaml` file in this directory:
 
-    To see the deployment status and monitor the pod as it starts up, run:
-    
-    ```bash
-    kubectl get pods -w
-    ```
-    
-    Wait for the leader pod to reach `Running` state. Once running, you can follow the server startup logs:
-    
-    ```bash
-    kubectl logs vllm-tpu-server-0 -f
-    ```
+```shell
+kubectl apply -f qwen3_5-server.yaml
+```
 
-    At the end of the server startup you'll see logs such as:
+Monitor the progress of the server deployment:
 
-    ```bash
-    ...
-    (APIServer pid=1) INFO:     Started server process [1]
-    (APIServer pid=1) INFO:     Waiting for application startup.
-    (APIServer pid=1) INFO:     Application startup complete.
-    ```
+```shell
+kubectl get pods -n qwen3-5-test -w
+```
 
-6. Interact with the model using curl
+You can check the server logs using:
 
-    Once the application startup is complete, run:
+```shell
+kubectl logs -n qwen3-5-test deployment/vllm-qwen3-5 -c vllm-tpu -f
+```
 
-    ```bash
-    kubectl port-forward service/vllm-service 8000:8000
+Once the server has successfully loaded the model, you should see logs like:
 
-    curl http://localhost:8000/v1/chat/completions \
-        -H "Content-Type: application/json" \
-        -d '{
-            "model": "Qwen/Qwen3.5-397B-A17B-FP8",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "What is the capital of France?"
-                }
-            ],
-            "max_tokens": 300,
-            "temperature": 0.0,
-            "top_p": 1.0
-        }'
-    ```
+```
+(APIServer pid=1) INFO:     Started server process [1]
+(APIServer pid=1) INFO:     Waiting for application startup.
+(APIServer pid=1) INFO:     Application startup complete.
+```
 
-### (Optional) Benchmark via Service
+---
 
-To benchmark the server, we use the InferenceX client from SemiAnalysisAI.
-Reference: <https://github.com/SemiAnalysisAI/InferenceX>.
+## Step 5: Interact with the Model (Optional)
 
-First, download the client code locally if you want to inspect it: `git clone https://github.com/SemiAnalysisAI/InferenceX.git`
+You can test the server using a port forward and curl:
 
-1. Execute a short benchmark against the server using one of the following workloads.
+1. Port forward the vLLM service to port `8000` on your local machine:
 
-    #### Workload 1k/8k
+```shell
+kubectl port-forward -n qwen3-5-test service/vllm-qwen3-5-service 8000:8000
+```
 
-    Save the following manifest as `vllm-benchmark-1k8k.yaml` and apply it using `kubectl apply -f vllm-benchmark-1k8k.yaml`.
+2. Run a curl request:
 
-    ```yaml
-    apiVersion: v1
-    kind: Pod
-    metadata:
-      name: vllm-bench-1k8k
-      namespace: default
-    spec:
-      terminationGracePeriodSeconds: 60
-      containers:
-      - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260616-df47e95-a30addc
-        command: ["/bin/bash", "-c"]
-        args:
-        - |
-          while ! curl http://vllm-service:8000/ping; do sleep 30 && echo 'Waiting for server...'; done
-          apt-get update && apt-get install -y git && \
-          git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && \
-          cd /ubench/inferencex && \
-          git checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc && \
-          python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
-            --backend=vllm \
-            --request-rate=inf \
-            --percentile-metrics='ttft,tpot,itl,e2el' \
-            --dataset-name=random \
-            --random-input-len=1024 \
-            --random-output-len=8192 \
-            --random-range-ratio=0.8 \
-            --host=vllm-service \
-            --port=8000 \
-            --model=Qwen/Qwen3.5-397B-A17B-FP8 \
-            --tokenizer=Qwen/Qwen3.5-397B-A17B-FP8 \
-            --ignore-eos \
-            --num-prompts=640 \
-            --max-concurrency=64
-        env:
-        - name: HUGGING_FACE_HUB_TOKEN
-          valueFrom:
-            secretKeyRef:
-              key: hf_api_token
-              name: hf-secret
-    ```
+```shell
+curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "Qwen/Qwen3.5-397B-A17B-FP8",
+        "messages": [
+            {"role": "user", "content": "Hello! Tell me a joke."}
+        ],
+        "max_tokens": 100,
+        "temperature": 0.7
+    }'
+```
 
-    #### Workload 8k/1k
+---
 
-    Save the following manifest as `vllm-benchmark-8k1k.yaml` and apply it using `kubectl apply -f vllm-benchmark-8k1k.yaml`.
+## Step 6: Run Serving Benchmarks
 
-    ```yaml
-    apiVersion: v1
-    kind: Pod
-    metadata:
-      name: vllm-bench-8k1k
-      namespace: default
-    spec:
-      terminationGracePeriodSeconds: 60
-      containers:
-      - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260616-df47e95-a30addc
-        command: ["/bin/bash", "-c"]
-        args:
-        - |
-          while ! curl http://vllm-service:8000/ping; do sleep 30 && echo 'Waiting for server...'; done
-          apt-get update && apt-get install -y git && \
-          git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && \
-          cd /ubench/inferencex && \
-          git checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc && \
-          python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
-            --backend=vllm \
-            --request-rate=inf \
-            --percentile-metrics='ttft,tpot,itl,e2el' \
-            --dataset-name=random \
-            --random-input-len=8192 \
-            --random-output-len=1024 \
-            --random-range-ratio=0.8 \
-            --host=vllm-service \
-            --port=8000 \
-            --model=Qwen/Qwen3.5-397B-A17B-FP8 \
-            --tokenizer=Qwen/Qwen3.5-397B-A17B-FP8 \
-            --ignore-eos \
-            --num-prompts=640 \
-            --max-concurrency=64
-        env:
-        - name: HUGGING_FACE_HUB_TOKEN
-          valueFrom:
-            secretKeyRef:
-              key: hf_api_token
-              name: hf-secret
-    ```
+We use the `InferenceX` client from SemiAnalysisAI to perform serving benchmarks against our running vLLM server. We test two workloads: **1K Input / 8K Output** and **8K Input / 1K Output**.
 
-2. Check the progress of benchmark:
+### Workload A: 1K Input / 8K Output (1k/8k)
 
-    ```bash
-    kubectl logs -f vllm-bench-1k8k # For 1k/8k workload
-    ```
+Save the following manifest as `qwen3_5-benchmark-1k8k.yaml`:
 
-    Example Output:
-    ```
-    ============ Serving Benchmark Result ============
-    Successful requests:                     640
-    Benchmark duration (s):                  xx.xx
-    Total input tokens:                      xxxx
-    Total generated tokens:                  xxxx
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qwen3-5-bench-1k8k
+  namespace: qwen3-5-test
+spec:
+  terminationGracePeriodSeconds: 60
+  containers:
+  - name: vllm-bench
+    image: vllm/vllm-tpu:nightly-20260616-df47e95-a30addc
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      while ! curl http://vllm-qwen3-5-service:8000/ping; do sleep 30 && echo 'Waiting for server...'; done
+      apt-get update && apt-get install -y git && \
+      git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && \
+      cd /ubench/inferencex && \
+      git checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc && \
+      python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
+        --backend=vllm \
+        --request-rate=inf \
+        --percentile-metrics='ttft,tpot,itl,e2el' \
+        --host=vllm-qwen3-5-service \
+        --port=8000 \
+        --model=Qwen/Qwen3.5-397B-A17B-FP8 \
+        --tokenizer=Qwen/Qwen3.5-397B-A17B-FP8 \
+        --dataset-name=random \
+        --random-input-len=1024 \
+        --random-output-len=8192 \
+        --random-range-ratio=0.8 \
+        --num-prompts=320 \
+        --max-concurrency=64 \
+        --ignore-eos
+    env:
+    - name: HUGGING_FACE_HUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: hf_api_token
+          name: hf-secret
+```
 
-    Request throughput (req/s):              xx.xx
-    Output token throughput (tok/s):         xxxx.xx
-    Total Token throughput (tok/s):          xxxx.xx
+Apply it using `kubectl`:
 
-    ---------------Time to First Token----------------
-    Mean TTFT (ms):                          xxxx.xx
-    Median TTFT (ms):                        xxxx.xx
-    P99 TTFT (ms):                           xxxx.xx
+```shell
+kubectl apply -f qwen3_5-benchmark-1k8k.yaml
+```
 
-    -----Time per Output Token (excl. 1st token)------
-    Mean TPOT (ms):                          xx.xx
-    Median TPOT (ms):                        xx.xx
-    P99 TPOT (ms):                           xx.xx
+Check the logs of the benchmark run:
 
-    ---------------Inter-token Latency----------------
-    Mean ITL (ms):                           xx.xx
-    Median ITL (ms):                         xx.xx
-    P99 ITL (ms):                            xx.xx
-    ==================================================
-    ```
+```shell
+kubectl logs -n qwen3-5-test qwen3-5-bench-1k8k -f
+```
 
-    Workload (input tokens/output tokens) | Output Token Throughput (tok/s) Per Chip
-    :------- | :---------------------------------------
-    1k/8k    | 2436.35 tok/s (609.09 tok/s/chip)
-    8k/1k    | 1513.05 tok/s (378.26 tok/s/chip)
+When complete, clean up the benchmark pod:
 
-    **Note**: These benchmark results are based on the `InferenceX` client. The
-    development team is continuously improving and optimizing performance; as such,
-    these results are subject to change, and improved or optimized figures may be
-    published in the future.
+```shell
+kubectl delete -f qwen3_5-benchmark-1k8k.yaml
+```
 
-3. Clean up
+---
 
-    ```bash
-    kubectl delete -f vllm-benchmark-1k8k.yaml
-    kubectl delete -f vllm-benchmark-8k1k.yaml
-    kubectl delete -f vllm-tpu.yaml
-    ```
+### Workload B: 8K Input / 1K Output (8k/1k)
+
+Save the following manifest as `qwen3_5-benchmark-8k1k.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qwen3-5-bench-8k1k
+  namespace: qwen3-5-test
+spec:
+  terminationGracePeriodSeconds: 60
+  containers:
+  - name: vllm-bench
+    image: vllm/vllm-tpu:nightly-20260616-df47e95-a30addc
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      while ! curl http://vllm-qwen3-5-service:8000/ping; do sleep 30 && echo 'Waiting for server...'; done
+      apt-get update && apt-get install -y git && \
+      git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && \
+      cd /ubench/inferencex && \
+      git checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc && \
+      python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
+        --backend=vllm \
+        --request-rate=inf \
+        --percentile-metrics='ttft,tpot,itl,e2el' \
+        --host=vllm-qwen3-5-service \
+        --port=8000 \
+        --model=Qwen/Qwen3.5-397B-A17B-FP8 \
+        --tokenizer=Qwen/Qwen3.5-397B-A17B-FP8 \
+        --dataset-name=random \
+        --random-input-len=8192 \
+        --random-output-len=1024 \
+        --random-range-ratio=0.8 \
+        --num-prompts=320 \
+        --max-concurrency=64 \
+        --ignore-eos
+    env:
+    - name: HUGGING_FACE_HUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: hf_api_token
+          name: hf-secret
+```
+
+Apply it using `kubectl`:
+
+```shell
+kubectl apply -f qwen3_5-benchmark-8k1k.yaml
+```
+
+Check the logs of the benchmark run:
+
+```shell
+kubectl logs -n qwen3-5-test qwen3-5-bench-8k1k -f
+```
+
+When complete, clean up the benchmark pod:
+
+```shell
+kubectl delete -f qwen3_5-benchmark-8k1k.yaml
+```
+
+---
+
+### Example Benchmark Output
+
+The benchmark client will print a table resembling the following:
+
+```
+============ Serving Benchmark Result ============
+Successful requests:                     320
+Failed requests:                         0
+Benchmark duration (s):                  xxx
+Total input tokens:                      xxx
+Total generated tokens:                  xxx
+Request throughput (req/s):              xx
+Output token throughput (tok/s):         xxx
+Peak output token throughput (tok/s):    xxx
+Peak concurrent requests:                64.00
+Total Token throughput (tok/s):          xxx
+---------------Time to First Token----------------
+Mean TTFT (ms):                          xxx
+Median TTFT (ms):                        xxx
+P99 TTFT (ms):                           xxx
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          xxx
+Median TPOT (ms):                        xxx
+P99 TPOT (ms):                           xxx
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           xxx
+Median ITL (ms):                         xxx
+P99 ITL (ms):                            xxx
+==================================================
+```
+
+---
+
+## Step 7: Cleanup
+
+When you are finished with the benchmark and no longer need the server, you can tear down the resources:
+
+1. Delete the vLLM server:
+
+```shell
+kubectl delete -f qwen3_5-server.yaml
+```
+
+2. (Optional) Delete the GKE TPU node pool:
+
+```shell
+gcloud container node-pools delete ${NODEPOOL_NAME} \
+    --cluster=${CLUSTER_NAME} \
+    --location=${REGION} \
+    --project=${PROJECT_ID}
+```
