@@ -174,7 +174,7 @@ spec:
         --random-output-len=8192 \
         --random-range-ratio=0.8 \
         --num-prompts=320 \
-        --max-concurrency=64 \
+        --max-concurrency=128 \
         --ignore-eos
     env:
     - name: HUGGING_FACE_HUB_TOKEN
@@ -240,7 +240,7 @@ spec:
         --random-output-len=1024 \
         --random-range-ratio=0.8 \
         --num-prompts=320 \
-        --max-concurrency=64 \
+        --max-concurrency=128 \
         --ignore-eos
     env:
     - name: HUGGING_FACE_HUB_TOKEN
@@ -303,8 +303,8 @@ P99 ITL (ms):                            xxx
 
 Workload (input tokens/output tokens) | Output Token Throughput (tok/s) Per Chip
 :------- | :---------------------------------------
-1k/8k    | 2436.35 tok/s (609.09 tok/s/chip)
-8k/1k    | 1513.05 tok/s (378.26 tok/s/chip)
+1k/8k    | 3956.67 tok/s (989.17 tok/s/chip)
+8k/1k    | 1998.18 tok/s (499.55 tok/s/chip)
 
 **Note**: These benchmark results are based on the `InferenceX` client. The development team is continuously improving and optimizing performance; as such, these results are subject to change, and improved or optimized figures may be published in the future.
 
