@@ -284,7 +284,7 @@ Total generated tokens:                  xxx
 Request throughput (req/s):              xx
 Output token throughput (tok/s):         xxx
 Peak output token throughput (tok/s):    xxx
-Peak concurrent requests:                64.00
+Peak concurrent requests:                128.00
 Total Token throughput (tok/s):          xxx
 ---------------Time to First Token----------------
 Mean TTFT (ms):                          xxx
