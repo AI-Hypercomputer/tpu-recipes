@@ -27,17 +27,17 @@ MaxDiffusion supports multiple Stable Diffusion models. Run the appropriate comm
 
 ### Stable Diffusion 1.5
 ```bash
-LIBTPU_INIT_ARGS="--xla_tpu_rwb_fusion=false --xla_tpu_dot_dot_fusion_duplicated=true" python -m src.maxdiffusion.generate src/maxdiffusion/configs/base15.yml run_name="my_run"
+LIBTPU_INIT_ARGS="--xla_tpu_rwb_fusion=false --xla_tpu_dot_dot_fusion_duplicated=true --xla_tpu_scoped_vmem_limit_kib=131072" python -m src.maxdiffusion.generate src/maxdiffusion/configs/base15.yml run_name="my_run"
 ```
 
 ### Stable Diffusion 2.1
 ```bash
-LIBTPU_INIT_ARGS="--xla_tpu_rwb_fusion=false --xla_tpu_dot_dot_fusion_duplicated=true" python -m src.maxdiffusion.generate src/maxdiffusion/configs/base21.yml run_name="my_run"
+LIBTPU_INIT_ARGS="--xla_tpu_rwb_fusion=false --xla_tpu_dot_dot_fusion_duplicated=true --xla_tpu_scoped_vmem_limit_kib=131072" python -m src.maxdiffusion.generate src/maxdiffusion/configs/base21.yml run_name="my_run"
 ```
 
 ### Stable Diffusion XL
 ```bash
-LIBTPU_INIT_ARGS="--xla_tpu_rwb_fusion=false --xla_tpu_dot_dot_fusion_duplicated=true" python -m src.maxdiffusion.generate src/maxdiffusion/configs/base_xl.yml run_name="my_run"
+LIBTPU_INIT_ARGS="--xla_tpu_rwb_fusion=false --xla_tpu_dot_dot_fusion_duplicated=true --xla_tpu_scoped_vmem_limit_kib=131072" python -m src.maxdiffusion.generate src/maxdiffusion/configs/base_xl.yml run_name="my_run"
 ```
 
 ---
