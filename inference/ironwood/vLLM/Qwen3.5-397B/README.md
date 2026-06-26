@@ -152,7 +152,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
   - name: vllm-bench
-    image: vllm/vllm-tpu:nightly-20260616-df47e95-a30addc
+    image: vllm/vllm-tpu:nightly-20260626-c539adc-cc79815
     command: ["/bin/bash", "-c"]
     args:
     - |
@@ -173,7 +173,7 @@ spec:
         --random-input-len=1024 \
         --random-output-len=8192 \
         --random-range-ratio=0.8 \
-        --num-prompts=320 \
+        --num-prompts=640 \
         --max-concurrency=128 \
         --ignore-eos
     env:
@@ -218,7 +218,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
   - name: vllm-bench
-    image: vllm/vllm-tpu:nightly-20260616-df47e95-a30addc
+    image: vllm/vllm-tpu:nightly-20260626-c539adc-cc79815
     command: ["/bin/bash", "-c"]
     args:
     - |
