@@ -60,10 +60,10 @@ gcloud container node-pools create ${NODEPOOL_NAME} \
 gcloud container clusters get-credentials ${CLUSTER_NAME} --location=${ZONE} --project=${PROJECT_ID}
 ```
 
-2. Create the Namespace `qwen3-5-test` if you want to run it in a isolated namespace (recommended):
+2. Create the Namespace `vllm-qwen` if you want to run it in a isolated namespace (recommended):
 
 ```shell
-kubectl create namespace qwen3-5-test
+kubectl create namespace vllm-qwen
 ```
 
 3. Create a Kubernetes secret for your Hugging Face token in the namespace:
@@ -71,7 +71,7 @@ kubectl create namespace qwen3-5-test
 ```shell
 export HF_TOKEN="YOUR_HUGGING_FACE_API_TOKEN"
 kubectl create secret generic hf-secret \
-    --namespace=qwen3-5-test \
+    --namespace=vllm-qwen \
     --from-literal=hf_api_token=${HF_TOKEN}
 ```
 
@@ -79,7 +79,7 @@ kubectl create secret generic hf-secret \
 
 ## Step 4: Apply the vLLM Server Manifest
 
-Apply the vLLM server manifest using the provided `qwen3_5-server.yaml` file in this directory:
+Apply the vLLM server manifest using the provided [qwen3_5-server.yaml](./qwen3_5-server.yaml) file in this directory:
 
 ```shell
 kubectl apply -f qwen3_5-server.yaml
@@ -88,13 +88,13 @@ kubectl apply -f qwen3_5-server.yaml
 Monitor the progress of the server deployment:
 
 ```shell
-kubectl get pods -n qwen3-5-test -w
+kubectl get pods -n vllm-qwen -w
 ```
 
 You can check the server logs using:
 
 ```shell
-kubectl logs -n qwen3-5-test deployment/vllm-qwen3-5 -c vllm-tpu -f
+kubectl logs -n vllm-qwen deployment/vllm-qwen3-5 -c vllm-tpu -f
 ```
 
 Once the server has successfully loaded the model, you should see logs like:
@@ -114,7 +114,7 @@ You can test the server using a port forward and curl:
 1. Port forward the vLLM service to port `8000` on your local machine:
 
 ```shell
-kubectl port-forward -n qwen3-5-test service/vllm-qwen3-5-service 8000:8000
+kubectl port-forward -n vllm-qwen service/vllm-qwen3-5-service 8000:8000
 ```
 
 2. Run a curl request:
@@ -147,7 +147,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: qwen3-5-bench-1k8k
-  namespace: qwen3-5-test
+  namespace: vllm-qwen
 spec:
   terminationGracePeriodSeconds: 60
   containers:
@@ -193,7 +193,7 @@ kubectl apply -f qwen3_5-benchmark-1k8k.yaml
 Check the logs of the benchmark run:
 
 ```shell
-kubectl logs -n qwen3-5-test qwen3-5-bench-1k8k -f
+kubectl logs -n vllm-qwen qwen3-5-bench-1k8k -f
 ```
 
 When complete, clean up the benchmark pod:
@@ -213,7 +213,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: qwen3-5-bench-8k1k
-  namespace: qwen3-5-test
+  namespace: vllm-qwen
 spec:
   terminationGracePeriodSeconds: 60
   containers:
@@ -259,7 +259,7 @@ kubectl apply -f qwen3_5-benchmark-8k1k.yaml
 Check the logs of the benchmark run:
 
 ```shell
-kubectl logs -n qwen3-5-test qwen3-5-bench-8k1k -f
+kubectl logs -n vllm-qwen qwen3-5-bench-8k1k -f
 ```
 
 When complete, clean up the benchmark pod:
