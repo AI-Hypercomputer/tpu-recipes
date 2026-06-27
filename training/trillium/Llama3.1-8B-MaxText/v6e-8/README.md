@@ -13,6 +13,20 @@ In step 1, use the MaxText [tpu-recipes-v0.1.4](https://github.com/AI-Hypercompu
 git checkout tpu-recipes-v0.1.4
 ```
 
+> [!IMPORTANT]
+> **Required Patches for `tpu-recipes-v0.1.4`**:
+> The `tpu-recipes-v0.1.4` tag contains JAX 0.6.1 stable stack configuration errors. You **must** apply the following patches inside your cloned `maxtext` directory before building the docker image (Step 3):
+> 
+> 1.  **Patch A (Dockerfile Base Image Mismatch)**: In `maxtext_jax_ai_image.Dockerfile`, rename the base image variable check:
+>     ```diff
+>     -RUN if [ "$DEVICE" = "tpu" ] && [ "$JAX_STABLE_STACK_BASEIMAGE" = "us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.6.1-rev1" ]; then \
+>     +RUN if [ "$DEVICE" = "tpu" ] && [ "$JAX_AI_IMAGE_BASEIMAGE" = "us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.6.1-rev1" ]; then \
+>     ```
+> 2.  **Patch B (Requirements Conflicts)**: Clean up conflicts in `requirements_with_jax_stable_stack_0_6_1_pipreqs.txt` (e.g., change `aqt` to `aqtp`, and change `jetstream` to `google-jetstream@git+https://github.com/AI-Hypercomputer/JetStream.git` to avoid pulling the wrong package from PyPI).
+> 3.  **Troubleshooting (XPK / Docker Build Kit)**:
+>     *   If your build host does not support `buildx` or you use pre-built runner images, you may need to patch `benchmarks/maxtext_xpk_runner.py` to use `--docker-image` instead of `--base-docker-image`.
+>     *   If your Docker daemon does not support BuildKit, set `export DOCKER_BUILDKIT=0` in `docker_build_dependency_image.sh`.
+
 In step 3, use the jax-stable-stack image containing JAX 0.6.1:
 ```
 BASE_IMAGE=us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.6.1-rev1
