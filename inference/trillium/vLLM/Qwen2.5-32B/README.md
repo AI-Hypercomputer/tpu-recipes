@@ -142,6 +142,27 @@ python benchmarks/benchmark_serving.py \
     # --random-prefix-len=$PREFIX_LEN
 ```
 
+In newer vLLM docker images, the bechmark_serving.py has been moved to the vLLM CLI.  Run the benchmark by using:
+
+```bash
+export MAX_INPUT_LEN=1800
+export MAX_OUTPUT_LEN=128
+export HF_TOKEN=<your HF token>
+
+cd /workspace/vllm
+
+vllm bench serve \
+    --backend vllm \
+    --model "Qwen/Qwen2.5-32B"  \
+    --dataset-name random \
+    --num-prompts 1000 \
+    --random-input-len=$MAX_INPUT_LEN \
+    --random-output-len=$MAX_OUTPUT_LEN \
+    --seed 100
+    # --random-range-ratio=$RATIO \
+    # --random-prefix-len=$PREFIX_LEN
+```
+
 The snippet below is what you’d expect to see - the numbers vary based on the vllm version, the model size and the TPU instance type/size.
 
 ```bash
