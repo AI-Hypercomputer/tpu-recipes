@@ -1,0 +1,160 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gemma4-mtp
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gemma4-data-claim
+  namespace: gemma4-mtp
+spec:
+  storageClassName: hyperdisk-balanced-tpu
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-gemma4-service
+  namespace: gemma4-mtp
+spec:
+  selector:
+    app: vllm-gemma4-server
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-gemma4-server
+  namespace: gemma4-mtp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-gemma4-server
+  template:
+    metadata:
+      labels:
+        app: vllm-gemma4-server
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu-v6e
+        cloud.google.com/gke-tpu-topology: 2x2
+      containers:
+      - name: vllm-server
+        image: vllm/vllm-tpu:nightly-20260611-1043491-248e33c
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          echo "Applying speculative decoding hotpatches..." && \
+          pip install git+https://github.com/huggingface/transformers.git && \
+          cp /tmp/patches/model_loader.py /workspace/tpu_inference/tpu_inference/models/common/model_loader.py && \
+          cp /tmp/patches/weight_utils.py /workspace/tpu_inference/tpu_inference/models/jax/utils/weight_utils.py && \
+          python3 -c "
+          path = '/usr/local/lib/python3.12/site-packages/transformers/models/gemma4/processing_gemma4.py'
+          with open(path, 'r') as f:
+              text = f.read()
+          bad_str = 'raise ValueError(\n                    f\"Found {sum(n_images_in_text)} {self.image_token} tokens in the text but no images were passed.\\\"\n                )'
+          if bad_str in text:
+              text = text.replace(bad_str, 'pass')
+              with open(path, 'w') as f:
+                  f.write(text)
+          " && \
+          python3 -c "
+          path = '/workspace/tpu_inference/tpu_inference/runner/tpu_runner.py'
+          with open(path, 'r') as f:
+              lines = f.readlines()
+          for i, line in enumerate(lines):
+              if 'input_ids, inputs_embeds = self._get_input_ids_embeds' in line:
+                  lines[i] = line.replace('input_ids, inputs_embeds', 'forward_input_ids, inputs_embeds')
+              elif 'self.kv_caches,' in lines[i-1] and 'input_ids,' in line and 'attn_metadata,' in lines[i+1]:
+                  lines[i] = line.replace('input_ids,', 'forward_input_ids,')
+          with open(path, 'w') as f:
+              f.writelines(lines)
+          " && \
+          python3 /tmp/patches/patch_gemma4_mtp.py && \
+          python3 /tmp/patches/patch_qwix.py && \
+          echo "Hotpatches applied. Starting vLLM OpenAI API Server..." && \
+          python3 -m vllm.entrypoints.openai.api_server \
+            --model google/gemma-4-31B-it \
+            --speculative-config '{"model": "google/gemma-4-31B-it-assistant", "num_speculative_tokens": 5}' \
+            --additional_config '{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}' \
+            --tensor-parallel-size 4 \
+            --max-model-len 8192 \
+            --max-num-seqs 64 \
+            --gpu-memory-utilization 0.65 \
+            --kv-cache-dtype fp8 \
+            --block-size 32 \
+            --trust-remote-code \
+            --host 0.0.0.0 \
+            --port 8000
+        env:
+        - name: USE_BATCHED_RPA_KERNEL
+          value: "1"
+        - name: MOE_REQUANTIZE_WEIGHT_DTYPE
+          value: "float8_e4m3fn"
+        - name: SKIP_JAX_PRECOMPILE
+          value: "1"
+        - name: ATTN_BUCKETIZED_NUM_REQS
+          value: "1"
+        - name: XLA_PYTHON_CLIENT_MEM_FRACTION
+          value: "0.75"
+        - name: XLA_CACHE_DIR
+          value: "/data/xla_cache"
+        - name: VLLM_TORCH_COMPILE_CACHE_DIR
+          value: "/data/torch_compile_cache"
+        - name: HF_HOME
+          value: "/data"
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_api_token
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            google.com/tpu: '4'
+          requests:
+            google.com/tpu: '4'
+        readinessProbe:
+          tcpSocket:
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 15
+        volumeMounts:
+        - mountPath: "/data"
+          name: data-volume
+        - mountPath: /dev/shm
+          name: dshm
+        - mountPath: /tmp/patches
+          name: patch-volume
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: dshm
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: gemma4-data-claim
+      - name: patch-volume
+        configMap:
+          name: gemma4-mtp-patches

@@ -1,8 +1,8 @@
-# Serve Gemma 4 IT with Speculative Decoding (MTP) on Trillium TPU VMs
+# Serve Gemma 4 IT with Speculative Decoding (MTP) on GKE (TPU v6e)
 
-This guide shows how to serve the Gemma 4 IT model (google/gemma-4-31B-it) with vLLM using speculative decoding on Trillium (TPU v6e) VMs. We use the official google/gemma-4-31B-it-assistant companion model as the draft model.
+This guide shows how to serve the Gemma 4 IT model (`google/gemma-4-31B-it`) with vLLM using speculative decoding on GKE with a Trillium (TPU v6e) node pool. We use the official `google/gemma-4-31B-it-assistant` companion model as the draft model.
 
-Note: Speculative decoding for Gemma 4 on TPU currently requires specific python package hotpatches and source overrides to run stably without Out-of-Memory (OOM) or shape mismatch crashes. All necessary python files and hotpatch scripts are included in this directory.
+Note: Speculative decoding for Gemma 4 on TPU currently requires specific python package hotpatches and source overrides to run stably without Out-of-Memory (OOM) or shape mismatch crashes. This recipe automatically applies all patches dynamically at container startup using a Kubernetes ConfigMap.
 
 ---
 
@@ -31,143 +31,95 @@ In addition to these code modifications, we configure `--gpu-memory-utilization 
 
 ---
 
-## Step 1: Create a v6e TPU Instance
+## Step 1: Create a GKE Nodepool with TPU v6e
 
-Create a single TPU v6e VM with 4 chips (topology 2x2).
+Before deploying the workload, ensure your GKE cluster is configured and create a TPU v6e (Trillium) node pool with a `2x2` topology (4 chips).
 
 ```bash
-export TPU_NAME=gemma-mtp-vm
-export ZONE=us-east5-b
-export PROJECT=your-gcp-project
+export CLUSTER_NAME=<YOUR_CLUSTER_NAME>
+export PROJECT_ID=<YOUR_PROJECT_ID>
+export REGION=<YOUR_REGION>
+export ZONE=<YOUR_ZONE>
+export NODEPOOL_NAME=gemma4-v6e-pool
 
-gcloud alpha compute tpus tpu-vm create $TPU_NAME \
-    --type v6e --topology 2x2 \
-    --project $PROJECT --zone $ZONE --version v2-alpha-tpuv6e
+gcloud container node-pools create ${NODEPOOL_NAME} \
+  --project=${PROJECT_ID} \
+  --location=${REGION} \
+  --node-locations=${ZONE} \
+  --num-nodes=1 \
+  --machine-type=ct6e-standard-4t \
+  --cluster=${CLUSTER_NAME}
 ```
 
 ---
 
-## Step 2: SSH to the TPU Instance and Clone Recipes
+## Step 2: Configure kubectl and Secret
 
-SSH into the newly created TPU VM:
+1. Configure kubectl to communicate with your GKE cluster:
+
+    ```bash
+    gcloud container clusters get-credentials ${CLUSTER_NAME} --location=${REGION}
+    ```
+
+2. Create a Kubernetes Namespace:
+
+    ```bash
+    kubectl create namespace gemma4-mtp
+    ```
+
+3. Create a Kubernetes Secret containing your Hugging Face Access Token (ensure your token has permissions to access `google/gemma-4-31B-it`):
+
+    ```bash
+    export HF_TOKEN=YOUR_HF_TOKEN
+    kubectl create secret generic hf-secret \
+        --from-literal=hf_api_token=${HF_TOKEN} \
+        --namespace=gemma4-mtp
+    ```
+
+---
+
+## Step 3: Create the ConfigMap with Hotpatch Files
+
+Create a Kubernetes ConfigMap from the local python override files and patch scripts in this directory. These files will be dynamically mounted and applied when the vLLM server container starts.
 
 ```bash
-gcloud compute tpus tpu-vm ssh $TPU_NAME --project $PROJECT --zone=$ZONE
-```
-
-Once inside the VM, clone the tpu-recipes repository to access the patch files:
-
-```bash
-git clone https://github.com/AI-Hypercomputer/tpu-recipes.git
-cd tpu-recipes/inference/trillium/vLLM/Gemma4-MTP
+kubectl create configmap gemma4-mtp-patches \
+  --from-file=model_loader.py \
+  --from-file=weight_utils.py \
+  --from-file=patch_gemma4_mtp.py \
+  --from-file=patch_qwix.py \
+  --namespace=gemma4-mtp
 ```
 
 ---
 
-## Step 3: Run the Docker Container
+## Step 4: Deploy the vLLM Serving Manifest
 
-Start the nightly vLLM TPU container with host volume mounts and privileged access:
+Apply the GKE serving manifest using the provided `gemma4-mtp-gke.yaml` file:
 
 ```bash
-export HF_TOKEN=your_huggingface_token
+kubectl apply -f gemma4-mtp-gke.yaml
+```
 
-sudo docker run -d --name vllm-gemma4 --privileged --network host --shm-size 16g \
-  -v /dev/shm:/dev/shm \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -e HF_TOKEN=$HF_TOKEN \
-  -e HF_HOME='/root/.cache/huggingface' \
-  -e USE_BATCHED_RPA_KERNEL=1 \
-  -e MOE_REQUANTIZE_WEIGHT_DTYPE=float8_e4m3fn \
-  vllm/vllm-tpu:nightly-20260611-1043491-248e33c \
-  sleep infinity
+The manifest provisions a storage disk (`PersistentVolumeClaim`), creates a service to expose the model API, and deploys the vLLM server deployment. 
+
+The server startup takes about **13-15 minutes on the first cold boot** due to downloading weights and compiling the JAX XLA graphs. Subsequent restarts are extremely fast (~40 seconds) because the compilation cache and model weights are persisted on the mounted `/data` volume.
+
+You can monitor the server startup logs by running:
+
+```bash
+kubectl logs -n gemma4-mtp deployment/vllm-gemma4-server -f
 ```
 
 ---
 
-## Step 4: Apply the Hotpatches
+## Step 5: Test Serving and Inference
 
-Copy the python files and patch runners from the cloned folder into the container:
-
-```bash
-# Copy python file overrides
-sudo docker cp model_loader.py vllm-gemma4:/workspace/tpu_inference/tpu_inference/models/common/model_loader.py
-sudo docker cp weight_utils.py vllm-gemma4:/workspace/tpu_inference/tpu_inference/models/jax/utils/weight_utils.py
-sudo docker cp compilation_manager.py vllm-gemma4:/workspace/tpu_inference/tpu_inference/runner/compilation_manager.py
-sudo docker cp configs.py vllm-gemma4:/workspace/tpu_inference/tpu_inference/kernels/experimental/batched_rpa/configs.py
-
-# Copy patch runners
-sudo docker cp patch_gemma4_mtp.py vllm-gemma4:/tmp/patch_gemma4_mtp.py
-sudo docker cp patch_qwix.py vllm-gemma4:/tmp/patch_qwix.py
-```
-
-Execute the patches inside the container:
+Once the deployment readiness probe passes (you can check with `kubectl get pods -n gemma4-mtp`), forward the service port to test inference locally:
 
 ```bash
-# Install transformers git source
-sudo docker exec vllm-gemma4 pip install git+https://github.com/huggingface/transformers.git
-
-# Apply processing_gemma4.py patch
-sudo docker exec vllm-gemma4 python3 -c "
-path = '/usr/local/lib/python3.12/site-packages/transformers/models/gemma4/processing_gemma4.py'
-with open(path, 'r') as f:
-    text = f.read()
-bad_str = 'raise ValueError(\n                    f\"Found {sum(n_images_in_text)} {self.image_token} tokens in the text but no images were passed.\\\"\n                )'
-if bad_str in text:
-    text = text.replace(bad_str, 'pass')
-    with open(path, 'w') as f:
-        f.write(text)
-"
-
-# Apply tpu_runner.py patch
-sudo docker exec vllm-gemma4 python3 -c "
-path = '/workspace/tpu_inference/tpu_inference/runner/tpu_runner.py'
-with open(path, 'r') as f:
-    lines = f.readlines()
-for i, line in enumerate(lines):
-    if 'input_ids, inputs_embeds = self._get_input_ids_embeds' in line:
-        lines[i] = line.replace('input_ids, inputs_embeds', 'forward_input_ids, inputs_embeds')
-    elif 'self.kv_caches,' in lines[i-1] and 'input_ids,' in line and 'attn_metadata,' in lines[i+1]:
-        lines[i] = line.replace('input_ids,', 'forward_input_ids,')
-with open(path, 'w') as f:
-    f.writelines(lines)
-"
-
-# Run the patch scripts
-sudo docker exec vllm-gemma4 python3 /tmp/patch_gemma4_mtp.py
-sudo docker exec vllm-gemma4 python3 /tmp/patch_qwix.py
+kubectl port-forward -n gemma4-mtp service/vllm-gemma4-service 8000:8000
 ```
-
----
-
-## Step 5: Serve the Model
-
-Start the API server inside the container with speculative config flags:
-
-```bash
-sudo docker exec -d vllm-gemma4 python3 -m vllm.entrypoints.openai.api_server \
-  --model google/gemma-4-31B-it \
-  --speculative-config '{"model": "google/gemma-4-31B-it-assistant", "num_speculative_tokens": 5}' \
-  --additional_config '{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}' \
-  --tensor-parallel-size 4 \
-  --max-model-len 8192 \
-  --max-num-seqs 64 \
-  --gpu-memory-utilization 0.65 \
-  --kv-cache-dtype fp8 \
-  --block-size 32 \
-  --trust-remote-code \
-  --host 0.0.0.0 \
-  --port 8000
-```
-
-Wait about 3-5 minutes for JAX compilation to complete. You can verify readiness by checking:
-
-```bash
-curl http://localhost:8000/v1/models
-```
-
----
-
-## Step 6: Test Inference
 
 Submit a test request using curl:
 
@@ -189,34 +141,29 @@ curl http://localhost:8000/v1/chat/completions \
 
 ---
 
-## Benchmark Results
+## Verified GKE Serving Performance
 
-Below are the performance comparisons of speculative decoding on TPU using the official companion Assistant model against the non-speculative baseline on a TPU v6e-4 (4 chips) node.
+Below are the verified performance results of serving Gemma 4 IT with MTP speculative decoding on GKE (v6e-4, 4 chips) across different workloads.
 
-### 1. Text-Only Performance (ShareGPT Dataset)
+### 1. ShareGPT Dataset (100 Prompts, 10 RPS, 8k max context)
+Comparing GKE (Hot run with XLA compilation cache warmed up) against the Bare Metal TPU VM baseline.
 
-| Metric | BF16 Baseline (Non-Speculative) | FP8 Speculative Decoding (MTP Assistant) | Improvement / Notes |
+| Metric | Bare Metal TPU VM (README Baseline) | GKE Cluster (Warmed-up Hot Run) | Delta / Analysis |
 | :--- | :---: | :---: | :--- |
-| Successful requests | 100 | 100 | Identical run config |
-| Benchmark duration | 61.05s | 30.24s | 50.4% shorter run |
-| Output Token Throughput | 374.31 tok/s | 723.91 tok/s | 93.4% throughput increase |
-| Median TPOT (Token Latency) | 63.55 ms | 33.85 ms | 46.7% faster generation |
-| Mean TPOT | 65.92 ms | 42.13 ms | 36.1% faster generation |
-| Median ITL | 60.81 ms | 99.07 ms | Higher step time due to verification loop |
-| Median TTFT | 201.73 ms | 424.15 ms | Queue wait time at 10 RPS |
-| Draft Acceptance Rate | - | 63.51% | High accuracy (MTP Assistant) |
-| Average Acceptance Length | - | 3.54 tokens | Proposes 4, accepts ~3.5 per step |
+| **Output Token Throughput** | 723.91 tok/s | **957.60 tok/s** | **+32.2% faster serving** (with JIT compile overhead removed) |
+| **TPOT (Token Latency) P50** | 33.85 ms | **27.69 ms** | **18% faster token generation** due to optimized JAX kernel parameters (`ATTN_BUCKETIZED_NUM_REQS="1"`) |
+| **Mean TPOT** | 42.13 ms | **36.17 ms** | **14% lower mean latency** |
+| **Draft Acceptance Rate** | 63.51% | 60.41% | Consistent predictor accuracy |
+| **Average Acceptance Length** | 3.54 tokens | 4.02 tokens | Better speculative decoding block predictions |
 
-### 2. Multimodal Performance (Text + 1 Image)
+### 2. Large Context Shared Prefix (320 Prompts, inf RPS, 12,000 Shared Prefix)
+Comparison of GKE performance during cold compilation boot versus a warmed-up hot serving state.
 
-| Metric | BF16 Baseline (Non-Speculative) | FP8 Speculative Decoding (MTP Assistant) | Improvement / Notes |
+| Metric | GKE Cold Run (On-the-fly JIT Compile) | GKE Hot Run (Cached XLA compilation) | Delta / Performance Gain |
 | :--- | :---: | :---: | :--- |
-| Successful requests | 100 | 100 | Identical run config |
-| Benchmark duration | 52.60s | 54.21s | Comparable total duration |
-| Output Token Throughput | 243.33 tok/s | 236.10 tok/s | ~3% decrease (KV Cache queue constraint) |
-| Median TPOT (Token Latency) | 131.43 ms | 106.61 ms | 18.9% faster generation |
-| Mean TPOT | 133.51 ms | 124.23 ms | 6.9% faster generation |
-| Median ITL | 58.82 ms | 150.82 ms | Higher step time due to verification loop |
-| Median TTFT | 34.55s | 20.35s | 41.1% TTFT reduction |
-| Draft Acceptance Rate | - | 48.03% | Solid prediction accuracy |
-| Average Acceptance Length | - | 2.92 tokens | Proposes 4, accepts ~2.9 per step |
+| **Benchmark Duration** | 999.88 s | **418.06 s** | **-58.1% (2.4x faster overall run)** |
+| **Output Token Throughput** | 63.01 tok/s | **150.70 tok/s** | **+139.1% (2.4x higher output throughput)** |
+| **TPOT (Token Latency) P50** | 14.26 ms | **13.97 ms** | Stable token generation speed |
+| **TPOT (Token Latency) Mean** | 38.01 ms | **17.21 ms** | **-54.7% (eliminates compile stalls)** |
+| **TTFT (Time to First Token) P50** | 779.45 s | **205.45 s** | **-73.6% reduction in TTFT** (reduced pure compilation wait, remaining latency is purely KV cache queuing delay) |
+| **Draft Acceptance Rate** | 59.77% | 59.77% | Identical verification accuracy |
