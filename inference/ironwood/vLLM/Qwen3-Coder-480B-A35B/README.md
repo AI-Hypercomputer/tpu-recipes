@@ -217,7 +217,7 @@ create a node pool with a **single TPU v7 node** in 2x2x1 configuration.
             cloud.google.com/gke-tpu-topology: 2x2x1
           containers:
           - name: vllm-tpu
-            image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+            image: vllm/vllm-tpu:nightly-20260624-ddfbfe4-e2bdc24
             command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
             args:
             - --host=0.0.0.0
@@ -248,6 +248,17 @@ create a node pool with a **single TPU v7 node** in 2x2x1 configuration.
               value: vllm
             - name: USE_BATCHED_RPA_KERNEL
               value: "1"
+            - name: XLA_FLAGS
+              value: >-
+                --xla_tpu_enable_sparse_core_collective_offload_all_reduce=false
+                --xla_tpu_all_gather_collective_matmul_mode=post_spmd_conservative
+                --xla_tpu_reduce_scatter_collective_matmul_mode=post_spmd_conservative
+                --xla_jf_crs_combiner_threshold_in_bytes=0
+                --xla_tpu_scheduler_percent_shared_memory_limit=1000
+                --xla_jf_enable_producer_consumer_multi_output_fusion=false
+                --xla_tpu_enable_domain_passes=true
+                --xla_collective_optimize_constant_table=ENABLED
+                --xla_jf_fusion_max_instruction_count_for_window_config=65536
             ports:
             - containerPort: 8000
             resources:
@@ -492,7 +503,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260624-ddfbfe4-e2bdc24
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -536,7 +547,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260624-ddfbfe4-e2bdc24
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -580,7 +591,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260624-ddfbfe4-e2bdc24
         command: ["/bin/bash", "-c"]
         args:
         - |
