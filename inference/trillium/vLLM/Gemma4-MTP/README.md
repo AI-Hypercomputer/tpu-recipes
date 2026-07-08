@@ -167,3 +167,13 @@ Comparison of GKE performance during cold compilation boot versus a warmed-up ho
 | **TPOT (Token Latency) Mean** | 38.01 ms | **17.21 ms** | **-54.7% (eliminates compile stalls)** |
 | **TTFT (Time to First Token) P50** | 779.45 s | **205.45 s** | **-73.6% reduction in TTFT** (reduced pure compilation wait, remaining latency is purely KV cache queuing delay) |
 | **Draft Acceptance Rate** | 59.77% | 59.77% | Identical verification accuracy |
+
+---
+
+## uBench Internal Verification
+
+This GKE speculative decoding recipe has been verified and registered on the internal uBench Telemetry system:
+* **uBench Run Name:** `jawadamin-ubench-cytfr6c9`
+* **uBench Dashboard Query Link:** [go/ubench-dash](http://go/ubench-dash) (Search for Run ID `vllm_inference-gemma-4-31B-it-2026-07-08_184512-47095651-3bd0-45ba-9259-e0227d703f62`)
+* **Verified Output Throughput:** 63.15 tokens/s (Mean TPOT: 38.00 ms, Speculative Acceptance Rate: 61.05%)
+

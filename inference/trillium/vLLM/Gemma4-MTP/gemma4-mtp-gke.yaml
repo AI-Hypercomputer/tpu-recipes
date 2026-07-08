@@ -48,6 +48,8 @@ metadata:
   namespace: gemma4-mtp
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: vllm-gemma4-server
@@ -57,7 +59,7 @@ spec:
         app: vllm-gemma4-server
     spec:
       nodeSelector:
-        cloud.google.com/gke-tpu-accelerator: tpu-v6e
+        cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
         cloud.google.com/gke-tpu-topology: 2x2
       containers:
       - name: vllm-server
@@ -118,7 +120,7 @@ spec:
           value: "1"
         - name: XLA_PYTHON_CLIENT_MEM_FRACTION
           value: "0.75"
-        - name: XLA_CACHE_DIR
+        - name: VLLM_XLA_CACHE_PATH
           value: "/data/xla_cache"
         - name: VLLM_TORCH_COMPILE_CACHE_DIR
           value: "/data/torch_compile_cache"
