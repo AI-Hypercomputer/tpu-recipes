@@ -13,7 +13,7 @@ This workload is configured with the following details:
 -   num_frames: 81
 -   width: 1280 (720p) or 832 (480p)
 -   height: 720 (720p) or 480 (480p)
--   num_inference_steps: 40
+-   num_inference_steps: 50
 -   fps: 16
 -   TPU Cores: 7x-8, 7x-16
 
