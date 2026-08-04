@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gemma4-mtp-bench-sharegpt
+  namespace: gemma4-mtp
+spec:
+  restartPolicy: Never
+  containers:
+  - name: bench-client
+    image: vllm/vllm-tpu:nightly-20260611-1043491-248e33c
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      echo "Waiting for vLLM server to be ready..." && \
+      while ! curl http://vllm-gemma4-service:8000/ping; do sleep 5; done && \
+      echo "Downloading ShareGPT dataset..." && \
+      curl -L -o /tmp/sharegpt.json https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json && \
+      echo "Server is ready! Launching ShareGPT serving benchmark..." && \
+      vllm bench serve \
+        --backend=vllm \
+        --host=vllm-gemma4-service \
+        --port=8000 \
+        --model=google/gemma-4-31B-it \
+        --tokenizer=google/gemma-4-31B-it \
+        --dataset-name=sharegpt \
+        --dataset-path=/tmp/sharegpt.json \
+        --num-prompts=100 \
+        --request-rate=10 \
+        --percentile-metrics=ttft,tpot,itl,e2el \
+        --temperature=0.0 \
+        --ignore-eos
+    env:
+    - name: HF_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: hf-secret
+          key: hf_api_token
