@@ -13,7 +13,7 @@ source "${UV_VENV_PATH}/bin/activate"
 # Check if xpk is installed in the venv
 if ! pip show xpk &> /dev/null; then
     echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==1.11.0"
+    echo "pip install xpk==1.15.0"
     exit 1
 fi
 # --- End Environment Setup ---
@@ -61,7 +61,7 @@ XLA_FLAGS=" \
 # MaxText Workload Overrides
 MAXTEXT_ARGS="\
 model_name=gemma4-31b \
-per_device_batch_size=8 \
+per_device_batch_size=4 \
 max_target_length=8192 \
 async_checkpointing=False \
 enable_checkpointing=False \
@@ -69,19 +69,32 @@ use_iota_embed=True \
 attention=flash \
 use_tokamax_splash=True \
 sa_use_fused_bwd_kernel=True \
-sa_block_q=1024 \
-sa_block_kv=1024 \
-sa_block_kv_compute=1024 \
-sa_block_q_dkv=512 \
+sa_block_q=2048 \
+sa_block_kv=2048 \
+sa_block_kv_compute=512 \
+sa_block_q_dkv=1024 \
 sa_block_kv_dkv=2048 \
-sa_block_kv_dkv_compute=512 \
+sa_block_kv_dkv_compute=1024 \
 sa_block_q_dq=1024 \
 sa_block_kv_dq=1024 \
 sa_q_layout=SEQ_MINOR \
 sa_k_layout=SEQ_MINOR \
 sa_v_layout=HEAD_DIM_MINOR \
+use_splash_scheduler=True \
+local_sa_block_q=1024 \
+local_sa_block_kv=1024 \
+local_sa_block_kv_compute=512 \
+local_sa_block_q_dkv=1024 \
+local_sa_block_kv_dkv=2048 \
+local_sa_block_kv_dkv_compute=1024 \
+local_use_splash_scheduler=False \
 ici_fsdp_parallelism=16 \
 ici_fsdp_transpose_parallelism=8 \
+dense_fsdp_use_two_stage_all_gather=True \
+num_vocab_tiling=8 \
+remat_policy=custom \
+out_proj=device \
+mlpwo=device \
 gcs_metrics=True \
 dataset_type=synthetic \
 steps=30 \
