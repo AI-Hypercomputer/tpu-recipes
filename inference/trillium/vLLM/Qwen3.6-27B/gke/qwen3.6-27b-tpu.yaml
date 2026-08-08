@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: qwen-serving
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-qwen
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qwen-model-cache
+  namespace: qwen-serving
+spec:
+  storageClassName: hyperdisk-balanced-qwen
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen-serving
+  namespace: qwen-serving
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vllm-qwen-serving
+  template:
+    metadata:
+      labels:
+        app: vllm-qwen-serving
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+        # Match the physical node topology to allow sub-host scheduling
+        cloud.google.com/gke-tpu-topology: 2x2
+      containers:
+        - name: vllm-tpu
+          image: vllm/vllm-tpu:latest
+          command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+          args:
+            - --host=0.0.0.0
+            - --port=8000
+            - --model=Qwen/Qwen3.6-27B-FP8
+            - --tensor-parallel-size=4
+            - --max-model-len=32768
+            - --gpu-memory-utilization=0.95
+            - --max-num-seqs=128
+            - --max-num-batched-tokens=2048
+            - --reasoning-parser=qwen3
+            - --language-model-only
+            - --limit-mm-per-prompt
+            - '{"image": 0, "video": 0}'
+            - --enable-auto-tool-choice
+            - --tool-call-parser=qwen3_xml
+            - --chat-template=/app/templates/chat_template.jinja
+            - --enable-prefix-caching
+            - --kv-cache-dtype=fp8
+            - --enable-chunked-prefill
+          env:
+            - name: VLLM_USE_V1
+              value: "1"
+            - name: HF_HOME
+              value: /data
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: hf_api_token
+                  optional: true
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 10
+          volumeMounts:
+            - mountPath: "/data"
+              name: data-volume
+            - mountPath: /dev/shm
+              name: dshm
+            - mountPath: "/app/templates"
+              name: template-volume
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: qwen-model-cache
+        - name: template-volume
+          configMap:
+            name: qwen-chat-template
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen-service
+  namespace: qwen-serving
+spec:
+  selector:
+    app: vllm-qwen-serving
+  type: ClusterIP
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
