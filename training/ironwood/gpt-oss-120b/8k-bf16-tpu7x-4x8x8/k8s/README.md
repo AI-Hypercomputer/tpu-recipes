@@ -12,7 +12,7 @@ by applying a Kubernetes manifest to deploy a JobSet resource.
 This workload is configured with the following details:
 
 -   Sequence Length: 8192
--   Precision: bf16
+-   Precision: bfloat16
 -   Chips: 256 (4x8x8 topology)
 
 ## Prerequisites
@@ -70,7 +70,7 @@ export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
 
 # Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gpt-oss-120b-8192-4x8x8")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gpt-oss-120b")-$(date +%Y%m%d-%H%M)"
 ```
 
 ### 2. Run gpt-oss-120b Pretraining Workload
