@@ -2,6 +2,19 @@
 
 This document presents steps to run an ultra long-context (up to 10M sequence length) Llama3.1-8B [MaxText](https://github.com/AI-Hypercomputer/maxtext) workload with ring context parallelism through [XPK](https://github.com/google/xpk/blob/main/README.md) tool.
 
+## Model configuration
+
+> [!IMPORTANT]
+> This recipe trains a **variant** of Llama3.1-8B, not the stock architecture. The attention shape is overridden on the command line (`override_model_config=true`) to use fewer, wider heads:
+>
+> | Config | Stock `llama3.1-8b` | This recipe |
+> | ---------------------- | ------------------- | ----------- |
+> | `head_dim`             | 128                 | 256         |
+> | `base_num_query_heads` | 32                  | 16          |
+> | `base_num_kv_heads`    | 8                   | 4           |
+>
+> The total attention width (`base_num_query_heads * head_dim = 4096`) and the 4:1 GQA ratio are unchanged, so the parameter count is identical to stock Llama3.1-8B. Every other model dimension (`base_emb_dim`, `base_mlp_dim`, `base_num_decoder_layers`, `vocab_size`) is stock. The performance numbers in this recipe were measured with this variant; running the stock head configuration will give different results.
+
 ## XPK setup
 
 Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK.

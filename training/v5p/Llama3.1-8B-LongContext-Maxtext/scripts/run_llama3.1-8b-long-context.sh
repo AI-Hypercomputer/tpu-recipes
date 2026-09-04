@@ -36,6 +36,10 @@ then
 fi
 
 # Train
+# NOTE: this is a Llama3.1-8B *variant*, not the stock architecture: the attention
+# shape is overridden to 16 query heads / 4 KV heads / head_dim 256 (stock is
+# 32 / 8 / 128). Total attention width (16 * 256 = 4096) and the 4:1 GQA ratio are
+# unchanged, so the parameter count matches stock Llama3.1-8B.
 export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=65472 --xla_tpu_use_enhanced_launch_barrier=true --xla_tpu_overlap_compute_collective_tc=true --xla_enable_async_all_gather=true --xla_enable_async_collective_permute=true --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true --xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true"
 python3 -m maxtext.trainers.pre_train.train src/maxtext/configs/base.yml \
     model_name=llama3.1-8b steps=8 enable_checkpointing=false \
