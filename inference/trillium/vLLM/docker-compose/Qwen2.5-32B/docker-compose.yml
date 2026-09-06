@@ -1,0 +1,25 @@
+services:
+  vllm:
+    image: ${DOCKER_URI:-vllm/vllm-tpu:nightly}
+    privileged: true
+    network_mode: "host"
+    volumes:
+      - /dev/shm:/dev/shm
+    shm_size: ${SHM_SIZE}
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_HOME=/dev/shm
+      - HF_TOKEN=${HF_TOKEN}
+      - SEED=${SEED}
+      - MODEL_NAME=${MODEL_NAME}
+      - VLLM_USE_V1=${VLLM_USE_V1}
+    command: >
+      vllm serve ${MODEL_NAME}
+      --seed ${SEED}
+      ${DISABLE_LOG_REQUESTS}
+      --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION}
+      --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS}
+      --max-num-seqs ${MAX_NUM_SEQS}
+      --tensor-parallel-size ${TP}
+      --max-model-len ${MAX_MODEL_LEN}
