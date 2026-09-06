@@ -1,0 +1,48 @@
+apiVersion: v1
+data:
+  prepare_long.py: "import json\nimport sys\n\ndef main():\n    print(\"Generating
+    synthetic long-context dataset (25K tokens / 100K chars)...\")\n    \n    # Generate
+    50 prompts, each with ~100,000 characters of dummy Python code\n    # to simulate
+    a large codebase context.\n    dataset = []\n    for i in range(50):\n        #
+    Create a large dummy class with many methods to simulate context\n        dummy_methods
+    = []\n        for j in range(1000):  # 1000 methods * ~55 chars per method = ~55k
+    chars\n            dummy_methods.append(f\"    def dummy_method_{j}(self, x: int)
+    -> int:\\n        return x + {j}\\n\")\n            \n        context = \"class
+    LargeCodebase:\\n\" + \"\".join(dummy_methods)\n        instruction = f\"# User
+    Query {i}: Write a new method `calculate_sum_{i}` that sums all dummy method outputs.\"\n
+    \       prompt = f\"{context}\\n\\n{instruction}\"\n        \n        # Verify
+    length\n        # print(f\"Prompt {i} length: {len(prompt)} chars\")\n        dataset.append(prompt)\n\n
+    \   output_file = \"/tmp/agentic_coding.jsonl\"\n    print(f\"Writing to {output_file}...\")\n
+    \   \n    with open(output_file, \"w\") as f:\n        for prompt in dataset:\n
+    \           # We want 256 tokens output\n            f.write(json.dumps({\"prompt\":
+    prompt, \"output_tokens\": 256}) + \"\\n\")\n            \n    print(\"Done!\")\n\nif
+    __name__ == \"__main__\":\n    main()\n"
+  prepare_medium.py: "import json\nimport sys\n\ndef main():\n    print(\"Loading
+    dataset...\")\n    try:\n        from datasets import load_dataset\n        #
+    Try RepoBench-P first\n        dataset = load_dataset('THUDM/LongBench', 'repobench-p',
+    split='test')\n        print(\"Loaded repobench-p\")\n    except Exception as
+    e:\n        print(f\"Failed to load repobench-p: {e}. Trying lcc...\")\n        try:\n
+    \           from datasets import load_dataset\n            dataset = load_dataset('THUDM/LongBench',
+    'lcc', split='test')\n            print(\"Loaded lcc\")\n        except Exception
+    as e2:\n            print(f\"Failed to load lcc: {e2}. Creating synthetic dataset...\")\n
+    \           # Fallback to synthetic if HF is unreachable\n            dataset
+    = []\n            for i in range(100):\n                # Generate a long prompt
+    (approx 20k characters)\n                dummy_context = \"class Dummy:\\n\" +
+    \"\".join([f\"    def method_{j}(self):\\n        pass\\n\" for j in range(500)])\n
+    \               dataset.append({\n                    \"context\": dummy_context,\n
+    \                   \"input\": \"Write a new method `method_new` that returns
+    True.\"\n                })\n\n    print(f\"Loaded {len(dataset)} samples.\")\n
+    \   output_file = \"/tmp/agentic_coding.jsonl\"\n    print(f\"Writing to {output_file}...\")\n
+    \   \n    with open(output_file, \"w\") as f:\n        for i, sample in enumerate(dataset):\n
+    \           # Limit to 100 prompts for the benchmark\n            if i >= 100:\n
+    \               break\n            context = sample.get(\"context\", \"\")\n            inp
+    = sample.get(\"input\", \"\")\n            prompt = f\"{context}\\n\\n{inp}\"\n
+    \           # Truncate to 100k characters (approx 25k tokens) to be safe\n            if
+    len(prompt) > 100000:\n                # Keep the end of the prompt (instruction
+    is at the end)\n                prompt = prompt[-100000:]\n            \n            f.write(json.dumps({\"prompt\":
+    prompt, \"output_tokens\": 256}) + \"\\n\")\n            \n    print(\"Done!\")\n\nif
+    __name__ == \"__main__\":\n    main()\n"
+kind: ConfigMap
+metadata:
+  name: benchmark-prep-script
+  namespace: qwen-serving
