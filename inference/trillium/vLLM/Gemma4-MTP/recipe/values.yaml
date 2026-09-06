@@ -1,0 +1,99 @@
+"client":
+  "bash_command": |-
+    while ! curl http://${SERVER_HOSTNAME}:8000/ping; do sleep 30 && echo 'Waiting for server...'; done
+
+    vllm bench serve \
+    --dataset-name=prefix_repetition \
+    --prefix-repetition-prefix-len=12000 \
+    --prefix-repetition-num-prefixes=15 \
+    --prefix-repetition-output-len=200 \
+    --host=${SERVER_HOSTNAME} \
+    --port=8000 \
+    --backend=vllm \
+    --request-rate=inf \
+    --percentile-metrics=ttft,tpot,itl,e2el \
+    --model=google/gemma-4-31B-it \
+    --tokenizer=google/gemma-4-31B-it \
+    --ignore-eos \
+    --skip-chat-template \
+    --temperature=0.0 \
+    --max-concurrency=320 \
+    --num-prompts=320
+  "client_type": |-
+    VLLM_BENCH
+  "image": |-
+    gcr.io/northam-ce-mlai-tpu/gemma4-vllm-patched:v6
+"custom_volume_mounts": []
+"gcp_service_account": !!null |-
+  null
+"gcsfuse":
+  "enabled": !!bool |-
+    true
+  "volumes":
+  - "bucketName": |-
+      ubench-logs
+    "mountOptions": |-
+      implicit-dirs,metadata-cache:negative-ttl-secs:0
+    "mountPath": |-
+      /job-logs
+    "name": |-
+      gcs-job-logs
+    "readOnly": !!bool |-
+      false
+"gke_reservation": !!null |-
+  null
+"hf_token": !!null |-
+  null
+"is_multi_host": !!bool |-
+  false
+"k8s_service_account": !!null |-
+  null
+"kueue_local_queue": !!null |-
+  null
+"kueue_priority_class": |-
+  medium
+"persistent_volume_claims": []
+"persistent_volumes": []
+"placement_policy": !!null |-
+  null
+"run_mode": !!int |-
+  0
+"server":
+  "bash_command": |-
+    USE_BATCHED_RPA_KERNEL=1 MOE_REQUANTIZE_WEIGHT_DTYPE=float8_e4m3fn SKIP_JAX_PRECOMPILE=1 ATTN_BUCKETIZED_NUM_REQS=1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.75 VLLM_TORCH_COMPILE_CACHE_DIR=/data/torch_compile_cache XLA_CACHE_DIR=/data/xla_cache vllm serve \
+    --host=0.0.0.0 \
+    --port=8000 \
+    --download-dir=/data \
+    --max-model-len=16384 \
+    --tensor-parallel-size=4 \
+    --data-parallel-size=1 \
+    --max-num-batched-tokens=4096 \
+    --language-model-only \
+    --tool-call-parser=gemma4 \
+    --enable-auto-tool-choice \
+    --disable-chunked-mm-input \
+    --enable-log-requests \
+    --gpu-memory-utilization=0.75 \
+    --model=google/gemma-4-31B-it \
+    --tokenizer=google/gemma-4-31B-it
+  "data_disk_size": |-
+    100Gi
+  "image": |-
+    gcr.io/northam-ce-mlai-tpu/gemma4-vllm-patched:v6
+  "model_impl_type": !!null |-
+    null
+  "num_chips_per_node": !!int |-
+    4
+  "num_nodes": !!int |-
+    1
+  "phased_profiling_dir": !!null |-
+    null
+  "profile": !!bool |-
+    false
+  "pvc_mounts": []
+  "topology": |-
+    2x2
+  "worker_bash_command": !!null |-
+    null
+"service_type": |-
+  ClusterIP
