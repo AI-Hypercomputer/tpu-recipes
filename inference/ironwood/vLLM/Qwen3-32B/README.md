@@ -217,7 +217,7 @@ create a node pool with a single TPU v7 node in 1x1x1 configuration.
             cloud.google.com/gke-tpu-topology: 1x1x1
           containers:
           - name: vllm-tpu
-            image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+            image: vllm/vllm-tpu:nightly-20260710-5e0243d-f1a5add
             command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
             args:
             - --host=0.0.0.0
@@ -228,7 +228,7 @@ create a node pool with a single TPU v7 node in 1x1x1 configuration.
             - --data-parallel-size=1
             - --max-model-len=9216
             - --max-num-batched-tokens=4096
-            - --max-num-seqs=135
+            - --max-num-seqs=320
             - --gpu-memory-utilization=0.98
             - --block-size=256
             - --kv-cache-dtype=fp8
@@ -493,13 +493,13 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260710-5e0243d-f1a5add
         command: ["/bin/bash", "-c"]
         args:
         - |
           git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && \
           cd /ubench/inferencex && \
-          git checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc && \
+          git checkout 01af32e8 && \
           python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
             --backend=vllm \
             --request-rate=inf \
@@ -537,13 +537,13 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260710-5e0243d-f1a5add
         command: ["/bin/bash", "-c"]
         args:
         - |
           git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && \
           cd /ubench/inferencex && \
-          git checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc && \
+          git checkout 01af32e8 && \
           python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
             --backend=vllm \
             --request-rate=inf \
@@ -581,13 +581,13 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260710-5e0243d-f1a5add
         command: ["/bin/bash", "-c"]
         args:
         - |
           git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && \
           cd /ubench/inferencex && \
-          git checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc && \
+          git checkout 01af32e8 && \
           python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
             --backend=vllm \
             --request-rate=inf \
@@ -645,14 +645,16 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
 
     Workload | Output Token Throughput (tok/s) Per Chip
     :------- | :---------------------------------------
-    1k/1k    | 6556.72
-    1k/8k    | 3959.56
-    8k/1k    | 1382.18
+    1k/1k    | 6743.00
+    1k/8k    | 4186.31
+    8k/1k    | 1531.41
 
     **Note**: These benchmark results are based on the `InferenceX` client. The
     development team is continuously improving and optimizing performance; as such,
     these results are subject to change, and improved or optimized figures may be
     published in the future.
+
+    **Note**: To reproduce these results using `vllm bench serve` instead of InferenceX, you must adapt the distribution parameters. Specifically, use `--random-range-ratio 0.1112` and set `--random-input-len` and `--random-output-len` to the center values (e.g. `922` for 1k, `7373` for 8k) rather than the maximums.
 
 3. Clean up
 
