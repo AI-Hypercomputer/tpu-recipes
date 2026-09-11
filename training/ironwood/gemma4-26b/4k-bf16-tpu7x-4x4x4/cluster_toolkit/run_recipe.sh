@@ -1,19 +1,20 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.13 virtual environment with xpk installed.
-# If you haven't set up uv and the environment, please refer to the README.md.
+# This script requires the Cluster Toolkit (gcluster) CLI (v1.102.0).
+# If you haven't installed gcluster, please refer to the README.md.
 
-UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.13"
-
-# Activate the virtual environment
-source "${UV_VENV_PATH}/bin/activate"
-
-# Check if xpk is installed in the venv
-if ! pip show xpk &> /dev/null; then
-    echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==1.11.0"
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+CTK_VERSION="1.102.0"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
+    echo "  mkdir -p \${HOME}/cluster-toolkit"
+    echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v1.102.0/gcluster_bundle_linux_amd64.tgz"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  rm -f /tmp/gcluster_bundle.tgz"
+    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
+    echo "  export PATH="\${HOME}/cluster-toolkit:\${PATH}""
     exit 1
 fi
 # --- End Environment Setup ---
@@ -33,7 +34,8 @@ export ZONE=""
 export BASE_OUTPUT_DIR=""
 export ARTIFACT_DIR=""
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-26b-4096-4x4x4")-$(date +%Y%m%d-%H%M)"
+WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-26b-4096-4x4x4")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME
 
 
 # XLA Flags
@@ -102,33 +104,62 @@ dataset_type=synthetic \
 opt_type=adamw \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME} \
-profiler=xplane \
-skip_first_n_steps_for_profiler=5 \
-profiler_steps=3"
+run_name=${WORKLOAD_NAME}"
 
 
 
-echo "=== Creating XPK Workload: $WORKLOAD_NAME ==="
-xpk workload create \
-  --cluster=$CLUSTER_NAME \
-  --project=$PROJECT_ID \
-  --zone=$ZONE \
-  --priority=medium \
-  --max-restarts=0 \
-  --device-type=tpu7x-4x4x4 \
-  --num-slices=1 \
-  --docker-image="${WORKLOAD_IMAGE}" \
-  --enable-debug-logs \
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
+DRY_RUN_ARG=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN_ARG=("--dry-run")
+      shift
+      ;;
+    --dry-run-out=*)
+      DRY_RUN_ARG=("--dry-run-out" "${1#--dry-run-out=}")
+      shift
+      ;;
+    --dry-run-out)
+      DRY_RUN_ARG=("--dry-run-out" "$2")
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
+"${GCLUSTER_BIN}" job submit \
+  --skip-prereqs \
+  --queue multislice-queue \
+  --cluster "$CLUSTER_NAME" \
+  --project "$PROJECT_ID" \
+  --location "$ZONE" \
+  --priority low \
+  --restarts 0 \
+  --compute-type tpu7x \
+  --topology 4x4x4 \
+  --node-constraint cloud.google.com/placement-policy-name=tpu7x-128-4x4x4-placement-policy \
+  --num-slices 1 \
+  --image "${WORKLOAD_IMAGE}" \
+  --verbose \
+  --gke-namespace default \
    \
+  --name "${WORKLOAD_NAME}" \
    \
-  --workload="${WORKLOAD_NAME}" \
-   \
-  --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+  --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
  \
  \
-python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
-gcloud storage cp --no-user-output-enabled train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
+set +e; \
+python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${POD_NAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
