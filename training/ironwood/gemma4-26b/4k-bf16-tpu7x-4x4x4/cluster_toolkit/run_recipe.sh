@@ -33,6 +33,8 @@ export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
+# Required. Not derived from the cluster name; see README.md for how to look up
+# the placement policy your cluster was provisioned with.
 export PLACEMENT_POLICY_NAME=""
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.12s" "${USER//_/-}")-gemma4-26b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
@@ -118,7 +120,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --restarts 0 \
   --compute-type tpu7x \
   --topology 4x4x4 \
-  --node-constraint cloud.google.com/placement-policy-name="${PLACEMENT_POLICY_NAME:-${CLUSTER_NAME}-4x4x4-placement-policy}" \
+  --node-constraint cloud.google.com/placement-policy-name="${PLACEMENT_POLICY_NAME}" \
   --num-slices 1 \
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
