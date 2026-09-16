@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires the Cluster Toolkit (gcluster) CLI (v1.102.0).
+# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
 # If you haven't installed gcluster, please refer to the README.md.
 
 export PATH="${HOME}/cluster-toolkit:${PATH}"
-CTK_VERSION="1.102.0"
+CTK_VERSION="1.104.0"
 GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
 if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
     echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
@@ -33,8 +33,11 @@ export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
-# Required. Not derived from the cluster name; see README.md for how to look up
-# the placement policy your cluster was provisioned with.
+# Optional. Cluster Toolkit v1.104.0 resolves the TPU 7x workload placement
+# policy automatically: it reuses the policy already attached to a matching
+# TPU 7x node pool, otherwise it finds (or creates) the canonical policy
+# `tpu7x-512-4x8x8-placement-policy`. Set this only to pin a different
+# pre-existing policy; see README.md.
 export PLACEMENT_POLICY_NAME=""
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-dsv3-671b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
@@ -126,6 +129,15 @@ base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
 
+# Cluster Toolkit v1.104.0 resolves the TPU 7x workload placement policy on its
+# own, so only forward --placement-policy when the user explicitly pinned one.
+# Leaving it unset also avoids emitting an empty nodeSelector label, which would
+# otherwise leave every pod permanently Pending.
+PLACEMENT_POLICY_ARG=()
+if [[ -n "${PLACEMENT_POLICY_NAME}" ]]; then
+  PLACEMENT_POLICY_ARG=(--placement-policy "${PLACEMENT_POLICY_NAME}")
+fi
+
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
 "${GCLUSTER_BIN}" job submit \
   --skip-prereqs \
@@ -137,7 +149,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --restarts 0 \
   --compute-type tpu7x \
   --topology 4x8x8 \
-  --node-constraint cloud.google.com/placement-policy-name="${PLACEMENT_POLICY_NAME}" \
+  "${PLACEMENT_POLICY_ARG[@]}" \
   --num-slices 1 \
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
