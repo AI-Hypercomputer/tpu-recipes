@@ -67,19 +67,6 @@ export ZONE=""          # The zone of your GKE cluster
 export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
 
-# Multi-host TPU slices must be pinned to a compact placement policy. The name
-# depends on how your cluster was provisioned -- it is NOT derived from the
-# cluster name. List the policies available in your region:
-#
-#   gcloud compute resource-policies list --project="${PROJECT_ID}" \
-#     --filter="region:(${ZONE%-*})" --format="value(name)"
-#
-# Clusters using GKE node auto-provisioning name it by accelerator and
-# topology, e.g. "tpu7x-256-4x8x8-placement-policy" (256 = 128 chips x 2 cores).
-# Clusters built from the Cluster Toolkit gke-tpu-7x blueprint name it
-# "tpu7x-workload-policy".
-export PLACEMENT_POLICY_NAME=""
-
 # Set workload name (maximum 28 characters, unique in the cluster)
 export WORKLOAD_NAME="$(printf "%.11s" "${USER//_/-}")-dsv3-671b-$(date +%H%M)"
 ```
@@ -94,7 +81,7 @@ cluster credentials and deploy the JobSet:
 gcloud container clusters get-credentials ${CLUSTER_NAME} --location ${ZONE} --project ${PROJECT_ID}
 
 # Apply the manifest
-envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE} ${PLACEMENT_POLICY_NAME}' < k8s_manifest.yaml | kubectl apply -n default -f -
+envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < k8s_manifest.yaml | kubectl apply -n default -f -
 ```
 
 ## Monitor the job
