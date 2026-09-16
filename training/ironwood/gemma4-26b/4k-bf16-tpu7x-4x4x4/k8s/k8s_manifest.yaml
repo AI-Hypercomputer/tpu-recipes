@@ -69,7 +69,6 @@ spec:
               nodeSelector:
                 cloud.google.com/gke-tpu-accelerator: tpu7x
                 cloud.google.com/gke-tpu-topology: 4x4x4
-                cloud.google.com/placement-policy-name: ${PLACEMENT_POLICY_NAME}
               affinity:
                 nodeAffinity:
                   requiredDuringSchedulingIgnoredDuringExecution:
