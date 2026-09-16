@@ -1,6 +1,6 @@
-# Pretrain deepseek3-671b workload on Ironwood GKE clusters with Kubernetes JobSet
+# Pretrain deepseek_v3 workload on Ironwood GKE clusters with Kubernetes JobSet
 
-This recipe outlines the steps for running a deepseek3-671b
+This recipe outlines the steps for running a deepseek_v3
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine)
 by applying a Kubernetes manifest to deploy a JobSet resource.
@@ -17,7 +17,9 @@ This workload is configured with the following details:
 
 This recipe assumes the following prerequisites are met:
 
--   **GKE Cluster:** A GKE cluster with [JobSet](https://jobset.sigs.k8s.io/docs/installation/) installed and running.
+-   **GKE Cluster:** A GKE cluster with
+    [JobSet](https://jobset.sigs.k8s.io/docs/installation/) installed and
+    running.
 -   **Container Image:** A pre-built container image (such as
     `gcr.io/my-project/my-maxtext-runner:latest`) containing the MaxText
     workload, accessible by the GKE cluster.
@@ -46,15 +48,16 @@ This recipe uses a mock pretraining dataset provided by the MaxText framework.
 
 This recipe uses a Kubernetes manifest (`k8s_manifest.yaml`) to deploy the
 workload. The following commands will set the required environment variables,
-substitute them into `k8s_manifest.yaml`, and apply the resulting
-configuration to your cluster.
+substitute them into `k8s_manifest.yaml`, and apply the resulting configuration
+to your cluster.
 
 ### 1. Configure Environment Variables
 
 Open a terminal and set the following environment variables to match your setup.
-**Note:** 
-- `k8s_manifest.yaml` is in the same directory as this README.  
-- For WORKLOAD_IMAGE, see [Docker container image](../xpk/README.md#docker-container-image) section.
+
+**Note:**
+
+-   `k8s_manifest.yaml` is in the same directory as this README.
 
 ```bash
 # Set variables for your environment
@@ -62,23 +65,36 @@ export PROJECT_ID=""    # Your GCP project name
 export CLUSTER_NAME=""  # The name of your GKE cluster
 export ZONE=""          # The zone of your GKE cluster
 export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
-export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest".
+export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
 
-# Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"
+# Multi-host TPU slices must be pinned to a compact placement policy. The name
+# depends on how your cluster was provisioned -- it is NOT derived from the
+# cluster name. List the policies available in your region:
+#
+#   gcloud compute resource-policies list --project="${PROJECT_ID}" \
+#     --filter="region:(${ZONE%-*})" --format="value(name)"
+#
+# Clusters using GKE node auto-provisioning name it by accelerator and
+# topology, e.g. "tpu7x-256-4x4x8-placement-policy" (256 = 128 chips x 2 cores).
+# Clusters built from the Cluster Toolkit gke-tpu-7x blueprint name it
+# "tpu7x-workload-policy".
+export PLACEMENT_POLICY_NAME=""
+
+# Set workload name (maximum 28 characters, unique in the cluster)
+export WORKLOAD_NAME="$(printf "%.11s" "${USER//_/-}")-dsv3-671b-$(date +%H%M)"
 ```
 
-### 2. Run deepseekv3-671b Pretraining Workload
+### 2. Run deepseek_v3 Pretraining Workload
 
 Once the environment variables are set, run the following commands to fetch
 cluster credentials and deploy the JobSet:
 
 ```bash
 # Fetch cluster credentials
-gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
+gcloud container clusters get-credentials ${CLUSTER_NAME} --location ${ZONE} --project ${PROJECT_ID}
 
 # Apply the manifest
-envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < k8s_manifest.yaml | kubectl apply -n default -f -
+envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE} ${PLACEMENT_POLICY_NAME}' < k8s_manifest.yaml | kubectl apply -n default -f -
 ```
 
 ## Monitor the job
@@ -99,7 +115,7 @@ kubectl logs -f -n default ${POD_NAME}
 
 You can also monitor your cluster and TPU usage through the Google Cloud
 Console:
-`https://console.cloud.google.com/kubernetes/workload/overview?project={PROJECT_ID}`
+`https://console.cloud.google.com/kubernetes/workload/overview?project=${PROJECT_ID}`
 
 ## Delete resources
 
@@ -117,7 +133,7 @@ After the job completes, you can check the results by:
 
 -   Accessing output logs from your job using `kubectl logs`.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
-    `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
+    `${BASE_OUTPUT_DIR}` environment variable.
 -   Reviewing metrics in Cloud Monitoring, if configured.
 
 ## Next steps: deeper exploration and customization
