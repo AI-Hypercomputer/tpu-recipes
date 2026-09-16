@@ -36,7 +36,7 @@ export WORKLOAD_IMAGE=""
 # Required. Not derived from the cluster name; see README.md for how to look up
 # the placement policy your cluster was provisioned with.
 export PLACEMENT_POLICY_NAME=""
-export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.12s" "${USER//_/-}")-gemma4-26b-$(date +%H%M)}"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-gemma4-26b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 
