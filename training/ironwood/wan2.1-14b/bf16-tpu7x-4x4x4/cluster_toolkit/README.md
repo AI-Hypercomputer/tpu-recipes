@@ -145,25 +145,6 @@ across all commands and configurations.
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
--   `PLACEMENT_POLICY_NAME`: **Optional.** The compact placement policy that
-    multi-host TPU slices are pinned to. Cluster Toolkit v1.104.0 resolves this
-    for you: `gcluster job submit` first reuses the policy already attached to a
-    matching TPU 7x node pool, and otherwise finds (or creates) the canonical
-    policy for the requested topology — `tpu7x-128-4x4x4-placement-policy`
-    for this recipe. Leave it empty unless you need to pin a different
-    pre-existing policy, in which case it is passed through as
-    `--placement-policy` and validated against the cluster's project, region,
-    and topology. To list the policies in your region:
-
-    ```bash
-    gcloud compute resource-policies list --project="${PROJECT_ID}" \
-      --filter="region:(${ZONE%-*})" --format="value(name)"
-    ```
-
-    Clusters deployed from the `gke-tpu-7x` blueprint below use
-    `tpu7x-workload-policy`. Clusters using GKE node auto-provisioning name it
-    by accelerator and topology, e.g. `tpu7x-128-4x4x4-placement-policy`. Either
-    way, Cluster Toolkit discovers it without configuration.
 
 If you don't have a GCS bucket, create one with this command:
 
