@@ -46,12 +46,18 @@ To run this recipe, you need the following:
 
 ### Cluster Toolkit (gcluster)
 
+> [!IMPORTANT]
+> Install **v1.103.0 or later**. Earlier releases are affected by issues listed
+> in the
+> [Cluster Toolkit Security Bulletins](https://docs.cloud.google.com/cluster-toolkit/docs/security-bulletins).
+> This recipe is validated against v1.104.0.
+
 Install Cluster Toolkit by downloading and extracting the prebuilt release
 bundle:
 
 ```bash
 # Set Cluster Toolkit version
-export CTK_VERSION="1.102.0"
+export CTK_VERSION="1.104.0"
 
 # Download the prebuilt bundle from GitHub releases
 curl -L -O "https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
@@ -145,12 +151,15 @@ across all commands and configurations.
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
--   `PLACEMENT_POLICY_NAME`: **Required.** The compact placement policy that
-    multi-host TPU slices are pinned to. Unlike XPK, Cluster Toolkit requires
-    this to be passed explicitly. The name depends on how the cluster was
-    provisioned and is **not** derived from the cluster name; an unmatched
-    value leaves the pods `Pending` with no error. List the policies in your
-    region:
+-   `PLACEMENT_POLICY_NAME`: **Optional.** The compact placement policy that
+    multi-host TPU slices are pinned to. Cluster Toolkit v1.104.0 resolves this
+    for you: `gcluster job submit` first reuses the policy already attached to a
+    matching TPU 7x node pool, and otherwise finds (or creates) the canonical
+    policy for the requested topology — `tpu7x-512-4x8x8-placement-policy`
+    for this recipe. Leave it empty unless you need to pin a different
+    pre-existing policy, in which case it is passed through as
+    `--placement-policy` and validated against the cluster's project, region,
+    and topology. To list the policies in your region:
 
     ```bash
     gcloud compute resource-policies list --project="${PROJECT_ID}" \
@@ -159,7 +168,8 @@ across all commands and configurations.
 
     Clusters deployed from the `gke-tpu-7x` blueprint below use
     `tpu7x-workload-policy`. Clusters using GKE node auto-provisioning name it
-    by accelerator and topology, e.g. `tpu7x-128-4x8x8-placement-policy`.
+    by accelerator and topology, e.g. `tpu7x-512-4x8x8-placement-policy`. Either
+    way, Cluster Toolkit discovers it without configuration.
 
 If you don't have a GCS bucket, create one with this command:
 
@@ -237,7 +247,7 @@ The following software versions are used:
 -   Jax version: 0.11.2.dev20260825
 -   Maxtext version: 9d92bf0
 -   Python: 3.12
--   Cluster Toolkit: 1.102.0
+-   Cluster Toolkit: 1.104.0
 
 Docker Image Building Command:
 
