@@ -114,7 +114,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --cluster "$CLUSTER_NAME" \
   --project "$PROJECT_ID" \
   --location "$ZONE" \
-  --priority low \
+  --priority medium \
   --restarts 0 \
   --compute-type tpu7x \
   --topology 4x8x8 \
