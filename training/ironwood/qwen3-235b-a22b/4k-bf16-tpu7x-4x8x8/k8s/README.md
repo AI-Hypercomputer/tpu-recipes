@@ -1,6 +1,6 @@
-# Pretrain qwen3-235b workload on Ironwood GKE clusters with Kubernetes JobSet
+# Pretrain qwen3-235b-a22b workload on Ironwood GKE clusters with Kubernetes JobSet
 
-This recipe outlines the steps for running a qwen3-235b
+This recipe outlines the steps for running a qwen3-235b-a22b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine)
 by applying a Kubernetes manifest to deploy a JobSet resource.
@@ -12,8 +12,8 @@ by applying a Kubernetes manifest to deploy a JobSet resource.
 This workload is configured with the following details:
 
 -   Sequence Length: 4096
--   Precision: bf16
--   Chips: 256 (4x8x8 topology)
+-   Precision: bfloat16
+-   Chips: 64 (4x8x8 topology)
 
 ## Prerequisites
 
@@ -68,12 +68,16 @@ export CLUSTER_NAME=""  # The name of your GKE cluster
 export ZONE=""          # The zone of your GKE cluster
 export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
+# Required. Not derived from the cluster name; list yours with:
+#   gcloud compute resource-policies list --project="${PROJECT_ID}" \
+#     --filter="region:(${ZONE%-*})" --format="value(name)"
+export PLACEMENT_POLICY_NAME=""
 
 # Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-qwen3-235b-a22b-4096-fsdp-4x8x8")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-qwen3-235b-a22b")-$(date +%Y%m%d-%H%M)"
 ```
 
-### 2. Run qwen3-235b Pretraining Workload
+### 2. Run qwen3-235b-a22b Pretraining Workload
 
 Once the environment variables are set, run the following commands to fetch
 cluster credentials and deploy the JobSet:
@@ -83,7 +87,7 @@ cluster credentials and deploy the JobSet:
 gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 
 # Apply the manifest
-envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < k8s_manifest.yaml | kubectl apply -n default -f -
+envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE} ${PLACEMENT_POLICY_NAME}' < k8s_manifest.yaml | kubectl apply -n default -f -
 ```
 
 ## Monitor the job
