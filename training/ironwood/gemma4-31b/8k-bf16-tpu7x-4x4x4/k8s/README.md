@@ -68,10 +68,6 @@ export CLUSTER_NAME=""  # The name of your GKE cluster
 export ZONE=""          # The zone of your GKE cluster
 export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
-# Required. Not derived from the cluster name; list yours with:
-#   gcloud compute resource-policies list --project="${PROJECT_ID}" \
-#     --filter="region:(${ZONE%-*})" --format="value(name)"
-export PLACEMENT_POLICY_NAME=""
 
 # Set workload name (or modify as needed, make sure its unique in the cluster)
 export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-31b")-$(date +%Y%m%d-%H%M)"
@@ -87,7 +83,7 @@ cluster credentials and deploy the JobSet:
 gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 
 # Apply the manifest
-envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE} ${PLACEMENT_POLICY_NAME}' < k8s_manifest.yaml | kubectl apply -n default -f -
+envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < k8s_manifest.yaml | kubectl apply -n default -f -
 ```
 
 ## Monitor the job
