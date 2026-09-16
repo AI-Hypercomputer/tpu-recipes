@@ -48,12 +48,6 @@ to configure your environment and install prerequisites.
 
 #### Cluster Toolkit (gcluster)
 
-> [!IMPORTANT]
-> Install **v1.103.0 or later**. Earlier releases are affected by issues listed
-> in the
-> [Cluster Toolkit Security Bulletins](https://docs.cloud.google.com/cluster-toolkit/docs/security-bulletins).
-> This recipe is validated against v1.104.0.
-
 Install Cluster Toolkit by downloading and extracting the prebuilt release
 bundle:
 
