@@ -1,27 +1,26 @@
 #!/bin/bash
-set -e
 
 # --- Environment Setup ---
-# This script requires uv and a Python virtual environment with xpk installed.
-# If you haven't set up uv and the environment, please refer to the README.md.
+# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
+# If you haven't installed gcluster, please refer to the README.md.
 
-# Activate the virtual environment
-export UV_VENV_PATH="${UV_VENV_PATH:-${HOME}/.local/bin/venv}"
-if [ -f "${UV_VENV_PATH}/bin/activate" ]; then
-    source "${UV_VENV_PATH}/bin/activate"
-else
-    echo "Error: Virtual environment not found at ${UV_VENV_PATH}. Check README.md."
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+CTK_VERSION="1.104.0"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
+    echo "  mkdir -p \${HOME}/cluster-toolkit"
+    echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  rm -f /tmp/gcluster_bundle.tgz"
+    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
+    echo '  export PATH="${HOME}/cluster-toolkit:${PATH}"'
     exit 1
 fi
-
-# Check if xpk is installed in the venv
-if ! pip show xpk &> /dev/null; then
-    echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==1.3.0"
-    exit 1
-fi
-
 # --- End Environment Setup ---
+
+set -e
+set -o pipefail
 
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
@@ -38,16 +37,24 @@ export TPU_TYPE="${TPU_TYPE:-7x-8}"
 export RESOLUTION="${RESOLUTION:-720p}"
 
 export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest}"
-random_suffix=$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5)
+# NOTE: `head -c 5` closes the pipe early, which kills `tr` with SIGPIPE. The
+# `|| true` keeps that from tripping `set -o pipefail` and aborting the script.
+random_suffix=$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.20s" "${USER//_/-}-wan2-2-t2v")-${random_suffix}-$(date +%Y%m%d-%H%M)}"
+export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 export BASE_YAML_CONFIG="src/maxdiffusion/configs/base_wan_27b.yml"
 export SCRIPT_PATH="src/maxdiffusion/generate_wan.py"
 
 # Default COMMAND_PREFIX tailored for Ironwood (7x)
-export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.10.0 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev/shm && export HF_HUB_ENABLE_HF_TRANSFER=1 && export TORCHINDUCTOR_FREEZING=1 && export TORCHINDUCTOR_CPP_WRAPPER=1 && export TORCHINDUCTOR_MEMORY_PLANNING=1 && export JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=-1 && export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 && export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95 && export JAX_DEFAULT_MATMUL_PRECISION=bfloat16"
+# NOTE: HF_HUB_CACHE points at /dev_shm rather than /dev/shm. Cluster Toolkit
+# refuses to mount onto the reserved system path /dev/shm, so the host tmpfs is
+# mounted at /dev_shm instead (see the --mount flag on the job submit below).
+# /tmp is not a viable fallback here: the root ephemeral disk is too small for
+# the Wan model weights and the pod gets evicted mid-download.
+export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.10.0 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev_shm && export HF_HUB_ENABLE_HF_TRANSFER=1 && export TORCHINDUCTOR_FREEZING=1 && export TORCHINDUCTOR_CPP_WRAPPER=1 && export TORCHINDUCTOR_MEMORY_PLANNING=1 && export JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=-1 && export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 && export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95 && export JAX_DEFAULT_MATMUL_PRECISION=bfloat16"
 
 # XLA Flags optimized for Ironwood
-XLA_FLAGS="'\"'\"' \
+XLA_FLAGS=" \
 --xla_tpu_dvfs_p_state=7 \
 --xla_tpu_spmd_rng_bit_generator_unsafe=true \
 --xla_tpu_enable_dot_strength_reduction=true \
@@ -82,7 +89,7 @@ XLA_FLAGS="'\"'\"' \
 --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true \
 --xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true \
 --xla_tpu_enable_concurrent_sparse_core_offloading=true \
---xla_tpu_assign_all_reduce_scatter_layout=true'\"'\"'"
+--xla_tpu_assign_all_reduce_scatter_layout=true"
 
 # Resolution Configuration
 case "$RESOLUTION" in
@@ -106,13 +113,13 @@ esac
 # - 7x-16 represents 16 TPU cores (8 physical chips with a 2x2x2 GKE topology)
 case "$TPU_TYPE" in
     "7x-8" | "tpu7x-2x2x1")
-        XPK_TPU_TYPE="tpu7x-2x2x1"
+        TPU_TOPOLOGY="2x2x1"
         ICI_DATA_PARALLELISM=2
         ICI_CONTEXT_PARALLELISM=4
         PER_DEVICE_BATCH_SIZE=0.125
         ;;
     "7x-16" | "tpu7x-2x2x2")
-        XPK_TPU_TYPE="tpu7x-2x2x2"
+        TPU_TOPOLOGY="2x2x2"
         ICI_DATA_PARALLELISM=2
         ICI_CONTEXT_PARALLELISM=8
         PER_DEVICE_BATCH_SIZE=0.0625
@@ -125,17 +132,17 @@ esac
 
 # MaxDiffusion Workload Overrides
 MAXDIFFUSION_ARGS="\
-model_name='\"'\"'wan2.2'\"'\"' \
-attention='\"'\"'ulysses_custom'\"'\"' \
+model_name=wan2.2 \
+attention=ulysses_custom \
 num_frames=81 \
 width=${WIDTH} \
 height=${HEIGHT} \
 per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
 vae_spatial=4 \
 vae_decode_chunk=-1 \
-vae_weights_dtype='bfloat16' \
-vae_dtype='bfloat16' \
-text_encoder_dtype='bfloat16' \
+vae_weights_dtype=bfloat16 \
+vae_dtype=bfloat16 \
+text_encoder_dtype=bfloat16 \
 compile_text_encoder=true \
 ici_data_parallelism=${ICI_DATA_PARALLELISM} \
 ici_context_parallelism=${ICI_CONTEXT_PARALLELISM} \
@@ -144,31 +151,39 @@ use_kv_cache=True \
 use_base2_exp=True \
 use_experimental_scheduler=True \
 use_batched_text_encoder=false \
-flash_block_sizes='\"'\"'{\"block_kv\":1024,\"block_kv_compute\":1024,\"block_kv_compute_in\":1024,\"block_kv_dkv\":1024,\"block_kv_dkv_compute\":1024,\"block_q\":4864,\"block_q_dkv\":4864,\"block_q_dq\":4864,\"heads_per_tile\":1}'\"'\"' \
-base_output_directory='\"'\"'${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}'\"'\"' \
-output_dir='\"'\"'${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}'\"'\"' \
-run_name='\"'\"'${WORKLOAD_NAME}'\"'\"'"
+flash_block_sizes='{\"block_kv\":1024,\"block_kv_compute\":1024,\"block_kv_compute_in\":1024,\"block_kv_dkv\":1024,\"block_kv_dkv_compute\":1024,\"block_q\":4864,\"block_q_dkv\":4864,\"block_q_dq\":4864,\"heads_per_tile\":1}' \
+base_output_directory=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} \
+output_dir=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} \
+run_name=${WORKLOAD_NAME}"
 
-echo "Deploying workload via xpk..."
-
-cmd="xpk workload create \
-  --cluster=$CLUSTER_NAME \
-  --project=$PROJECT_ID \
-  --zone=$ZONE \
-  --priority=very-high \
-  --max-restarts=0 \
-  --tpu-type=$XPK_TPU_TYPE \
-  --num-slices=1 \
-  --docker-image=\"${WORKLOAD_IMAGE}\" \
-  --enable-debug-logs \
-  --workload=\"${WORKLOAD_NAME}\" \
-  --command='set -e && \
-export ARTIFACT_DIR=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} && \
+echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
+"${GCLUSTER_BIN}" job submit \
+  --skip-prereqs \
+  --queue multislice-queue \
+  --mount "/dev/shm;/dev_shm;rw" \
+  --cluster "$CLUSTER_NAME" \
+  --project "$PROJECT_ID" \
+  --location "$ZONE" \
+  --priority medium \
+  --restarts 0 \
+  --compute-type tpu7x \
+  --topology "${TPU_TOPOLOGY}" \
+  --num-slices 1 \
+  --image "${WORKLOAD_IMAGE}" \
+  --verbose \
+  --gke-namespace default \
+  --name "${WORKLOAD_NAME}" \
+  --command "set -e && \
+export ARTIFACT_DIR=${ARTIFACT_DIR} && \
 export OUTPUT_DIR=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} && \
-export LIBTPU_INIT_ARGS=${XLA_FLAGS} && \
+export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 ${COMMAND_PREFIX} && export HF_TOKEN=${HF_TOKEN} && \
-  python ${SCRIPT_PATH}  \
+set +e; \
+python ${SCRIPT_PATH} \
   ${BASE_YAML_CONFIG} \
-  ${MAXDIFFUSION_ARGS}'"
-
-eval ${cmd}
+  ${MAXDIFFUSION_ARGS} | tee generate.log; \
+GENERATE_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s generate.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled generate.log \${ARTIFACT_DIR}/logs/generate-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${GENERATE_EXIT_CODE}"
