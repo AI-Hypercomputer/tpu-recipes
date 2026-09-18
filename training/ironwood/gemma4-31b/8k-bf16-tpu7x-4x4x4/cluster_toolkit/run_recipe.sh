@@ -14,7 +14,7 @@ if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; 
     echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
     echo "  rm -f /tmp/gcluster_bundle.tgz"
     echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
-    echo '  export PATH="${HOME}/cluster-toolkit:${PATH}"'
+    echo "  export PATH=\"\${HOME}/cluster-toolkit:\${PATH}\""
     exit 1
 fi
 # --- End Environment Setup ---
@@ -100,10 +100,7 @@ gcs_metrics=True \
 dataset_type=synthetic \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME} \
-profiler=xplane \
-skip_first_n_steps_for_profiler=5 \
-profiler_steps=3"
+run_name=${WORKLOAD_NAME}"
 
 
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
