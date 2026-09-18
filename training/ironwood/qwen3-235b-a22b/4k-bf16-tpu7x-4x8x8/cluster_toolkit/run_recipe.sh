@@ -39,7 +39,6 @@ export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 # XLA Flags
 XLA_FLAGS=" \
-  --xla_tpu_dvfs_p_state=3 \
   --xla_tpu_scoped_vmem_limit_kib=61440 \
   --xla_tpu_enable_sparse_core_collective_offload_all_gather=true \
   --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true \
@@ -120,7 +119,6 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
   --gke-namespace default \
-  --gke-disable-parallel-containers \
   --name "${WORKLOAD_NAME}" \
   --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
