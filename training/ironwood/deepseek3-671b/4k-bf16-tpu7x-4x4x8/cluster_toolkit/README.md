@@ -1,6 +1,6 @@
-# Ironwood (Cloud TPU v7x) pretrain deepseek_v3 workload on GKE clusters with Cluster Toolkit (gcluster)
+# Ironwood (Cloud TPU v7x) pretrain deepseek3-671b workload on GKE clusters with Cluster Toolkit (gcluster)
 
-This recipe outlines the steps for running a deepseek_v3
+This recipe outlines the steps for running a deepseek3-671b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit).
@@ -105,7 +105,7 @@ For this recipe, the following setup is used:
     [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit)
     (`gcluster`) is used to configure and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
-    resource, which manages the execution of the deepseek_v3 workload.
+    resource, which manages the execution of the deepseek3-671b workload.
 
 ## Test environment
 
@@ -134,12 +134,12 @@ across all commands and configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-deepseek_v3-runner` by
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-deepseek3-671b-runner` by
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload (maximum 28 characters).
     This is set in `run_recipe.sh` to
-    `${USER}-dsv3-671b-$(date +%H%M)` by default.
+    `$(printf "%.11s" "${USER//_/-}")-dsv3-671b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -288,9 +288,9 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.46
--   Jax version: 0.11.2.dev20260825
--   Maxtext version: 9d92bf0
+-   Libtpu version: 0.0.32.dev20251215+nightly
+-   Jax version: 0.8.2.dev20251215
+-   Maxtext version: maxtext-tutorial-v1.5.0
 -   Python: 3.12
 -   Cluster Toolkit: 1.104.0
 
@@ -312,14 +312,14 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout 9d92bf0
+git checkout maxtext-tutorial-v1.5.0
 
 # Build and upload the docker image
-bash src/dependencies/scripts/docker_build_dependency_image.sh \
+bash dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.11.2.dev20260825 \
-  LIBTPU_VERSION=0.0.46
-bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+  JAX_VERSION=0.8.2.dev20251215 \
+  LIBTPU_VERSION=0.0.32.dev20251215+nightly
+bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate
@@ -349,10 +349,17 @@ running the benchmark, you can use the following gcloud command:
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-### Run deepseek_v3 Pretraining Workload
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/deepseek3-671b/4k-bf16-tpu7x-4x4x8/cluster_toolkit
+```
+
+### Run deepseek3-671b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the deepseek_v3 pretraining workload.
+configurations to launch the deepseek3-671b pretraining workload.
 
 To run the benchmark, first make the script executable, edit it to configure
 environment variables, and then run it:
@@ -372,13 +379,19 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
-    command. This includes model-specific settings like `per_device_batch_size`,
+    arguments passed to the `python3 -m src.MaxText.train` command. This
+    includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
 
 Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
 are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
+
+## DeepSeek V3 128 chip BF16 Recipe
+The deepseekv3 model 128 chip config uses `fsdp_shard_on_exp=true`, which shards 
+weights by expert dimension in a 256-way. These weights are then all-gathered before 
+the ragged_dot kernel, and fully FSDP is then applied during kernel computation.
+Please note that `fsdp_shard_on_exp=true` only works if num of experts is divisible by ici_fsdp_parallelism.
 
 ## Monitor the job
 
@@ -476,6 +489,11 @@ verify your environment and achieve a first success with TPUs quickly and
 reliably.
 
 For deeper exploration, including customizing model configurations, tuning
-performance with different XLA flags, and running custom experiments, refer to
-the official MaxText documentation. To learn more, see the
-[MaxText Getting Started Guide](https://github.com/AI-Hypercomputer/maxtext/blob/main/docs/getting_started.md).
+performance with different XLA flags, and running custom experiments, we
+recommend using the benchmark_runner.py script directly from the MaxText
+repository. This script offers the full range of MaxText's flexibility and is
+the ideal tool for power users and researchers who want to move beyond the
+initial benchmark and tailor the workload to their specific needs. To learn
+more, see the
+[MaxText Benchmark Runner Guide](https://github.com/AI-Hypercomputer/maxtext/blob/main/benchmarks/Getting_Started_Benchmarking.md)
+on using benchmark_runner.py for advanced benchmarking.
