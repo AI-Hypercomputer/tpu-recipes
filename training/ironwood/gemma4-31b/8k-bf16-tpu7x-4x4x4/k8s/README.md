@@ -6,7 +6,6 @@ This recipe outlines the steps for running a gemma4-31b
 by applying a Kubernetes manifest to deploy a JobSet resource.
 
 
-
 ## Workload Details
 
 This workload is configured with the following details:
