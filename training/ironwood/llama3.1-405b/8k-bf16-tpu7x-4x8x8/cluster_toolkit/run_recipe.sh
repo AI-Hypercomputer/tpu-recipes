@@ -117,7 +117,6 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
   --gke-namespace default \
-  --gke-disable-parallel-containers \
   --name "${WORKLOAD_NAME}" \
   --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \

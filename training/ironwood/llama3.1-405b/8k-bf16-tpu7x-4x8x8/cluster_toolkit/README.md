@@ -218,9 +218,9 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.46
--   Jax version: 0.11.2.dev20260825
--   Maxtext version: 9d92bf0
+-   Libtpu version: 0.0.44.1
+-   Jax version: 0.11.1.dev20260730
+-   Maxtext version: 58741fa
 -   Python: 3.12
 -   Cluster Toolkit: 1.104.0
 
@@ -242,13 +242,13 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout 9d92bf0
+git checkout 58741fa
 
 # Build and upload the docker image
 bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.11.2.dev20260825 \
-  LIBTPU_VERSION=0.0.46
+  JAX_VERSION=0.11.1.dev20260730 \
+  LIBTPU_VERSION=0.0.44.1
 bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
