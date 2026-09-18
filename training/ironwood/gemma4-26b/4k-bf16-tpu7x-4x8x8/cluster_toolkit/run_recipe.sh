@@ -14,7 +14,7 @@ if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; 
     echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
     echo "  rm -f /tmp/gcluster_bundle.tgz"
     echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
-    echo '  export PATH="${HOME}/cluster-toolkit:${PATH}"'
+    echo "  export PATH=\"\${HOME}/cluster-toolkit:\${PATH}\""
     exit 1
 fi
 # --- End Environment Setup ---
@@ -39,7 +39,6 @@ export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 # XLA Flags
 XLA_FLAGS=" \
-  --xla_tpu_dvfs_p_state=3 \
   --xla_tpu_scoped_vmem_limit_kib=65536 \
   --xla_tpu_bf16_emission_mode=NATIVE_EMISSION \
   --xla_tpu_enable_sparse_core_reduce_scatter_v2=true \
@@ -122,7 +121,6 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
   --gke-namespace default \
-  --gke-disable-parallel-containers \
   --name "${WORKLOAD_NAME}" \
   --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
