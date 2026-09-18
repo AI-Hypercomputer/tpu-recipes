@@ -288,9 +288,9 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.32.dev20251215+nightly
--   Jax version: 0.8.2.dev20251215
--   Maxtext version: maxtext-tutorial-v1.5.0
+-   Libtpu version: 0.0.37
+-   Jax version: 0.9.2.dev20260306
+-   Maxtext version: a0fceb5
 -   Python: 3.12
 -   Cluster Toolkit: 1.104.0
 
@@ -312,13 +312,13 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout maxtext-tutorial-v1.5.0
+git checkout a0fceb5
 
 # Build and upload the docker image
 bash dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.8.2.dev20251215 \
-  LIBTPU_VERSION=0.0.32.dev20251215+nightly
+  JAX_VERSION=0.9.2.dev20260306 \
+  LIBTPU_VERSION=0.0.37
 bash dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
@@ -379,7 +379,7 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m src.MaxText.train` command. This
+    arguments passed to the `python3 -u -m maxtext.trainers.pre_train.train` command. This
     includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
@@ -388,10 +388,10 @@ Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
 are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
 
 ## DeepSeek V3 128 chip BF16 Recipe
-The deepseekv3 model 128 chip config uses `fsdp_shard_on_exp=true`, which shards 
+The deepseekv3 model 128 chip config uses `shard_exp_on_fsdp=True`, which shards 
 weights by expert dimension in a 256-way. These weights are then all-gathered before 
 the ragged_dot kernel, and fully FSDP is then applied during kernel computation.
-Please note that `fsdp_shard_on_exp=true` only works if num of experts is divisible by ici_fsdp_parallelism.
+Please note that `shard_exp_on_fsdp=True` only works if num of experts is divisible by ici_fsdp_parallelism.
 
 ## Monitor the job
 

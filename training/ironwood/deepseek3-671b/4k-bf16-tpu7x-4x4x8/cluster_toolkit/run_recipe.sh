@@ -89,7 +89,7 @@ use_random_routing=True \
 megablox=True \
 sparse_matmul=True \
 use_custom_sort_vjp=True \
-fsdp_shard_on_exp=True \
+shard_exp_on_fsdp=True \
 sa_use_fused_bwd_kernel=True \
 sa_block_q=2048 \
 sa_block_kv=2048 \
@@ -134,7 +134,7 @@ export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
 set +e; \
-python3 -u -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
 TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s train.log ]; then \
   timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
