@@ -39,7 +39,6 @@ export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 # XLA Flags
 XLA_FLAGS=" \
-  --xla_tpu_dvfs_p_state=3 \
   --xla_tpu_scoped_vmem_limit_kib=65536 \
   --xla_tpu_bf16_emission_mode=NATIVE_EMISSION \
   --xla_tpu_enable_sparse_core_reduce_scatter_v2=true \
@@ -65,7 +64,6 @@ XLA_FLAGS=" \
   --xla_tpu_enable_layer_scheduler_for_dependent_collectives=true \
   --xla_tpu_enable_sparse_core_collective_aggregator=true \
   --xla_tpu_enable_latency_hiding_layer_scheduler=true \
-  --xla_tpu_enable_offloading_copy_to_sparsecore=false \
   --xla_tpu_enable_multi_compute_overlap_in_layer_scheduler=false \
   --xla_tpu_enable_sparse_core_offload_queuing_in_lhs=true \
   --xla_tpu_sparse_core_all_reduce_offload_min_size_in_bytes=204800 \
@@ -105,9 +103,6 @@ sparse_matmul=True \
 use_custom_sort_vjp=True \
 shard_exp_on_fsdp=True \
 moe_fsdp_use_two_stage_all_gather=True \
-profiler=xplane \
-skip_first_n_steps_for_profiler=5 \
-profiler_steps=2 \
 sa_use_fused_bwd_kernel=True \
 sa_block_q=2048 \
 sa_block_kv=2048 \
@@ -126,15 +121,39 @@ float32_weight_sum=False \
 use_tokamax_gmm=True \
 tokenizer_path=assets/tokenizer.mistral-v3 \
 dataset_type=synthetic \
-dataset_path=gs://max-datasets-rogue \
 use_qwix_quantization=True \
 quantization=fp8_full \
+wi_tile_fwd_batch_seq=256 \
+wi_tile_fwd_embed_dim=7168 \
+wi_tile_fwd_mlp_dim=2048 \
+wi_tile_dlhs_batch_seq=256 \
+wi_tile_dlhs_embed_dim=2048 \
+wi_tile_dlhs_mlp_dim=7168 \
+wi_tile_drhs_batch_seq=512 \
+wi_tile_drhs_embed_dim=1024 \
+wi_tile_drhs_mlp_dim=2048 \
+wo_tile_fwd_batch_seq=256 \
+wo_tile_fwd_embed_dim=2048 \
+wo_tile_fwd_mlp_dim=7168 \
+wo_tile_dlhs_batch_seq=256 \
+wo_tile_dlhs_embed_dim=7168 \
+wo_tile_dlhs_mlp_dim=2048 \
+wo_tile_drhs_batch_seq=512 \
+wo_tile_drhs_embed_dim=512 \
+wo_tile_drhs_mlp_dim=7168 \
+wi_tile_fwd_buffer_count=2 \
+wi_tile_dlhs_buffer_count=2 \
+wi_tile_drhs_buffer_count=3 \
+wo_tile_fwd_buffer_count=2 \
+wo_tile_dlhs_buffer_count=2 \
+wo_tile_drhs_buffer_count=3 \
 weight_quantization_calibration_method='fixed,-224,224' \
 act_quantization_calibration_method='fixed,-224,224' \
 enable_checkpointing=False \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME}"
+run_name=${WORKLOAD_NAME} \
+output_dir=${BASE_OUTPUT_DIR}"
 
 
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
@@ -152,12 +171,12 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
   --gke-namespace default \
-  --gke-disable-parallel-containers \
   --name "${WORKLOAD_NAME}" \
   --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
+pip install git+https://github.com/openxla/tokamax.git@4936e75cb40bac9a746f0f10c4bb6887f4c217d8 --no-deps && \
 set +e; \
 python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
 TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
