@@ -13,7 +13,7 @@ This workload is configured with the following details:
 -   num_frames: 81
 -   width: 1280 (720p) or 832 (480p)
 -   height: 720 (720p) or 480 (480p)
--   num_inference_steps: 50
+-   num_inference_steps: 40
 -   fps: 16
 -   TPU Cores: 7x-8 (tpu7x-2x2x1), 7x-16 (tpu7x-2x2x2)
 
@@ -195,9 +195,9 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.40 or nightly
--   Jax version: 0.10.0 or nightly
--   MaxDiffusion version: git+https://github.com/AI-Hypercomputer/maxdiffusion.git
+-   Libtpu version: 0.0.40
+-   Jax version: 0.10.0
+-   MaxDiffusion version: 08566b1
 -   Python: 3.12
 -   Cluster Toolkit: 1.104.0
 
@@ -209,9 +209,10 @@ export CLOUD_IMAGE_NAME="${USER}-maxdiffusion-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 export PROJECT_ID=<YOUR_PROJECT_ID>
 
-# Clone MaxDiffusion Repository
+# Clone MaxDiffusion Repository and checkout recipe commit
 git clone https://github.com/AI-Hypercomputer/maxdiffusion.git
 cd maxdiffusion
+git checkout 08566b1
 
 # Build and upload the docker image
 bash docker_build_dependency_image.sh
