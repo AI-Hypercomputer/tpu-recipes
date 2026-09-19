@@ -319,7 +319,7 @@ and stream logs:
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
 
-# List pods to find the specific name (e.g., deepseek3-0-0-xxxx)
+# List pods to find the specific name (e.g., gemma4-4b-0-0-xxxx)
 kubectl get pods | grep ${WORKLOAD_NAME}
 ```
 Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
