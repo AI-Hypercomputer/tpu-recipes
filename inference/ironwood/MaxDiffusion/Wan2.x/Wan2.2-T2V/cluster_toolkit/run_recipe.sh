@@ -33,8 +33,12 @@ export CLUSTER_NAME="${CLUSTER_NAME}"
 export ZONE="${ZONE}"
 export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR}"
 export HF_TOKEN="${HF_TOKEN}"
+export TPU_TYPE="${TPU_TYPE:-7x-8}"
+export RESOLUTION="${RESOLUTION:-720p}"
 
 export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest}"
+# NOTE: `head -c 5` closes the pipe early, which kills `tr` with SIGPIPE. The
+# `|| true` keeps that from tripping `set -o pipefail` and aborting the script.
 random_suffix=$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.20s" "${USER//_/-}-wan2-2-t2v")-${random_suffix}-$(date +%Y%m%d-%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
@@ -45,7 +49,9 @@ export SCRIPT_PATH="src/maxdiffusion/generate_wan.py"
 # NOTE: HF_HUB_CACHE points at /dev_shm rather than /dev/shm. Cluster Toolkit
 # refuses to mount onto the reserved system path /dev/shm, so the host tmpfs is
 # mounted at /dev_shm instead (see the --mount flag on the job submit below).
-export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.10.0 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev_shm && export HF_HUB_ENABLE_HF_TRANSFER=1"
+# /tmp is not a viable fallback here: the root ephemeral disk is too small for
+# the Wan model weights and the pod gets evicted mid-download.
+export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.10.0 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev_shm && export HF_HUB_ENABLE_HF_TRANSFER=1 && export TORCHINDUCTOR_FREEZING=1 && export TORCHINDUCTOR_CPP_WRAPPER=1 && export TORCHINDUCTOR_MEMORY_PLANNING=1 && export JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=-1 && export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 && export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95 && export JAX_DEFAULT_MATMUL_PRECISION=bfloat16"
 
 # XLA Flags optimized for Ironwood
 XLA_FLAGS=" \
@@ -60,16 +66,10 @@ XLA_FLAGS=" \
 --xla_tpu_enable_async_collective_fusion_multiple_steps=true \
 --xla_tpu_overlap_compute_collective_tc=true \
 --xla_enable_async_all_gather=true \
---xla_tpu_scoped_vmem_limit_kib=81920 \
 --xla_tpu_enable_async_all_to_all=true \
 --xla_tpu_enable_all_experimental_scheduler_features=true \
 --xla_tpu_enable_scheduler_memory_pressure_tracking=true \
 --xla_tpu_host_transfer_overlap_limit=24 \
---xla_tpu_aggressive_opt_barrier_removal=ENABLED \
---xla_lhs_prioritize_async_depth_over_stall=ENABLED \
---xla_should_allow_loop_variant_parameter_in_chain=ENABLED \
---xla_should_add_loop_invariant_op_in_chain=ENABLED \
---xla_tpu_enable_ici_ag_pipelining=true \
 --xla_max_concurrent_host_send_recv=100 \
 --xla_tpu_scheduler_percent_shared_memory_limit=100 \
 --xla_latency_hiding_scheduler_rerun=2 \
@@ -91,27 +91,69 @@ XLA_FLAGS=" \
 --xla_tpu_enable_concurrent_sparse_core_offloading=true \
 --xla_tpu_assign_all_reduce_scatter_layout=true"
 
+# Resolution Configuration
+case "$RESOLUTION" in
+    "720p")
+        WIDTH=1280
+        HEIGHT=720
+        ;;
+    "480p")
+        WIDTH=832
+        HEIGHT=480
+        ;;
+    *)
+        echo "Error: Unsupported resolution '$RESOLUTION'. Supported resolutions: 720p, 480p"
+        exit 1
+        ;;
+esac
+
+# Topology and Parallelism Configuration
+# Note: TPU 7x has 2 cores per physical chip.
+# - 7x-8 represents 8 TPU cores (4 physical chips with a 2x2x1 GKE topology)
+# - 7x-16 represents 16 TPU cores (8 physical chips with a 2x2x2 GKE topology)
+case "$TPU_TYPE" in
+    "7x-8" | "tpu7x-2x2x1")
+        TPU_TOPOLOGY="2x2x1"
+        ICI_DATA_PARALLELISM=2
+        ICI_CONTEXT_PARALLELISM=4
+        PER_DEVICE_BATCH_SIZE=0.125
+        ;;
+    "7x-16" | "tpu7x-2x2x2")
+        TPU_TOPOLOGY="2x2x2"
+        ICI_DATA_PARALLELISM=2
+        ICI_CONTEXT_PARALLELISM=8
+        PER_DEVICE_BATCH_SIZE=0.0625
+        ;;
+    *)
+        echo "Error: Unsupported TPU_TYPE '$TPU_TYPE'. Supported values: 7x-8, 7x-16"
+        exit 1
+        ;;
+esac
+
 # MaxDiffusion Workload Overrides
 MAXDIFFUSION_ARGS="\
 model_name=wan2.2 \
 attention=ulysses_custom \
-num_inference_steps=40 \
 num_frames=81 \
-width=1280 \
-height=720 \
-per_device_batch_size=0.125 \
-vae_spatial=8 \
-ici_data_parallelism=2 \
-ici_context_parallelism=4 \
+width=${WIDTH} \
+height=${HEIGHT} \
+per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
+vae_spatial=4 \
+vae_decode_chunk=-1 \
+vae_weights_dtype=bfloat16 \
+vae_dtype=bfloat16 \
+text_encoder_dtype=bfloat16 \
+compile_text_encoder=true \
+ici_data_parallelism=${ICI_DATA_PARALLELISM} \
+ici_context_parallelism=${ICI_CONTEXT_PARALLELISM} \
 fps=16 \
 use_kv_cache=True \
 use_base2_exp=True \
 use_experimental_scheduler=True \
-use_batched_text_encoder=True \
-flash_block_sizes='{\"block_kv\":1024,\"block_kv_compute\":1024,\"block_kv_compute_in\":1024,\"block_kv_dkv\":2048,\"block_kv_dkv_compute\":2048,\"block_kv_dq\":2048,\"block_q\":4864,\"block_q_dkv\":3024,\"block_q_dq\":3024,\"heads_per_tile\":1}' \
-max_train_steps=30 \
+use_batched_text_encoder=false \
+flash_block_sizes='{\"block_kv\":1024,\"block_kv_compute\":1024,\"block_kv_compute_in\":1024,\"block_kv_dkv\":1024,\"block_kv_dkv_compute\":1024,\"block_q\":4864,\"block_q_dkv\":4864,\"block_q_dq\":4864,\"heads_per_tile\":1}' \
 base_output_directory=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} \
-output_dir=${BASE_OUTPUT_DIR}/ \
+output_dir=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} \
 run_name=${WORKLOAD_NAME}"
 
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
@@ -125,21 +167,21 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --priority medium \
   --restarts 0 \
   --compute-type tpu7x \
-  --topology 2x2x1 \
+  --topology "${TPU_TOPOLOGY}" \
   --num-slices 1 \
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
   --gke-namespace default \
   --name "${WORKLOAD_NAME}" \
   --command "set -e && \
-export ARTIFACT_DIR=\${ARTIFACT_DIR} && \
-export OUTPUT_DIR=\${BASE_OUTPUT_DIR}/ && \
-export LIBTPU_INIT_ARGS='\${XLA_FLAGS}' && \
-\${COMMAND_PREFIX} && export HF_TOKEN=\${HF_TOKEN} && \
+export ARTIFACT_DIR=${ARTIFACT_DIR} && \
+export OUTPUT_DIR=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} && \
+export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+${COMMAND_PREFIX} && export HF_TOKEN=${HF_TOKEN} && \
 set +e; \
-python \${SCRIPT_PATH} \
-  \${BASE_YAML_CONFIG} \
-  \${MAXDIFFUSION_ARGS} | tee generate.log; \
+python ${SCRIPT_PATH} \
+  ${BASE_YAML_CONFIG} \
+  ${MAXDIFFUSION_ARGS} | tee generate.log; \
 GENERATE_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s generate.log ]; then \
   timeout 30s gcloud storage cp --no-user-output-enabled generate.log \${ARTIFACT_DIR}/logs/generate-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
