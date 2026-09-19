@@ -152,8 +152,7 @@ act_quantization_calibration_method='fixed,-224,224' \
 enable_checkpointing=False \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME} \
-output_dir=${BASE_OUTPUT_DIR}"
+run_name=${WORKLOAD_NAME}"
 
 
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
