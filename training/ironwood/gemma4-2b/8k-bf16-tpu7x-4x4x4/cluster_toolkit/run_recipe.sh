@@ -25,13 +25,26 @@ fi
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID=""
-export CLUSTER_NAME=""
-export ZONE=""
-export BASE_OUTPUT_DIR=""
-export WORKLOAD_IMAGE=""
+export PROJECT_ID="${PROJECT_ID:-}"
+export CLUSTER_NAME="${CLUSTER_NAME:-}"
+export ZONE="${ZONE:-}"
+export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
+export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-gemma4-2b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
+
+# Validate required environment variables
+for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
+    if [[ -z "${!var}" ]]; then
+        echo "Error: Environment variable $var is required but not set." >&2
+        exit 1
+    fi
+done
+
+if [[ ! "${BASE_OUTPUT_DIR}" =~ ^gs:// ]]; then
+    echo "Error: BASE_OUTPUT_DIR must start with 'gs://'" >&2
+    exit 1
+fi
 
 # XLA Flags
 XLA_FLAGS=" \

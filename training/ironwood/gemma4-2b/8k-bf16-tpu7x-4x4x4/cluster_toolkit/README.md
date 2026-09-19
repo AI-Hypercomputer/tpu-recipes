@@ -130,7 +130,7 @@ across all commands and configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-gemma4-2b-runner` by
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner` by
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
@@ -228,7 +228,7 @@ export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
 # Set up and Activate Python 3.12 virtual environment for Docker build
-uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
+python3 -m venv ${HOME}/.local/bin/venv-docker --clear
 source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
@@ -319,7 +319,7 @@ and stream logs:
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
 
-# List pods to find the specific name (e.g., deepseek3-0-0-xxxx)
+# List pods to find the specific name (e.g., gemma4-2b-0-0-xxxx)
 kubectl get pods | grep ${WORKLOAD_NAME}
 ```
 Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
