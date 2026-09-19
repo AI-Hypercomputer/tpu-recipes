@@ -37,10 +37,10 @@ export TPU_TYPE="${TPU_TYPE:-7x-8}"
 export RESOLUTION="${RESOLUTION:-720p}"
 
 export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest}"
-# NOTE: `head -c 5` closes the pipe early, which kills `tr` with SIGPIPE. The
-# `|| true` keeps that from tripping `set -o pipefail` and aborting the script.
-random_suffix=$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)
-export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.20s" "${USER//_/-}-wan2-1-t2v")-${random_suffix}-$(date +%Y%m%d-%H%M)}"
+# NOTE: Cluster Toolkit rejects workload names longer than 28 characters
+# (Kubernetes/GCE resource name limits), so the generated name is kept short:
+# an 11 character username prefix, the model, and HHMM. Worst case 27 chars.
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-wan2-1-t2v-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 export BASE_YAML_CONFIG="src/maxdiffusion/configs/base_wan_14b.yml"
 export SCRIPT_PATH="src/maxdiffusion/generate_wan.py"

@@ -144,7 +144,9 @@ across all commands and configurations.
     `<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest` by
     default.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is generated in
-    `run_recipe.sh` from your username, a random suffix, and a timestamp.
+    `run_recipe.sh` from your username and a timestamp. Cluster Toolkit rejects
+    names longer than 28 characters, so keep that limit in mind if you override
+    it.
 -   `ACCELERATOR_TYPE`: The TPU machine type and topology (e.g.,
     `tpu7x-standard-4t` with topology `2x2x1` or `2x2x2`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
