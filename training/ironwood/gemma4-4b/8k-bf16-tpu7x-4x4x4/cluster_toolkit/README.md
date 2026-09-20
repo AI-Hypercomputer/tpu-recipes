@@ -39,6 +39,11 @@ To run this recipe, you need the following:
     [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies)
     section to install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and
     the `gke-gcloud-auth-plugin`.
+-   **GCS Permissions / Workload Identity:** Ensure that the GKE cluster has
+    Workload Identity enabled, and the Kubernetes Service Account (KSA) in the
+    namespace where the job is run (default: `default`) has the necessary IAM
+    permissions (e.g., `Storage Object Admin` or `Storage Object Creator`) to
+    write to the GCS bucket specified in `BASE_OUTPUT_DIR`.
 
 ## Install Cluster Toolkit and dependencies
 
@@ -130,12 +135,12 @@ across all commands and configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-gemma4-4b-runner` by
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner` by
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-gemma4-4b-$(date +%H%M)}"`
+    `export WORKLOAD_NAME="${WORKLOAD_NAME:-${CLEAN_USER}-gemma4-4b-$(date +%H%M%S)}"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -228,7 +233,7 @@ export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
 # Set up and Activate Python 3.12 virtual environment for Docker build
-uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
+python3 -m venv ${HOME}/.local/bin/venv-docker --clear
 source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
