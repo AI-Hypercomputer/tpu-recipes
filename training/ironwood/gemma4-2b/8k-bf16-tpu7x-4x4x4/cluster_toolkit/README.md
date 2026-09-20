@@ -39,6 +39,11 @@ To run this recipe, you need the following:
     [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies)
     section to install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and
     the `gke-gcloud-auth-plugin`.
+-   **GCS Permissions / Workload Identity:** Ensure that the GKE cluster has
+    Workload Identity enabled, and the Kubernetes Service Account (KSA) in the
+    namespace where the job is run (default: `default`) has the necessary IAM
+    permissions (e.g., `Storage Object Admin` or `Storage Object Creator`) to
+    write to the GCS bucket specified in `BASE_OUTPUT_DIR`.
 
 ## Install Cluster Toolkit and dependencies
 
@@ -135,7 +140,7 @@ across all commands and configurations.
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-gemma4-2b-$(date +%H%M)}"`
+    `export WORKLOAD_NAME="${WORKLOAD_NAME:-${CLEAN_USER}-gemma4-2b-$(date +%H%M%S)}"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
