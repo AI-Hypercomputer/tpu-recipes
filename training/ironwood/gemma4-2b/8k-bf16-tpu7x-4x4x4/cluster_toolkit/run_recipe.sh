@@ -73,6 +73,11 @@ XLA_FLAGS=" \
   --xla_tpu_enable_all_gather_offload_tracing=true "
 
 # MaxText Workload Overrides
+# Variant 1 (Active / Default - 100% matching xpk/run_recipe.sh on MaxText@df1b359):
+#   Pre-built image: us-central1-docker.pkg.dev/tpu-prod-env-one-vm/neel-maxtext/maxtext_df1b359_20260604:latest
+#   Uses remat_policy=full (verified 0.5665 s/step, 57,839.5 tokens/s/chip, 446.8 TFLOP/s/device).
+# Variant 2 (Fallback for pre-df1b359 images such as maxtext_jax_nightly:20260324):
+#   Replace remat_policy=full with remat_policy=custom (verified 0.5830 s/step, 56,204.2 tokens/s/chip).
 MAXTEXT_ARGS="\
 model_name=gemma4-e2b \
 skip_jax_distributed_system=True \
@@ -129,8 +134,12 @@ export LIBTPU_INIT_ARGS=\"${XLA_FLAGS}\" && \\
 export ARTIFACT_DIR=\"${ARTIFACT_DIR}\" && \\
 export JAX_PLATFORMS=\"tpu,cpu\" && \\
 export ENABLE_PJRT_COMPATIBILITY=\"true\" && \\
+CONFIG_FILE=\"maxtext/configs/base.yml\"; \\
+if [ ! -f \"\${CONFIG_FILE}\" ] && [ -f \"src/maxtext/configs/base.yml\" ]; then \\
+  CONFIG_FILE=\"src/maxtext/configs/base.yml\"; \\
+fi; \\
 set +e; \\
-python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \\
+python3 -u -m maxtext.trainers.pre_train.train \"\${CONFIG_FILE}\" ${MAXTEXT_ARGS} 2>&1 | tee train.log; \\
 TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \\
 if [ -s train.log ]; then \\
   if command -v gcloud &> /dev/null; then \\
