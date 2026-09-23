@@ -71,7 +71,7 @@ spec:
           value: vllm
         - name: USE_BATCHED_RPA_KERNEL
           value: "1"
-        - name: XLA_FLAGS
+        - name: LIBTPU_INIT_ARGS
           value: >-
             --xla_tpu_enable_sparse_core_collective_offload_all_reduce=false
             --xla_tpu_all_gather_collective_matmul_mode=post_spmd_conservative
