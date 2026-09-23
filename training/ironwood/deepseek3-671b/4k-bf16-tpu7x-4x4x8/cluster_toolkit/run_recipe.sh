@@ -137,6 +137,6 @@ set +e; \
 python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
 TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s train.log ]; then \
-  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOB_COMPLETION_INDEX:-\${HOSTNAME:-0}}}.log || true; \
 fi; \
 exit \${TRAIN_EXIT_CODE}"
