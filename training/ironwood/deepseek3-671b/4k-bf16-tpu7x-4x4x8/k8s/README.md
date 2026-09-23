@@ -64,8 +64,8 @@ export ZONE=""          # The zone of your GKE cluster
 export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest".
 
-# Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp")-$(date +%Y%m%d-%H%M)"
+# Set workload name (maximum 28 characters, unique in the cluster)
+export WORKLOAD_NAME="$(printf "%.11s" "${USER//_/-}")-dsv3-671b-$(date +%H%M)"
 ```
 
 ### 2. Run deepseekv3-671b Pretraining Workload
@@ -75,7 +75,7 @@ cluster credentials and deploy the JobSet:
 
 ```bash
 # Fetch cluster credentials
-gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
+gcloud container clusters get-credentials ${CLUSTER_NAME} --location ${ZONE} --project ${PROJECT_ID}
 
 # Apply the manifest
 envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < k8s_manifest.yaml | kubectl apply -n default -f -
@@ -99,7 +99,7 @@ kubectl logs -f -n default ${POD_NAME}
 
 You can also monitor your cluster and TPU usage through the Google Cloud
 Console:
-`https://console.cloud.google.com/kubernetes/workload/overview?project={PROJECT_ID}`
+`https://console.cloud.google.com/kubernetes/workload/overview?project=${PROJECT_ID}`
 
 ## Delete resources
 
@@ -117,7 +117,7 @@ After the job completes, you can check the results by:
 
 -   Accessing output logs from your job using `kubectl logs`.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
-    `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
+    `${BASE_OUTPUT_DIR}` environment variable.
 -   Reviewing metrics in Cloud Monitoring, if configured.
 
 ## Next steps: deeper exploration and customization
