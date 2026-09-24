@@ -1,23 +1,21 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
-# If you haven't installed gcluster, please refer to the README.md.
+# This script requires Cluster Toolkit (gcluster v1.104.0) installed.
+# If you haven't set up gcluster and the environment, please refer to the README.md.
 
 export PATH="${HOME}/cluster-toolkit:${PATH}"
-CTK_VERSION="1.104.0"
 GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
-if ! command -v "${GCLUSTER_BIN}" &> /dev/null; then
-    echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
-    echo "  mkdir -p \${HOME}/cluster-toolkit"
-    echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
-    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
-    echo "  rm -f /tmp/gcluster_bundle.tgz"
-    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
-    echo '  export PATH="${HOME}/cluster-toolkit:${PATH}"'
+
+# Check if gcluster is installed in PATH
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "gcluster not found in PATH. Please install Cluster Toolkit v1.104.0 per README.md."
     exit 1
 fi
 # --- End Environment Setup ---
+
+set -e
+set -o pipefail
 
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
@@ -25,30 +23,16 @@ fi
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID="${PROJECT_ID:-}"
-export CLUSTER_NAME="${CLUSTER_NAME:-}"
-export ZONE="${ZONE:-}"
-export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
-export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
+export PROJECT_ID=""
+export CLUSTER_NAME=""
+export ZONE=""
+export BASE_OUTPUT_DIR=""
+export ARTIFACT_DIR=""
+# Variant 2 (Fallback for pre-df1b359 images such as maxtext_jax_nightly:20260324):
+# Variant 2 (Latest 2026 Ironwood Image): us-docker.pkg.dev/cloud-tpu-images/tpugen3/maxtext-runner:0.0.46
+export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-gcr.io/tpu-prod-env-multipod/maxtext_jax_nightly:maxtext_df1b359_20260604}"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gemma4-4b-8192-4x4x4")-$(date +%Y%m%d-%H%M)"
 
-CLEAN_USER=$(echo "${USER:-workload}" | tr '[:upper:]' '[:lower:]' | tr '_' '-' | tr -cd 'a-z0-9-' | cut -c1-11)
-CLEAN_USER="${CLEAN_USER:-workload}"
-export WORKLOAD_NAME="${WORKLOAD_NAME:-${CLEAN_USER}-gemma4-4b-$(date +%H%M%S)}"
-
-# Validate required environment variables
-for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
-    if [[ -z "${!var}" ]]; then
-        echo "Error: Environment variable $var is required but not set." >&2
-        exit 1
-    fi
-done
-
-if [[ ! "${BASE_OUTPUT_DIR}" =~ ^gs:// ]]; then
-    echo "Error: BASE_OUTPUT_DIR must start with 'gs://'" >&2
-    exit 1
-fi
-
-export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -73,11 +57,6 @@ XLA_FLAGS=" \
   --xla_tpu_enable_all_gather_offload_tracing=true "
 
 # MaxText Workload Overrides
-# Variant 1 (Active / Default - 100% matching xpk/run_recipe.sh on MaxText@df1b359):
-#   Pre-built image: us-central1-docker.pkg.dev/tpu-prod-env-one-vm/neel-maxtext/maxtext_df1b359_20260604:latest
-#   Uses remat_policy=full (verified 0.9757 s/step, 33,583.0 tokens/s/chip, 500.0 TFLOP/s/device).
-# Variant 2 (Fallback for pre-df1b359 images such as maxtext_jax_nightly:20260324):
-#   Replace remat_policy=full with remat_policy=custom (verified 1.0235 s/step, 32,013.7 tokens/s/chip).
 MAXTEXT_ARGS="\
 model_name=gemma4-e4b \
 skip_jax_distributed_system=True \
@@ -111,41 +90,28 @@ profiler=xplane \
 skip_first_n_steps_for_profiler=5 \
 profiler_steps=3"
 
+
+
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
-"${GCLUSTER_BIN}" job submit \
-  --skip-prereqs \
-  --queue multislice-queue \
-  --cluster "$CLUSTER_NAME" \
-  --project "$PROJECT_ID" \
-  --location "$ZONE" \
-  --priority medium \
-  --restarts 0 \
-  --compute-type tpu7x \
-  --topology 4x4x4 \
-  --num-slices 1 \
-  --image "${WORKLOAD_IMAGE}" \
-  --verbose \
-  --gke-namespace default \
-  --gke-disable-parallel-containers \
-  --name "${WORKLOAD_NAME}" \
-  --command "bash -c 'set -e && set -o pipefail && \\
-export ENABLE_PATHWAYS_PERSISTENCE=\"1\" && \\
-export LIBTPU_INIT_ARGS=\"${XLA_FLAGS}\" && \\
-export ARTIFACT_DIR=\"${ARTIFACT_DIR}\" && \\
-export JAX_PLATFORMS=\"tpu,cpu\" && \\
-export ENABLE_PJRT_COMPATIBILITY=\"true\" && \\
-CONFIG_FILE=\"maxtext/configs/base.yml\"; \\
-if [ ! -f \"\${CONFIG_FILE}\" ] && [ -f \"src/maxtext/configs/base.yml\" ]; then \\
-  CONFIG_FILE=\"src/maxtext/configs/base.yml\"; \\
-fi; \\
-set +e; \\
-python3 -u -m maxtext.trainers.pre_train.train \"\${CONFIG_FILE}\" ${MAXTEXT_ARGS} 2>&1 | tee train.log; \\
-TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \\
-if [ -s train.log ]; then \\
-  if command -v gcloud &> /dev/null; then \\
-    timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \\
-  elif command -v gsutil &> /dev/null; then \\
-    timeout 30s gsutil cp train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \\
-  fi; \\
-fi; \\
-exit \${TRAIN_EXIT_CODE}'"
+"${GCLUSTER_BIN}" job submit --skip-prereqs --queue multislice-queue \
+  --cluster=$CLUSTER_NAME \
+  --project=$PROJECT_ID \
+  --location=$ZONE \
+  --priority=medium \
+  --restarts=0 \
+  --compute-type=tpu7x --topology=4x4x4 \
+  --num-slices=1 \
+  --image="${WORKLOAD_IMAGE}" \
+  --verbose --gke-namespace=default \
+   \
+   \
+  --name="${WORKLOAD_NAME}" \
+   \
+  --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
+export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
+ \
+ \
+python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
+gcloud storage cp --no-user-output-enabled train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"

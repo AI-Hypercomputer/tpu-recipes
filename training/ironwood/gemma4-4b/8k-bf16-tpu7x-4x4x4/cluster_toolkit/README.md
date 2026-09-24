@@ -5,12 +5,13 @@ This recipe outlines the steps for running a gemma4-4b
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit).
 
+
 ## Workload Details
 
 This workload is configured with the following details:
 
 -   Sequence Length: 8192
--   Precision: bf16
+-   Precision: bfloat16
 -   Chips: 64 (4x4x4 topology)
 
 ## Prerequisites
@@ -31,60 +32,40 @@ To run this recipe, you need the following:
     -   Vertex AI Administrator
     -   Service Usage Consumer
     -   TPU Viewer
--   **Docker:** Docker must be installed on your workstation. Follow the steps
-    in the
-    [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies)
-    section to install Docker.
--   **Cluster Toolkit (gcluster) and Dependencies:** Follow the steps in the
-    [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies)
-    section to install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and
-    the `gke-gcloud-auth-plugin`.
--   **GCS Permissions / Workload Identity:** Ensure that the GKE cluster has
-    Workload Identity enabled, and the Kubernetes Service Account (KSA) in the
-    namespace where the job is run (default: `default`) has the necessary IAM
-    permissions (e.g., `Storage Object Admin` or `Storage Object Creator`) to
-    write to the GCS bucket specified in `BASE_OUTPUT_DIR`.
+-   **Docker (Optional):** Only required if building a custom workload image from source instead of using the pre-built `WORKLOAD_IMAGE` default (`gcluster` itself does not require Docker). Follow the steps
+    in the [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies) section
+    to install Docker if needed.
+-   **Cluster Toolkit and Dependencies:** Follow the steps in the
+    [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies) section to
+    install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and `gke-gcloud-auth-plugin`.
+
 
 ## Install Cluster Toolkit and dependencies
 
-### Cluster Toolkit (gcluster)
+### Cluster Toolkit (gcluster) Installation
 
-Install Cluster Toolkit by downloading and extracting the prebuilt release
-bundle:
+#### Cluster Toolkit (gcluster)
+
+Make sure you have Cluster Toolkit (`gcluster`) added to your `PATH`.
+
+Install Cluster Toolkit (`gcluster`) and necessary tools:
 
 ```bash
-# Set Cluster Toolkit version
-export CTK_VERSION="1.104.0"
+# Install gcloud, if not already installed, https://cloud.google.com/sdk/docs/install
+# Install kubectl, if not already installed, https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_kubectl
 
-# Download the prebuilt bundle from GitHub releases
-curl -L -O "https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
+# Ensure to log in to your gcloud
 
-# Extract the bundle
-mkdir -p "${HOME}/cluster-toolkit"
-tar -xzf gcluster_bundle_linux_amd64.tgz -C "${HOME}/cluster-toolkit"
-rm gcluster_bundle_linux_amd64.tgz
-
-# Add gcluster to your PATH
+# Install Cluster Toolkit (gcluster)
+# Download and install Cluster Toolkit (gcluster) v1.104.0
+curl -L -O "https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v1.104.0/gcluster_bundle_linux_amd64.tgz"
+mkdir -p "${HOME}/cluster-toolkit" && tar -xzf gcluster_bundle_linux_amd64.tgz -C "${HOME}/cluster-toolkit" && rm gcluster_bundle_linux_amd64.tgz
 export PATH="${HOME}/cluster-toolkit:${PATH}"
-echo 'export PATH="${HOME}/cluster-toolkit:${PATH}"' >> ~/.bashrc
 
-# Verify installation
-gcluster --version
+# Follow https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin to install gke-gcloud-auth-plugin
 ```
 
-### Tools (gcloud, kubectl, and auth plugin)
-
-```bash
-# Install Google Cloud SDK (gcloud): https://cloud.google.com/sdk/docs/install
-# Install kubectl: https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_kubectl
-# Install gke-gcloud-auth-plugin: https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin
-
-# Authenticate with Google Cloud
-gcloud auth login
-gcloud auth application-default login
-```
-
-### Docker
+#### Docker (Optional — only required if building a custom image from source)
 
 Install Docker using instructions provided by your administrator. Once
 installed, run the following commands:
@@ -96,26 +77,25 @@ sudo usermod -aG docker $USER ## relaunch the terminal after running this comman
 docker run hello-world # Test docker
 ```
 
+
 ## Orchestration and deployment tools
 
 For this recipe, the following setup is used:
 
 -   **Orchestration** -
     [Google Kubernetes Engine (GKE)](https://cloud.google.com/kubernetes-engine)
--   **Pretraining job configuration and deployment** -
-    [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit)
-    (`gcluster`) is used to configure and deploy the
+-   **Pretraining job configuration and deployment** - Cluster Toolkit (`gcluster`) is used to configure
+    and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
     resource, which manages the execution of the gemma4-4b workload.
+
 
 ## Test environment
 
 This recipe is optimized for and tested with tpu7x-4x4x4.
 
--   **GKE cluster** To create your GKE cluster, refer to the
-    [Cloud TPU deployments overview](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview)
-    and the [Cloud TPU 7x (Ironwood) GKE deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-7x#deploy-tpu-7x-cluster).
-    A sample Cluster Toolkit cluster creation and deployment command is provided below.
+-   **GKE cluster** To create your GKE cluster, use the [Cluster Toolkit Cloud TPU deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview).
+    A sample command to create a Cluster Toolkit cluster is provided below.
 
 ### Environment Variables for Cluster Creation
 
@@ -129,18 +109,16 @@ across all commands and configurations.
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
--   `REGION`: The region for your cluster (e.g., `us-central1`). Can be derived as `${ZONE%-*}`.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner` by
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-gemma4-4b-runner` by
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="${WORKLOAD_NAME:-${CLEAN_USER}-gemma4-4b-$(date +%H%M%S)}"`
+    `run_recipe.sh` to `${USER}-gemma4-4b-$(date +%H%M)` by default.
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -155,65 +133,20 @@ If you don't have a GCS bucket, create one with this command:
 gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
 ```
 
-### Sample Cluster Toolkit Cluster Creation and Deployment Command
-
-Cluster Toolkit uses blueprints and deployment configurations to provision GKE
-clusters with Cloud TPU node pools. For detailed deployment instructions and configuration options for Cloud TPU 7x (Ironwood),
-refer to the [Cloud TPU 7x (Ironwood) GKE deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-7x#deploy-tpu-7x-cluster).
-
-#### 1. Set up Terraform State Bucket and Authentication
+### Sample Cluster Toolkit Cluster Creation Command
 
 ```bash
-export TF_STATE_BUCKET="${PROJECT_ID}-ctk-tf-state"
-export REGION="${ZONE%-*}"
-
-# Create bucket to store Terraform state
-gcloud storage buckets create "gs://${TF_STATE_BUCKET}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
-  --default-storage-class=STANDARD \
-  --uniform-bucket-level-access
-
-# Enable versioning on the bucket
-gcloud storage buckets update "gs://${TF_STATE_BUCKET}" --versioning
-
-# Generate Application Default Credentials for Terraform
-gcloud auth application-default login
+gcluster deploy examples/gke-tpu-7x/gke-tpu-7x.yaml \
+  --backend-config="bucket=${PROJECT_ID}-ctk-tf-state" \
+  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,reservation=${RESERVATION_NAME}"
 ```
 
-#### 2. Deploy Cluster with Cluster Toolkit
 
-Deploy the standard blueprint to provision the GKE infrastructure using
-`gcluster deploy`:
-
-```bash
-cd ~/cluster-toolkit
-./gcluster deploy examples/gke-tpu-7x/gke-tpu-7x.yaml \
-  --backend-config="bucket=${TF_STATE_BUCKET}" \
-  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${REGION},zone=${ZONE},num_slices=1,machine_type=tpu7x-standard-4t,tpu_topology=4x4x4,reservation=${RESERVATION_NAME}"
-```
-
-#### 3. Connect to Your Cluster
-
-Once deployment is complete, fetch credentials to configure `kubectl` access and
-verify that the cluster and TPU nodes are ready:
-
-```bash
-# Connect to your cluster and configure kubectl credentials
-gcloud container clusters get-credentials "${CLUSTER_NAME}" \
-  --region="${REGION}" \
-  --project="${PROJECT_ID}"
-
-# Verify that cluster nodes are in Ready state
-kubectl get nodes
-```
-
-## Docker container image
+## Docker container image (Optional — only required if building a custom image from source)
 
 To build your own image, follow the steps linked in this section. If you don't
-have Docker installed on your workstation, see the section above for installing
-Cluster Toolkit and its dependencies. Docker installation is part of this
-process.
+have Docker installed on your workstation, see the section below for installing
+Cluster Toolkit and its dependencies. Docker installation is part of this process.
 
 ### Steps for building workload image
 
@@ -222,7 +155,7 @@ The following software versions are used:
 -   Libtpu version: 0.0.42.dev20260603+nightly
 -   Jax version: 0.10.2.dev20260603
 -   Maxtext version: df1b359
--   Python: 3.12
+-   Python: 3.13
 -   Cluster Toolkit: 1.104.0
 
 Docker Image Building Command:
@@ -233,12 +166,12 @@ export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
 # Set up and Activate Python 3.12 virtual environment for Docker build
-python3 -m venv ${HOME}/.local/bin/venv-docker --clear
+uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
 source ${HOME}/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
 # Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12"; false;} fi
+if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
 
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
@@ -254,6 +187,9 @@ bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_I
 
 # Deactivate the virtual environment
 deactivate
+
+# Return to the recipe directory
+cd ..
 ```
 
 ## Training dataset
@@ -271,17 +207,10 @@ variables as described in
 ### Connect to an existing cluster (Optional)
 
 If you want to connect to your GKE cluster to see its current state before
-running the benchmark, you can use the following gcloud command:
+running the benchmark, you can use the following gcloud command.:
 
 ```bash
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
-```
-
-## Get the recipe
-```bash
-cd ~
-git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/gemma4-4b/8k-bf16-tpu7x-4x4x4/cluster_toolkit
 ```
 
 ### Run gemma4-4b Pretraining Workload
@@ -289,13 +218,12 @@ cd tpu-recipes/training/ironwood/gemma4-4b/8k-bf16-tpu7x-4x4x4/cluster_toolkit
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the gemma4-4b pretraining workload.
 
-Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
-
-To configure and run the benchmark:
+To run the benchmark, first make the script executable, edit it to configure
+environment variables, and then run it:
 
 ```bash
 chmod +x run_recipe.sh
-nano ./run_recipe.sh
+nano run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -308,8 +236,8 @@ You can customize the run by modifying `run_recipe.sh`:
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m maxtext.trainers.pre_train.train` command. This
-    includes model-specific settings like `per_device_batch_size`,
+    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
+    command. This includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
 
@@ -319,76 +247,63 @@ are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
 ## Monitor the job
 
 To monitor your job's progress, you can use kubectl to check the Jobset status
-and stream logs:
+and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
 
-# List pods to find the specific name (e.g., gemma4-4b-0-0-xxxx)
-kubectl get pods | grep ${WORKLOAD_NAME}
-```
-Then, stream the logs from the running pod (replace <POD_NAME> with the name you found):
+# Get the name of the first pod in the JobSet
+POD_NAME=$(kubectl get pods -l jobset.sigs.k8s.io/jobset-name=${WORKLOAD_NAME} -n default -o jsonpath='{.items[0].metadata.name}')
 
-```bash
-kubectl logs -f <POD_NAME>
+# Follow the logs of that pod
+kubectl logs -f -n default ${POD_NAME}
 ```
+
 You can also monitor your cluster and TPU usage through the Google Cloud
-Console:
-`https://console.cloud.google.com/kubernetes/workload/overview?project=${PROJECT_ID}`
+Console.
 
 ### Follow Workload and View Metrics
 
-List workloads using Cluster Toolkit (`gcluster job list`):
+After running `gcluster job submit`, you will get a link to the Google Cloud
+Console to view your workload logs. Example: `Follow your workload here:
+https://console.cloud.google.com/kubernetes/service/${ZONE}/${PROJECT_ID}/default/${WORKLOAD_NAME}/details?project=${PROJECT_ID}`
+Alternatively, list workloads: (`gcluster job list`)
 
 ```bash
 gcluster job list --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
 ```
 
-For more in-depth debugging, inspect the workload with `gcluster job inspect`:
+For more in-depth debugging, inspect the job: (`gcluster job inspect`)
 
 ```bash
 gcluster job inspect --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE} --name ${WORKLOAD_NAME}
 ```
 
-View workload logs with `gcluster job logs`:
 
-```bash
-gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
-```
 ### Delete resources
 
 #### Delete a specific workload
-
-To cancel and delete the workload using Cluster Toolkit:
 
 ```bash
 gcluster job cancel ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
 ```
 
-Or delete the JobSet directly using kubectl:
+#### Delete the entire Cluster Toolkit cluster
 
 ```bash
-kubectl delete jobset ${WORKLOAD_NAME} -n default
+gcluster destroy ${CLUSTER_NAME} --auto-approve
 ```
 
-#### Delete the entire cluster
 
-To avoid recurring charges, destroy the cluster infrastructure provisioned by
-Cluster Toolkit:
-
-```bash
-cd ~/cluster-toolkit
-./gcluster destroy ${CLUSTER_NAME} --auto-approve
-```
 ## Check results
 
 After the job completes, you can check the results by:
 
--   Accessing output logs from your job using `kubectl logs` or `gcluster job
-    logs`.
+-   Accessing output logs from your job.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
+
 
 ## Next steps: deeper exploration and customization
 
