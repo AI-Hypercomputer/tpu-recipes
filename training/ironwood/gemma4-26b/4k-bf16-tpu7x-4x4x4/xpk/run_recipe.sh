@@ -74,6 +74,7 @@ decoder_layer_input=offload \
 allow_split_physical_axes=True \
 ici_fsdp_transpose_parallelism=1 \
 ici_fsdp_parallelism=-1 \
+shard_exp_on_fsdp=True \
 wi_tile_fwd_embed_dim=2816 \
 wi_tile_dlhs_embed_dim=2816 \
 wi_tile_drhs_embed_dim=2816 \
