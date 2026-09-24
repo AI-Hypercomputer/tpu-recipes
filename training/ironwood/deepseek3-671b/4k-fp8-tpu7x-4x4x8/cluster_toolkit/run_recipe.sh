@@ -1,22 +1,26 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.11 virtual environment with xpk installed.
-# If you haven't set up uv and the environment, please refer to the README.md.
+# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
+# If you haven't installed gcluster, please refer to the README.md.
 
-UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.11"
-
-# Activate the virtual environment
-source "${UV_VENV_PATH}/bin/activate"
-
-# Check if xpk is installed in the venv
-if ! pip show xpk &> /dev/null; then
-    echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.16.1"
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+CTK_VERSION="1.104.0"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
+    echo "  mkdir -p \${HOME}/cluster-toolkit"
+    echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  rm -f /tmp/gcluster_bundle.tgz"
+    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
+    echo '  export PATH="${HOME}/cluster-toolkit:${PATH}"'
     exit 1
 fi
 # --- End Environment Setup ---
+
+set -e
+set -o pipefail
 
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
@@ -29,7 +33,9 @@ export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-deepseekv3-671b-4096-fsdp-fp8")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-dsv3-671b-$(date +%H%M)}"
+export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
+
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -57,6 +63,7 @@ XLA_FLAGS=" \
   --xla_tpu_enable_layer_scheduler_for_dependent_collectives=true \
   --xla_tpu_enable_sparse_core_collective_aggregator=true \
   --xla_tpu_enable_latency_hiding_layer_scheduler=true \
+  --xla_tpu_enable_offloading_copy_to_sparsecore=false \
   --xla_tpu_enable_multi_compute_overlap_in_layer_scheduler=false \
   --xla_tpu_enable_sparse_core_offload_queuing_in_lhs=true \
   --xla_tpu_sparse_core_all_reduce_offload_min_size_in_bytes=204800 \
@@ -89,7 +96,10 @@ grad_dtype=bfloat16 \
 megablox=True \
 sparse_matmul=True \
 use_custom_sort_vjp=True \
-fsdp_shard_on_exp=True \
+shard_exp_on_fsdp=True \
+profiler=xplane \
+skip_first_n_steps_for_profiler=5 \
+profiler_steps=2 \
 sa_use_fused_bwd_kernel=True \
 sa_block_q=2048 \
 sa_block_kv=2048 \
@@ -110,24 +120,6 @@ dataset_type=synthetic \
 dataset_path=gs://max-datasets-rogue \
 use_qwix_quantization=True \
 quantization=fp8_full \
-wi_tile_fwd_batch_seq=128 \
-wi_tile_fwd_embed_dim=7168 \
-wi_tile_fwd_mlp_dim=2048 \
-wi_tile_dlhs_batch_seq=256 \
-wi_tile_dlhs_embed_dim=2048 \
-wi_tile_dlhs_mlp_dim=3584 \
-wi_tile_drhs_batch_seq=256 \
-wi_tile_drhs_embed_dim=1792 \
-wi_tile_drhs_mlp_dim=2048 \
-wo_tile_fwd_batch_seq=256 \
-wo_tile_fwd_embed_dim=2048 \
-wo_tile_fwd_mlp_dim=3584 \
-wo_tile_dlhs_batch_seq=256 \
-wo_tile_dlhs_embed_dim=7168 \
-wo_tile_dlhs_mlp_dim=1024 \
-wo_tile_drhs_batch_seq=256 \
-wo_tile_drhs_embed_dim=2048 \
-wo_tile_drhs_mlp_dim=1792 \
 weight_quantization_calibration_method=fixed,-224,224 \
 act_quantization_calibration_method=fixed,-224,224 \
 enable_checkpointing=False \
@@ -135,18 +127,32 @@ steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
-xpk workload create \
-  --cluster=$CLUSTER_NAME \
-  --project=$PROJECT_ID \
-  --zone=$ZONE \
-  --priority=very-high \
-  --max-restarts=0 \
-  --device-type=tpu7x-4x4x8 \
-  --num-slices=1 \
-  --docker-image="${WORKLOAD_IMAGE}" \
-  --enable-debug-logs \
-  --workload="${WORKLOAD_NAME}" \
-  --command="set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+
+echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
+"${GCLUSTER_BIN}" job submit \
+  --skip-prereqs \
+  --queue multislice-queue \
+  --cluster "$CLUSTER_NAME" \
+  --project "$PROJECT_ID" \
+  --location "$ZONE" \
+  --priority medium \
+  --restarts 0 \
+  --compute-type tpu7x \
+  --topology 4x4x8 \
+  --num-slices 1 \
+  --image "${WORKLOAD_IMAGE}" \
+  --verbose \
+  --gke-namespace default \
+  --gke-disable-parallel-containers \
+  --name "${WORKLOAD_NAME}" \
+  --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS}"
+set +e; \
+python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
