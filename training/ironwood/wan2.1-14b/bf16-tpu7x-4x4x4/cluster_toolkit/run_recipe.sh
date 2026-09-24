@@ -31,15 +31,14 @@ set -o pipefail
 export PROJECT_ID=""
 export CLUSTER_NAME=""
 export ZONE=""
-export BASE_OUTPUT_DIR=""
+export BASE_OUTPUT_DIR="" # for example, gs://<your_gcs_bucket>
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-wan2-1-$(date +%H%M)}"
-export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
-export DATASET_DIR="${DATASET_DIR:-gs://jfacevedo-maxdiffusion/wan_tfr_dataset_pusa_v1}"
+# DATASET_DIR is where pre-training data was uploaded.
+export DATASET_DIR="${DATASET_DIR:-${BASE_OUTPUT_DIR}/PusaV1_training}"
 
 # XLA Flags
 XLA_FLAGS=" \
-  --xla_tpu_dvfs_p_state=3 \
   --xla_enable_async_all_gather=true \
   --xla_tpu_enable_async_collective_fusion=true \
   --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true \
@@ -72,6 +71,7 @@ guidance_scale=5.0 \
 flow_shift=5.0 \
 fps=16 \
 skip_jax_distributed_system=False \
+output_dir=${BASE_OUTPUT_DIR} \
 train_data_dir=${DATASET_DIR} \
 load_tfrecord_cached=True \
 height=1280 \
@@ -79,6 +79,8 @@ width=720 \
 num_frames=81 \
 num_inference_steps=50 \
 prompt='a japanese pop star young woman with black hair is singing with a smile. She is inside a studio with dim lighting and musical instruments.' \
+jax_cache_dir=${BASE_OUTPUT_DIR}/jax_cache/ \
+max_train_steps=150 \
 enable_profiler=True \
 dataset_save_location=${DATASET_DIR} \
 remat_policy=FULL \
@@ -88,15 +90,11 @@ skip_first_n_steps_for_profiler=5 \
 profiler_steps=10 \
 per_device_batch_size=0.25 \
 ici_data_parallelism=32 \
-ici_context_parallelism=4 \
+ici_fsdp_parallelism=4 \
 ici_tensor_parallelism=1 \
 allow_split_physical_axes=True \
-flash_block_sizes='{\"block_q\":2048,\"block_kv_compute\":512,\"block_kv\":2048,\"block_q_dkv\":2048,\"block_kv_dkv\":2048,\"block_kv_dkv_compute\":512,\"use_fused_bwd_kernel\":true}' \
-max_train_steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-output_dir=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
-
 
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
 "${GCLUSTER_BIN}" job submit \
@@ -113,25 +111,20 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
   --gke-namespace default \
-  --gke-disable-parallel-containers \
   --name "${WORKLOAD_NAME}" \
-  --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+  --command "set -e && \
+export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export JAX_PLATFORMS='tpu,cpu' && \
 export ENABLE_PJRT_COMPATIBILITY='true' && \
-export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 pip install . && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 echo 'Starting WAN training ...' && \
-set +e; \
-HF_HUB_CACHE=/dev/shm python3 -u -m src.maxdiffusion.train_wan \
+HF_HUB_CACHE=/dev/shm python3 -m src.maxdiffusion.train_wan \
   src/maxdiffusion/configs/base_wan_14b.yml \
+  output_dir=${BASE_OUTPUT_DIR} \
   train_data_dir=${DATASET_DIR} \
   jax_cache_dir=${BASE_OUTPUT_DIR}/jax_cache/ \
   dataset_save_location=${DATASET_DIR} \
+  base_output_directory=${BASE_OUTPUT_DIR} \
   run_name=${WORKLOAD_NAME} \
-  ${MAXDIFFUSION_ARGS} | tee train.log; \
-TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
-if [ -s train.log ]; then \
-  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
-fi; \
-exit \${TRAIN_EXIT_CODE}"
+  ${MAXDIFFUSION_ARGS}"

@@ -1,20 +1,16 @@
 # Pretrain wan2.1-14b workload on Ironwood GKE clusters with Cluster Toolkit
 
+<!-- disableFinding(LINK_ID) -->
+
 This recipe outlines the steps for running a wan2.1-14b
-[MaxDiffusion](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
+[MaxDiffusion](https://github.com/AI-Hypercomputer/maxdiffusion) pretraining
+workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
 [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit).
 
-
-## Workload Details
-
-This workload is configured with the following details:
-
--   Sequence Length: 4096
--   Precision: bfloat16
--   Chips: 64 (4x4x4 topology)
-
 ## Prerequisites
+
+<!-- disableFinding(LINK_ID) -->
 
 To run this recipe, you need the following:
 
@@ -50,38 +46,31 @@ Install Cluster Toolkit by downloading and extracting the prebuilt release
 bundle:
 
 ```bash
+# Install gcloud, if not already installed, https://cloud.google.com/sdk/docs/install
+# Install kubectl, if not already installed, https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_kubectl
+# Follow https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin to install gke-gcloud-auth-plugin
+
+# Ensure to log in to your gcloud
+gcloud auth login
+gcloud auth application-default login
+
 # Set Cluster Toolkit version
 export CTK_VERSION="1.104.0"
 
-# Download the prebuilt bundle from GitHub releases
-curl -L -O "https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
-
-# Extract the bundle
-mkdir -p "${HOME}/cluster-toolkit"
-tar -xzf gcluster_bundle_linux_amd64.tgz -C "${HOME}/cluster-toolkit"
-rm gcluster_bundle_linux_amd64.tgz
-
-# Add gcluster to your PATH
+# Download and extract the prebuilt gcluster binary
+mkdir -p ${HOME}/cluster-toolkit
+curl -Lo /tmp/gcluster_bundle.tgz \
+  https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz
+tar -xzf /tmp/gcluster_bundle.tgz -C ${HOME}/cluster-toolkit gcluster
+rm -f /tmp/gcluster_bundle.tgz
+chmod +x ${HOME}/cluster-toolkit/gcluster
 export PATH="${HOME}/cluster-toolkit:${PATH}"
-echo 'export PATH="${HOME}/cluster-toolkit:${PATH}"' >> ~/.bashrc
 
 # Verify installation
 gcluster --version
 ```
 
-### Tools (gcloud, kubectl, and auth plugin)
-
-```bash
-# Install Google Cloud SDK (gcloud): https://cloud.google.com/sdk/docs/install
-# Install kubectl: https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_kubectl
-# Install gke-gcloud-auth-plugin: https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin
-
-# Authenticate with Google Cloud
-gcloud auth login
-gcloud auth application-default login
-```
-
-### Docker
+#### Docker
 
 Install Docker using instructions provided by your administrator. Once
 installed, run the following commands:
@@ -109,38 +98,39 @@ For this recipe, the following setup is used:
 
 ## Test environment
 
+<!-- disableFinding(LINK_ID) -->
+
 This recipe is optimized for and tested with tpu7x-4x4x4.
 
--   **GKE cluster** To create your GKE cluster, refer to the
-    [Cloud TPU deployments overview](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview)
-    and the [Cloud TPU 7x (Ironwood) GKE deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-7x#deploy-tpu-7x-cluster).
-    A sample Cluster Toolkit cluster creation and deployment command is provided below.
+-   **GKE cluster** To create your GKE cluster, use Cluster Toolkit (`gcluster`).
+    A sample Cluster Toolkit cluster creation and deployment command is provided
+    below.
 
 ### Environment Variables for Cluster Creation
 
 The environment variables required for cluster creation and workload execution
-are defined at the beginning of the `run_recipe.sh` script. **Before running the
-`gcluster job submit` command**, please open `run_recipe.sh` and modify the
-`export` statements to set these variables to match your environment. It is
-crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
-across all commands and configurations.
+are defined at the beginning of the `run_recipe.sh` script. **Before running
+`run_recipe.sh`**, please open `run_recipe.sh` and modify the `export`
+statements to set these variables to match your environment. It is crucial to
+use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE` across all
+commands and configurations.
 
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
--   `REGION`: The region for your cluster (e.g., `us-central1`). Can be derived as `${ZONE%-*}`.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-wan2.1-14b-runner` by
-    default, matching the image built in the
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. This should be set in
+    `run_recipe.sh` to `gcr.io/${PROJECT_ID}/${USER}-maxdiffusion-runner`,
+    matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-wan2.1-14b-$(date +%H%M)` by default.
+    `run_recipe.sh` to `$(printf "%.11s" "${USER//_/-}")-wan2-1-$(date +%H%M)`
+    by default (Cluster Toolkit limits workload names to 28 characters).
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
+-   `ACCELERATOR_TYPE`: The TPU machine type and topology (`tpu7x` with topology
+    `4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
@@ -150,60 +140,29 @@ If you don't have a GCS bucket, create one with this command:
 
 ```bash
 # Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
-gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
+gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US --default-storage-class=STANDARD --uniform-bucket-level-access
 ```
 
-### Sample Cluster Toolkit Cluster Creation and Deployment Command
-
-Cluster Toolkit uses blueprints and deployment configurations to provision GKE
-clusters with Cloud TPU node pools. For detailed deployment instructions and configuration options for Cloud TPU 7x (Ironwood),
-refer to the [Cloud TPU 7x (Ironwood) GKE deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-7x#deploy-tpu-7x-cluster).
-
-#### 1. Set up Terraform State Bucket and Authentication
+### Sample Cluster Toolkit Cluster Creation Command
 
 ```bash
-export TF_STATE_BUCKET="${PROJECT_ID}-ctk-tf-state"
-export REGION="${ZONE%-*}"
+export PROJECT_ID=<YOUR_PROJECT_ID>
+export CLUSTER_NAME=<YOUR_CLUSTER_NAME>
+export REGION=<YOUR_REGION> # e.g., us-central1
+export ZONE=<YOUR_ZONE> # e.g., us-central1-c
+export RESERVATION_NAME=<YOUR_RESERVATION_NAME>
+export TF_STATE_BUCKET="${PROJECT_ID}-cluster-toolkit-state"
 
-# Create bucket to store Terraform state
-gcloud storage buckets create "gs://${TF_STATE_BUCKET}" \
-  --project="${PROJECT_ID}" \
-  --location="${REGION}" \
-  --default-storage-class=STANDARD \
+# Create a GCS bucket for Terraform state (if not already created)
+gcloud storage buckets create gs://${TF_STATE_BUCKET} \
+  --project=${PROJECT_ID} \
+  --location=${REGION} \
   --uniform-bucket-level-access
 
-# Enable versioning on the bucket
-gcloud storage buckets update "gs://${TF_STATE_BUCKET}" --versioning
-
-# Generate Application Default Credentials for Terraform
-gcloud auth application-default login
-```
-
-#### 2. Deploy Cluster with Cluster Toolkit
-
-Deploy the standard blueprint to provision the GKE infrastructure using
-`gcluster deploy`:
-
-```bash
-cd ~/cluster-toolkit
-./gcluster deploy examples/gke-tpu-7x/gke-tpu-7x.yaml \
+# Deploy the TPU 7x GKE blueprint using Cluster Toolkit
+gcluster deploy examples/gke-tpu-7x/gke-tpu-7x.yaml \
   --backend-config="bucket=${TF_STATE_BUCKET}" \
   --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${REGION},zone=${ZONE},num_slices=1,machine_type=tpu7x-standard-4t,tpu_topology=4x4x4,reservation=${RESERVATION_NAME}"
-```
-
-#### 3. Connect to Your Cluster
-
-Once deployment is complete, fetch credentials to configure `kubectl` access and
-verify that the cluster and TPU nodes are ready:
-
-```bash
-# Connect to your cluster and configure kubectl credentials
-gcloud container clusters get-credentials "${CLUSTER_NAME}" \
-  --region="${REGION}" \
-  --project="${PROJECT_ID}"
-
-# Verify that cluster nodes are in Ready state
-kubectl get nodes
 ```
 
 
@@ -218,49 +177,70 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.46
--   Jax version: 0.11.2.dev20260825
--   Maxtext version: 9d92bf0
 -   Python: 3.12
 -   Cluster Toolkit: 1.104.0
 
 Docker Image Building Command:
 
 ```bash
-export CONTAINER_REGISTRY="" # Initialize with your registry
-export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
-export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
+# Check if USER is set correctly
+export CLOUD_IMAGE_NAME="${USER}-maxdiffusion-runner"
+export WORKLOAD_IMAGE="gcr.io/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
+gcloud config set project $PROJECT_ID
 
 # Set up and Activate Python 3.12 virtual environment for Docker build
-uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
-source ${HOME}/.local/bin/venv-docker/bin/activate
+uv venv --seed ~/.local/bin/venv-docker --python 3.12 --clear
+source ~/.local/bin/venv-docker/bin/activate
 pip install --upgrade pip
 
 # Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
+[[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]] || { >&2 echo "Error: Python version must be 3.12."; false; }
 
-# Clone MaxDiffusion Repository and Checkout Recipe Branch
-git clone https://github.com/AI-Hypercomputer/maxtext.git
-cd maxtext
-git checkout 9d92bf0
+# Change to your home directory and clone maxdiffusion
+cd ~/
+git clone https://github.com/AI-Hypercomputer/maxdiffusion.git
+cd maxdiffusion
+git checkout v3
 
-# Build and upload the docker image
-bash src/dependencies/scripts/docker_build_dependency_image.sh \
-  MODE=nightly \
-  JAX_VERSION=0.11.2.dev20260825 \
-  LIBTPU_VERSION=0.0.46
-bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+# Run WAN 2.1 Docker build
+export RECIPE_DOCKER_IMAGE=maxdiffusion_base_image
+bash docker_build_dependency_image.sh mode=nightly
+bash docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment
 deactivate
-
-# Return to the recipe directory
-cd ..
 ```
 
 ## Training dataset
 
-This recipe uses a mock pretraining dataset provided by the MaxDiffusion framework.
+Before training, prepare the video training dataset. For this example, we will
+be using the PusaV1 dataset.
+
+```bash
+# Set to TPU or CPU based on your local setup
+# bash setup.sh MODE=stable DEVICE=cpu
+bash setup.sh MODE=stable DEVICE=tpu
+source ${HOME}/.local/bin/venv/bin/activate
+
+# Following assumes that you have mounted an external drive to your VM
+# and you have created a mount point for `/mnt/disks/external_disk`
+# along with given write permissions to the directories described below.
+export HF_TOKEN=<token>
+export HF_DATASET_DIR=/mnt/disks/external_disk/PusaV1_training/
+export TFRECORDS_DATASET_DIR=/mnt/disks/external_disk/wan_tfr_dataset_pusa_v1
+export HF_HUB_CACHE=/mnt/disks/external_disk/maxdiffusion_hf_cache/
+export DATASET_DIR=${BASE_OUTPUT_DIR}/PusaV1_training
+
+# Download the dataset
+huggingface-cli download RaphaelLiu/PusaV1_training --repo-type dataset --local-dir ${HF_DATASET_DIR}
+
+# Preprocess and convert the dataset to TFRecord format
+# This can be done outside of Cluster Toolkit, or a TPU machine. We recommend using a CPU machine for this preprocessing step. Use skip_jax_distributed_system=True when running on cpu machine.
+python src/maxdiffusion/data_preprocessing/wan_pusav1_to_tfrecords.py src/maxdiffusion/configs/base_wan_14b.yml train_data_dir=${HF_DATASET_DIR} tfrecords_dir=${TFRECORDS_DATASET_DIR} no_records_per_shard=10 skip_jax_distributed_system=True
+
+# Upload to gcs
+gcloud storage cp --recursive ${TFRECORDS_DATASET_DIR} ${DATASET_DIR}
+```
 
 ## Run the recipe
 
@@ -279,17 +259,25 @@ running the benchmark, you can use the following gcloud command:
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
+## Get the recipe
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/wan2.1-14b/bf16-tpu7x-4x4x4/cluster_toolkit
+```
+
 ### Run wan2.1-14b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the wan2.1-14b pretraining workload.
 
-To run the benchmark, first make the script executable, edit it to configure
-environment variables, and then run it:
+Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
+
+To configure and run the benchmark:
 
 ```bash
 chmod +x run_recipe.sh
-nano run_recipe.sh
+nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -298,22 +286,18 @@ You can customize the run by modifying `run_recipe.sh`:
 -   **Environment Variables:** Variables like `PROJECT_ID`, `CLUSTER_NAME`,
     `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, and `BASE_OUTPUT_DIR` are defined
     at the beginning of the script. Adjust these to match your environment.
--   **XLA Flags:** The `XLA_FLAGS` variable contains a set of XLA configurations
-    optimized for this workload. These can be tuned for performance or
-    debugging.
--   **MaxDiffusion Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
-    command. This includes model-specific settings like `per_device_batch_size`,
-    `max_target_length`, and others. You can modify these to experiment with
-    different model configurations.
+-   **MaxDiffusion Workload Overrides:** The `MAXDIFFUSION_ARGS` variable holds
+    the arguments passed to the training command. This includes model-specific
+    settings.
 
-Note that any MaxDiffusion configurations not explicitly overridden in `MAXTEXT_ARGS`
-are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
+Note that any MaxDiffusion configurations not explicitly overridden in
+`MAXDIFFUSION_ARGS` are expected to use the defaults within the specified
+`WORKLOAD_IMAGE`.
 
 ## Monitor the job
 
-To monitor your job's progress, you can use kubectl to check the Jobset status
-and logs:
+To monitor your job's progress, you can use `kubectl` to check the JobSet status
+and stream logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
@@ -324,10 +308,8 @@ POD_NAME=$(kubectl get pods -l jobset.sigs.k8s.io/jobset-name=${WORKLOAD_NAME} -
 # Follow the logs of that pod
 kubectl logs -f -n default ${POD_NAME}
 ```
-
 You can also monitor your cluster and TPU usage through the Google Cloud
-Console:
-`https://console.cloud.google.com/kubernetes/workload/overview?project=${PROJECT_ID}`
+Console.
 
 ### Follow Workload and View Metrics
 
@@ -359,7 +341,7 @@ To cancel and delete the workload using Cluster Toolkit:
 gcluster job cancel ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
 ```
 
-Or delete the JobSet directly using kubectl:
+Or delete the JobSet directly using `kubectl`:
 
 ```bash
 kubectl delete jobset ${WORKLOAD_NAME} -n default
@@ -375,6 +357,7 @@ cd ~/cluster-toolkit
 ./gcluster destroy ${CLUSTER_NAME} --auto-approve
 ```
 
+
 ## Check results
 
 After the job completes, you can check the results by:
@@ -388,17 +371,7 @@ After the job completes, you can check the results by:
 
 ## Next steps: deeper exploration and customization
 
-This recipe is designed to provide a simple, reproducible "0-to-1" experience
-for running a MaxDiffusion pre-training workload. Its primary purpose is to help you
-verify your environment and achieve a first success with TPUs quickly and
-reliably.
-
-For deeper exploration, including customizing model configurations, tuning
-performance with different XLA flags, and running custom experiments, we
-recommend using the benchmark_runner.py script directly from the MaxDiffusion
-repository. This script offers the full range of MaxDiffusion's flexibility and is
-the ideal tool for power users and researchers who want to move beyond the
-initial benchmark and tailor the workload to their specific needs. To learn
-more, see the
-[MaxDiffusion Benchmark Runner Guide](https://github.com/AI-Hypercomputer/maxtext/blob/main/benchmarks/Getting_Started_Benchmarking.md)
-on using benchmark_runner.py for advanced benchmarking.
+This recipe provides a starting point for running MaxDiffusion workloads. For
+advanced usage, including exploring different models, datasets, and training
+parameters, please refer to the
+[MaxDiffusion GitHub repository](https://github.com/AI-Hypercomputer/maxdiffusion).

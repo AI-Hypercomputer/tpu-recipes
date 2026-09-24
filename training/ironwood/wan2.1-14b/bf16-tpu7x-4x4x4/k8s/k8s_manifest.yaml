@@ -3,7 +3,7 @@ kind: JobSet
 metadata:
   name: ${WORKLOAD_NAME}
   annotations:
-    alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+    alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool # 1:1 job replica to node pool assignment
 spec:
   ttlSecondsAfterFinished: 43200
   failurePolicy:
@@ -31,6 +31,9 @@ spec:
           template:
             spec:
               restartPolicy: Never
+              nodeSelector:
+                cloud.google.com/gke-tpu-accelerator: tpu7x
+                cloud.google.com/gke-tpu-topology: 4x4x4
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               containers:
@@ -42,34 +45,31 @@ spec:
                 securityContext:
                   privileged: true
                 command:
-                - "/bin/bash"
-                - "-c"
-                - "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && export ARTIFACT_DIR='${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}' && export DATASET_DIR='${DATASET_DIR:-gs://jfacevedo-maxdiffusion/wan_tfr_dataset_pusa_v1}' && pip install . && export LIBTPU_INIT_ARGS='  --xla_tpu_dvfs_p_state=3   --xla_enable_async_all_gather=true   --xla_tpu_enable_async_collective_fusion=true   --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true   --xla_enable_async_all_reduce=true   --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true   --xla_max_concurrent_async_all_gathers=4   --xla_tpu_enable_async_all_to_all=true   --xla_latency_hiding_scheduler_rerun=5   --xla_tpu_rwb_fusion=false   --xla_tpu_enable_sublane_major_scaling_bitcast_fusion=false   --xla_tpu_impure_enable_packed_bf16_math_ops=false   --xla_tpu_enable_sparse_core_reduce_scatter_v2=true   --xla_tpu_enable_sparse_core_collective_offload_all_gather=true   --xla_tpu_enable_sparse_core_collective_offload_2d_all_gather=true   --xla_tpu_enable_all_gather_offload_tracing=true   --xla_tpu_use_tc_device_shape_on_sc=true   --xla_tpu_prefer_async_allgather_to_allreduce=true   --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true   --xla_tpu_scoped_vmem_limit_kib=65536   --xla_tpu_enable_tpu_custom_call_scoped_vmem_adjustments=true   --xla_enable_transpose_trace=false ' && echo 'Starting WAN training ...' && set +e; HF_HUB_CACHE=/dev/shm python3 -u -m src.maxdiffusion.train_wan src/maxdiffusion/configs/base_wan_14b.yml train_data_dir=${DATASET_DIR} jax_cache_dir=${BASE_OUTPUT_DIR}/jax_cache/ dataset_save_location=${DATASET_DIR} run_name=${WORKLOAD_NAME} model_name=wan2.1 attention=flash weights_dtype=bfloat16 activations_dtype=bfloat16 guidance_scale=5.0 flow_shift=5.0 fps=16 skip_jax_distributed_system=False load_tfrecord_cached=True height=1280 width=720 num_frames=81 num_inference_steps=50 prompt='a japanese pop star young woman with black hair is singing with a smile. She is inside a studio with dim lighting and musical instruments.' enable_profiler=True remat_policy=FULL flash_min_seq_length=0 seed=123456789 skip_first_n_steps_for_profiler=5 profiler_steps=10 per_device_batch_size=0.25 ici_data_parallelism=32 ici_context_parallelism=4 ici_tensor_parallelism=1 allow_split_physical_axes=True flash_block_sizes='{\"block_q\":2048,\"block_kv_compute\":512,\"block_kv\":2048,\"block_q_dkv\":2048,\"block_kv_dkv\":2048,\"block_kv_dkv_compute\":512,\"use_fused_bwd_kernel\":true}' max_train_steps=30 base_output_directory=${BASE_OUTPUT_DIR} output_dir=${BASE_OUTPUT_DIR} | tee train.log; TRAIN_EXIT_CODE=${PIPESTATUS[0]}; if [ -s train.log ]; then timeout 30s gcloud storage cp --no-user-output-enabled train.log ${ARTIFACT_DIR}/logs/train-${TPU_WORKER_ID:-${JOBSET_WORKER_INDEX:-${HOSTNAME:-0}}}.log || true; fi; exit ${TRAIN_EXIT_CODE}"
+                - bash
+                - -c
+                - |
+                  echo XPK Start: $(date);
+                  _sigterm() (kill -SIGTERM $! 2>/dev/null;);
+                  trap _sigterm SIGTERM;
+                  (export TPU_STDERR_LOG_LEVEL=0 && export TPU_MIN_LOG_LEVEL=0 && export TF_CPP_MIN_LOG_LEVEL=0 && export TPU_VMODULE=real_program_continuator=1 && set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && pip install . && export LIBTPU_INIT_ARGS='--xla_enable_async_all_gather=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true --xla_enable_async_all_reduce=true --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_max_concurrent_async_all_gathers=4 --xla_tpu_enable_async_all_to_all=true --xla_latency_hiding_scheduler_rerun=5 --xla_tpu_rwb_fusion=false --xla_tpu_enable_sublane_major_scaling_bitcast_fusion=false --xla_tpu_impure_enable_packed_bf16_math_ops=false --xla_tpu_enable_sparse_core_reduce_scatter_v2=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_2d_all_gather=true --xla_tpu_enable_all_gather_offload_tracing=true --xla_tpu_use_tc_device_shape_on_sc=true --xla_tpu_prefer_async_allgather_to_allreduce=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true --xla_tpu_scoped_vmem_limit_kib=65536 --xla_tpu_enable_tpu_custom_call_scoped_vmem_adjustments=true --xla_enable_transpose_trace=false ' && echo 'Starting WAN training ...' && HF_HUB_CACHE=/dev/shm python3 -m src.maxdiffusion.train_wan src/maxdiffusion/configs/base_wan_14b.yml output_dir=${BASE_OUTPUT_DIR} train_data_dir=${DATASET_DIR} jax_cache_dir=${BASE_OUTPUT_DIR}/jax_cache/ dataset_save_location=${DATASET_DIR} base_output_directory=${BASE_OUTPUT_DIR} run_name=${WORKLOAD_NAME} model_name=wan2.1 attention=flash weights_dtype=bfloat16 activations_dtype=bfloat16 guidance_scale=5.0 flow_shift=5.0 fps=16 skip_jax_distributed_system=False output_dir=${BASE_OUTPUT_DIR}/ train_data_dir=${DATASET_DIR} load_tfrecord_cached=True height=1280 width=720 num_frames=81 num_inference_steps=50 prompt='a japanese pop star young woman with black hair is singing with a smile. She is inside a studio with dim lighting and musical instruments.' jax_cache_dir=${BASE_OUTPUT_DIR}/jax_cache/ max_train_steps=150 enable_profiler=True dataset_save_location=${DATASET_DIR} remat_policy=FULL flash_min_seq_length=0 seed=123456789 skip_first_n_steps_for_profiler=5 profiler_steps=10 per_device_batch_size=0.25 ici_data_parallelism=32 ici_fsdp_parallelism=4 ici_tensor_parallelism=1 allow_split_physical_axes=True base_output_directory=${BASE_OUTPUT_DIR} run_name=${WORKLOAD_NAME}) & PID=$!;
+                  while kill -0 $PID 2>/dev/null;
+                      do sleep 5;
+                  done;
+                  wait $PID;
+                  EXIT_CODE=$?;
+                  echo XPK End: $(date);
+                  echo EXIT_CODE=$EXIT_CODE;
+                  exit $EXIT_CODE
                 resources:
                   limits:
-                    google.com/tpu: "4"
-                env:
-                - name: TPU_STDERR_LOG_LEVEL
-                  value: "0"
-                - name: TPU_MIN_LOG_LEVEL
-                  value: "0"
-                - name: TF_CPP_MIN_LOG_LEVEL
-                  value: "0"
-                - name: TPU_VMODULE
-                  value: "real_program_continuator=1"
-              nodeSelector:
-                cloud.google.com/gke-tpu-accelerator: tpu7x
-                cloud.google.com/gke-tpu-topology: 4x4x4
-              affinity:
-                nodeAffinity:
-                  requiredDuringSchedulingIgnoredDuringExecution:
-                    nodeSelectorTerms:
-                    - matchExpressions:
-                      - key: cloud.google.com/gke-nodepool
-                        operator: NotIn
-                        values:
-                        - default-pool
+                    google.com/tpu: 4
+                volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm-2
               tolerations:
-                - effect: NoSchedule
-                  key: google.com/tpu
-                  operator: Exists
+              - operator: "Exists"
+                key: google.com/tpu
+              volumes:
+              - emptyDir:
+                  medium: Memory
+                name: dshm-2
