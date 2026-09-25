@@ -15,7 +15,7 @@ git checkout tpu-recipes-v0.1.5
 
 In step 3, use:
 ```
-bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable JAX_VERSION=0.7.0
+bash src/dependencies/scripts/docker_build_dependency_image.sh DEVICE=tpu MODE=stable BASEIMAGE=${BASE_IMAGE}
 ```
 
 ## Run Maxtext Gemma3-12B workloads on GKE
