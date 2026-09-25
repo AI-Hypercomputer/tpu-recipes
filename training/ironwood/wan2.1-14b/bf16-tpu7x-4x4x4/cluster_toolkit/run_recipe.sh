@@ -39,7 +39,6 @@ export DATASET_DIR="${DATASET_DIR:-${BASE_OUTPUT_DIR}/PusaV1_training}"
 
 # XLA Flags
 XLA_FLAGS=" \
-  --xla_tpu_dvfs_p_state=3 \
   --xla_enable_async_all_gather=true \
   --xla_tpu_enable_async_collective_fusion=true \
   --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true \
