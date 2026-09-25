@@ -3,7 +3,7 @@ kind: JobSet
 metadata:
   name: ${WORKLOAD_NAME}
   annotations:
-    alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool # 1:1 job replica to node pool assignment
+    alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
 spec:
   ttlSecondsAfterFinished: 43200
   failurePolicy:
@@ -31,9 +31,6 @@ spec:
           template:
             spec:
               restartPolicy: Never
-              nodeSelector:
-                cloud.google.com/gke-tpu-accelerator: tpu7x
-                cloud.google.com/gke-tpu-topology: 4x4x4
               hostNetwork: true
               dnsPolicy: ClusterFirstWithHostNet
               containers:
@@ -45,31 +42,34 @@ spec:
                 securityContext:
                   privileged: true
                 command:
-                - bash
-                - -c
-                - |
-                  echo XPK Start: $(date);
-                  _sigterm() (kill -SIGTERM $! 2>/dev/null;);
-                  trap _sigterm SIGTERM;
-                  (export TPU_STDERR_LOG_LEVEL=0 && export TPU_MIN_LOG_LEVEL=0 && export TF_CPP_MIN_LOG_LEVEL=0 && export TPU_VMODULE=real_program_continuator=1 && set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && export LIBTPU_INIT_ARGS='--xla_tpu_scoped_vmem_limit_kib=61440 --xla_tpu_bf16_emission_mode=NATIVE_EMISSION --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_use_single_sparse_core_for_all_gather_offload=true ' && export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && python3 -m MaxText.train MaxText/configs/base.yml model_name=llama3.1-70b skip_jax_distributed_system=True dtype=bfloat16 per_device_batch_size=2 profile_periodically_period=10000 async_checkpointing=False enable_checkpointing=False use_iota_embed=True remat_policy=custom decoder_layer_input=device context=device query_proj=device key_proj=device value_proj=device qkv_proj=device ici_fsdp_parallelism=-1 dataset_type=synthetic opt_type=adamw mu_dtype=bfloat16 sa_block_q=2048 sa_block_kv=2048 sa_block_kv_compute=2048 sa_block_q_dkv=2048 sa_block_kv_dkv=2048 sa_block_kv_dkv_compute=2048 tokenizer_type=tiktoken tokenizer_path=assets/tokenizer_llama3.tiktoken sa_q_layout=SEQ_MINOR sa_k_layout=SEQ_MINOR sa_v_layout=HEAD_DIM_MINOR sa_use_fused_bwd_kernel=True use_tokamax_splash=True max_target_length=8192 profiler=xplane skip_first_n_steps_for_profiler=5 profiler_steps=2 attention=flash steps=30 base_output_directory=${BASE_OUTPUT_DIR} run_name=${WORKLOAD_NAME}) & PID=$!;
-                  while kill -0 $PID 2>/dev/null;
-                      do sleep 5;
-                  done;
-                  wait $PID;
-                  EXIT_CODE=$?;
-                  echo XPK End: $(date);
-                  echo EXIT_CODE=$EXIT_CODE;
-                  exit $EXIT_CODE
+                - "/bin/bash"
+                - "-c"
+                - "set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && export LIBTPU_INIT_ARGS='--xla_tpu_scoped_vmem_limit_kib=61440 --xla_tpu_bf16_emission_mode=NATIVE_EMISSION --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_use_single_sparse_core_for_all_gather_offload=true ' && export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml model_name=llama3.1-70b skip_jax_distributed_system=True dtype=bfloat16 per_device_batch_size=4 profile_periodically_period=10000 async_checkpointing=False enable_checkpointing=False use_iota_embed=True remat_policy=custom decoder_layer_input=device context=device query_proj=device key_proj=device value_proj=device qkv_proj=device ici_fsdp_parallelism=-1 dataset_type=synthetic opt_type=adamw mu_dtype=bfloat16 sa_block_q=2048 sa_block_kv=2048 sa_block_kv_compute=2048 sa_block_q_dkv=2048 sa_block_kv_dkv=2048 sa_block_kv_dkv_compute=2048 tokenizer_type=tiktoken tokenizer_path=src/maxtext/assets/tokenizers/tokenizer_llama3.tiktoken sa_q_layout=SEQ_MINOR sa_k_layout=SEQ_MINOR sa_v_layout=HEAD_DIM_MINOR sa_use_fused_bwd_kernel=True use_tokamax_splash=True max_target_length=8192 profiler=xplane skip_first_n_steps_for_profiler=5 profiler_steps=2 attention=flash steps=30 base_output_directory=${BASE_OUTPUT_DIR} run_name=${WORKLOAD_NAME}"
                 resources:
                   limits:
-                    google.com/tpu: 4
-                volumeMounts:
-                - mountPath: /dev/shm
-                  name: dshm-2
+                    google.com/tpu: "4"
+                env:
+                - name: TPU_STDERR_LOG_LEVEL
+                  value: "0"
+                - name: TPU_MIN_LOG_LEVEL
+                  value: "0"
+                - name: TF_CPP_MIN_LOG_LEVEL
+                  value: "0"
+                - name: TPU_VMODULE
+                  value: "real_program_continuator=1"
+              nodeSelector:
+                cloud.google.com/gke-tpu-accelerator: tpu7x
+                cloud.google.com/gke-tpu-topology: 4x4x4
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: cloud.google.com/gke-nodepool
+                        operator: NotIn
+                        values:
+                        - default-pool
               tolerations:
-              - operator: "Exists"
-                key: google.com/tpu
-              volumes:
-              - emptyDir:
-                  medium: Memory
-                name: dshm-2
+                - effect: NoSchedule
+                  key: google.com/tpu
+                  operator: Exists
