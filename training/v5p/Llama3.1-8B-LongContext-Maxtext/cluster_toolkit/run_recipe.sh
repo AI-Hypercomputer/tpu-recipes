@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +16,22 @@
 echo "Running Llama3.1-8B long context (10M) script on TPU v5p"
 
 # Stop execution if any command exits with error
-set -e
+set -eo pipefail
+
+# --- Environment Setup ---
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+CTK_VERSION="1.104.0"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null; then
+    echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
+    echo "  mkdir -p \${HOME}/cluster-toolkit"
+    echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  rm -f /tmp/gcluster_bundle.tgz"
+    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
+    echo '  export PATH="${HOME}/cluster-toolkit:${PATH}"'
+    exit 1
+fi
 
 # Default workload configs, override by passing KEY=VALUE arguments
 export MAX_TARGET_LENGTH=10485760
@@ -23,15 +39,14 @@ export ICI_CONTEXT_PARALLELISM=128
 export ICI_FSDP_PARALLELISM=1
 export PER_DEVICE_BATCH_SIZE=0.0078125
 
-# Set environment variables
+# Set environment variables from KEY=VALUE arguments
 for ARGUMENT in "$@"; do
     IFS='=' read -r KEY VALUE <<< "$ARGUMENT"
     export "$KEY"="$VALUE"
 done
 
 # Set up RUN_NAME
-if [ -n "$RUN_NAME" ];
-then
+if [ -n "${RUN_NAME:-}" ]; then
     export M_RUN_NAME=$RUN_NAME
 fi
 
@@ -41,6 +56,49 @@ fi
 # 32 / 8 / 128). Total attention width (16 * 256 = 4096) and the 4:1 GQA ratio are
 # unchanged, so the parameter count matches stock Llama3.1-8B.
 export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=65472 --xla_tpu_use_enhanced_launch_barrier=true --xla_tpu_overlap_compute_collective_tc=true --xla_enable_async_all_gather=true --xla_enable_async_collective_permute=true --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true --xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true"
+
+export PROJECT_ID="${PROJECT_ID:-}"
+export CLUSTER_NAME="${CLUSTER_NAME:-}"
+export ZONE="${ZONE:-}"
+export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-${OUTPUT_PATH:-}}"
+export OUTPUT_PATH="${OUTPUT_PATH:-${BASE_OUTPUT_DIR:-}}"
+export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
+
+for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
+    if [[ -z "${!var}" ]]; then
+        echo "Error: Environment variable $var is required but not set." >&2
+        exit 1
+    fi
+done
+
+if [[ ! "${BASE_OUTPUT_DIR}" =~ ^gs:// ]]; then
+    echo "Error: BASE_OUTPUT_DIR must be a GCS path starting with 'gs://'." >&2
+    exit 1
+fi
+BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR%/}"
+OUTPUT_PATH="${BASE_OUTPUT_DIR}"
+
+CLEAN_USER=$(echo "${USER:-workload}" | tr '[:upper:]' '[:lower:]' | tr '_' '-' | tr -cd 'a-z0-9-' | cut -c1-6)
+CLEAN_USER="${CLEAN_USER:-workload}"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-${CLEAN_USER}-l8b-lc-v5p-$(date +%d%H%M%S)}"
+export NUM_SLICES="${NUM_SLICES:-1}"
+
+"${GCLUSTER_BIN}" job submit \
+  --skip-prereqs \
+  --queue "${QUEUE:-multislice-queue}" \
+  --cluster "${CLUSTER_NAME}" \
+  --project "${PROJECT_ID}" \
+  --location "${ZONE}" \
+  --priority medium \
+  --restarts 0 \
+  --compute-type tpu-v5p \
+  --topology 4x4x4 \
+  --num-slices "${NUM_SLICES}" \
+  --image "${WORKLOAD_IMAGE}" \
+  --verbose \
+  --gke-namespace "${NAMESPACE:-default}" \
+  --name "${WORKLOAD_NAME}" \
+  --command "set -e && export LIBTPU_INIT_ARGS='${LIBTPU_INIT_ARGS}' && \
 python3 -m maxtext.trainers.pre_train.train src/maxtext/configs/base.yml \
     model_name=llama3.1-8b steps=8 enable_checkpointing=false \
     override_model_config=true head_dim=256 base_num_query_heads=16 base_num_kv_heads=4 num_vocab_tiling=16 \
@@ -51,4 +109,4 @@ python3 -m maxtext.trainers.pre_train.train src/maxtext/configs/base.yml \
     ici_context_parallelism=$ICI_CONTEXT_PARALLELISM ici_fsdp_parallelism=$ICI_FSDP_PARALLELISM \
     ici_tensor_parallelism=1 remat_policy=custom context=device \
     sa_block_q=2048 sa_block_kv=2048 sa_block_q_dkv=2048 sa_block_kv_dkv=2048 \
-    ring_scan_unroll=16 dq_reduction_steps=3
+    ring_scan_unroll=16 dq_reduction_steps=3"
