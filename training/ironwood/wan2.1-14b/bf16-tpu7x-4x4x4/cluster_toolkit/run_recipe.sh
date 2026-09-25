@@ -59,8 +59,7 @@ XLA_FLAGS=" \
   --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true \
   --xla_tpu_scoped_vmem_limit_kib=65536 \
   --xla_tpu_enable_tpu_custom_call_scoped_vmem_adjustments=true \
-  --xla_enable_transpose_trace=false \
-  --xla_tpu_use_enhanced_launch_barrier=true "
+  --xla_enable_transpose_trace=false "
 
 # MaxDiffusion Workload Overrides
 MAXDIFFUSION_ARGS="\
