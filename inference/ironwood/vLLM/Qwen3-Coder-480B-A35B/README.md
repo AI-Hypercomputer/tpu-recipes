@@ -168,141 +168,14 @@ create a node pool with a **single TPU v7 node** in 2x2x1 configuration.
         --from-literal=hf_api_token=${HF_TOKEN}
     ```
 
-4. Save this yaml file as `vllm-tpu.yaml`
+4. Apply the vLLM manifest using the provided [qwen3_coder-server.yaml](./qwen3_coder-server.yaml) file in this directory
 
     **Note:** This config is for 1k/8k and 8k/1k workloads. If users want to run
     a 1k/1k (other) workload, please change `max-model-len` and restart the
     server.
 
-    ```
-    apiVersion: storage.k8s.io/v1
-    kind: StorageClass
-    metadata:
-      name: hyperdisk-balanced-tpu
-    provisioner: pd.csi.storage.gke.io
-    parameters:
-      type: hyperdisk-balanced
-    reclaimPolicy: Delete
-    volumeBindingMode: WaitForFirstConsumer
-    allowVolumeExpansion: true
-    ---
-    apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: hd-claim
-    spec:
-      storageClassName: hyperdisk-balanced-tpu
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 700Gi
-    ---
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: vllm-tpu
-    spec:
-      replicas: 1
-      selector:
-        matchLabels:
-          app: vllm-tpu
-      template:
-        metadata:
-          labels:
-            app: vllm-tpu
-        spec:
-          nodeSelector:
-            cloud.google.com/gke-tpu-accelerator: tpu7x
-            cloud.google.com/gke-tpu-topology: 2x2x1
-          containers:
-          - name: vllm-tpu
-            image: vllm/vllm-tpu:nightly-20260624-ddfbfe4-e2bdc24
-            command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
-            args:
-            - --host=0.0.0.0
-            - --port=8000
-            - --seed=42
-            - --model=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8
-            - --tensor-parallel-size=8
-            - --data-parallel-size=1
-            - --max-model-len=10240
-            - --max-num-batched-tokens=8192
-            - --max-num-seqs=512
-            - --gpu-memory-utilization=0.8
-            - --block-size=256
-            - --kv-cache-dtype=fp8
-            - --enable-expert-parallel
-            - --no-enable-prefix-caching
-            - --async-scheduling
-            - --download-dir=/data
-            env:
-            - name: HF_HOME
-              value: /data
-            - name: HUGGING_FACE_HUB_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: hf-secret
-                  key: hf_api_token
-            - name: MODEL_IMPL_TYPE
-              value: vllm
-            - name: USE_BATCHED_RPA_KERNEL
-              value: "1"
-            - name: XLA_FLAGS
-              value: >-
-                --xla_tpu_enable_sparse_core_collective_offload_all_reduce=false
-                --xla_tpu_all_gather_collective_matmul_mode=post_spmd_conservative
-                --xla_tpu_reduce_scatter_collective_matmul_mode=post_spmd_conservative
-                --xla_jf_crs_combiner_threshold_in_bytes=0
-                --xla_tpu_scheduler_percent_shared_memory_limit=1000
-                --xla_jf_enable_producer_consumer_multi_output_fusion=false
-                --xla_tpu_enable_domain_passes=true
-                --xla_collective_optimize_constant_table=ENABLED
-                --xla_jf_fusion_max_instruction_count_for_window_config=65536
-            ports:
-            - containerPort: 8000
-            resources:
-              limits:
-                google.com/tpu: '4'
-              requests:
-                google.com/tpu: '4'
-            readinessProbe:
-              tcpSocket:
-                port: 8000
-              initialDelaySeconds: 15
-              periodSeconds: 10
-            volumeMounts:
-            - mountPath: "/data"
-              name: data-volume
-            - mountPath: /dev/shm
-              name: dshm
-          volumes:
-          - emptyDir:
-              medium: Memory
-            name: dshm
-          - name: data-volume
-            persistentVolumeClaim:
-              claimName: hd-claim
-    ---
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: vllm-service
-    spec:
-      selector:
-        app: vllm-tpu
-      type: LoadBalancer
-      ports:
-        - name: http
-          protocol: TCP
-          port: 8000
-          targetPort: 8000
-    ```
-
-5. Apply the vLLM manifest by running the following command
-
     ```bash
-    kubectl apply -f vllm-tpu.yaml
+    kubectl apply -f qwen3_coder-server.yaml
     ```
 
     At the end of the server startup you’ll see logs such as:
@@ -316,13 +189,13 @@ create a node pool with a **single TPU v7 node** in 2x2x1 configuration.
     (APIServer pid=1) INFO:     Application startup complete.
     ```
 
-6. Serve the model by port-forwarding the service
+5. Serve the model by port-forwarding the service
 
     ```bash
     kubectl port-forward service/vllm-service 8000:8000
     ```
 
-7. Interact with the model using curl (from your workstation/laptop)
+6. Interact with the model using curl (from your workstation/laptop)
 
     ```bash
     curl http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
@@ -335,7 +208,7 @@ create a node pool with a **single TPU v7 node** in 2x2x1 configuration.
 
 ### End to End performance with smart routing
 
-The `vllm-tpu.yaml` file you deployed creates a standard Kubernetes `Service` of
+The `qwen3_coder-server.yaml` file you deployed creates a standard Kubernetes `Service` of
 type `LoadBalancer`. However, to get the most performance out of the hardware
 and measure maximum throughput, you also need to consider smart routing. For
 this, you can use the **GKE Inference Gateway**. This provides a "smart" load
@@ -392,7 +265,7 @@ post:[Scaling high-performance inference cost-effectively](https://cloud.google.
 3. Create the InferencePool
 
     This resource groups your vLLM pods (identified by the `app: vllm-tpu` label
-    from `vllm-tpu.yaml`) and enables advanced, cache-aware routing.
+    from `qwen3_coder-server.yaml`) and enables advanced, cache-aware routing.
 
     ```bash
     helm install vllm-tpu-pool \
@@ -670,5 +543,5 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
     kubectl delete -f vllm-benchmark-1k1k.yaml
     kubectl delete -f vllm-benchmark-1k8k.yaml
     kubectl delete -f vllm-benchmark-8k1k.yaml
-    kubectl delete -f vllm-tpu.yaml
+    kubectl delete -f qwen3_coder-server.yaml
     ```
