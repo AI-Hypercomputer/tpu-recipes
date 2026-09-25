@@ -1,7 +1,7 @@
-# Instructions for training Llama3.1-70B-MaxText on TPU trillium (v6e-64)
+# Instructions for training Llama3.1-70B-MaxText on TPU trillium (v6e-128)
 
-## XPK setup
-Please follow the [XPK_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
+## Cluster Toolkit setup
+Please follow the [Cluster Toolkit Cloud TPU deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview) to create your GKE cluster with Cluster Toolkit (`gcluster`) v1.104.0.
 
 ## Prep for Maxtext
 
@@ -21,36 +21,34 @@ bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${B
 
 ## Run Maxtext Llama3.1-70B workloads on GKE
 
-### Starting workload
+### Starting workload (Cluster Toolkit)
 
 From the MaxText root directory, start your Llama3.1-70B workload.
 ```
-python3 -m benchmarks.benchmark_runner xpk \
-    --project=$PROJECT \
-    --zone=$ZONE \
-    --device_type=v6e-64 \
-    --num_slices=1  \
-    --cluster_name=${CLUSTER_NAME} \
-    --base_output_directory=${OUTPUT_DIR} \
-    --model_name="llama3_1_70b_8192_bs2" \
-    --base_docker_image=maxtext_base_image
+cd tpu-recipes/training/trillium/Llama3.1-70B-MaxText/v6e-128/cluster_toolkit
+export PROJECT_ID=$PROJECT
+export CLUSTER_NAME=$CLUSTER_NAME
+export ZONE=$ZONE
+export BASE_OUTPUT_DIR=$OUTPUT_DIR
+export WORKLOAD_IMAGE=$WORKLOAD_IMAGE
+./run_recipe.sh
 ```
 
 From your workload logs, you should start seeing step time logs like the following:
 ```
-completed step: 14, seconds: 18.688, TFLOP/s/device: 422.091, Tokens/s/device: 876.736, total_weights: 1048576, loss: 0.865
+completed step: 14, seconds: 34.786, TFLOP/s/device: 453.500, Tokens/s/device: 941.976, total_weights: 4194304, loss: 4.174
 ```
 
 ### Workload Details
 
-For reference, here are the `llama3_1_70b_8192_bs2` workload details as found in `MaxText@tpu-recipes-v0.1.4`:
+For reference, here are the `llama3_1_70b_8192_bs4` workload details as found in `MaxText@tpu-recipes-v0.1.4`:
 
 ```
 MaxTextModel(
-    model_name="llama3_1-70b-8192-bs2",
+    model_name="llama3_1-70b-8192-bs4",
     model_type="llama3.1-70b",
     tuning_params={
-        "per_device_batch_size": 2,
+        "per_device_batch_size": 4,
         "ici_fsdp_parallelism": -1,
         "remat_policy": "custom",
         "decoder_layer_input": "offload",
