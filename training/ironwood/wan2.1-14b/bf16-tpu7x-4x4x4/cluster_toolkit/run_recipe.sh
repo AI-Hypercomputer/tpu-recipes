@@ -95,6 +95,7 @@ ici_context_parallelism=4 \
 ici_fsdp_parallelism=1 \
 ici_tensor_parallelism=1 \
 allow_split_physical_axes=True \
+flash_block_sizes='{\"block_q\":2048,\"block_kv_compute\":512,\"block_kv\":2048,\"block_q_dkv\":2048,\"block_kv_dkv\":2048,\"block_kv_dkv_compute\":512,\"use_fused_bwd_kernel\":true}' \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
