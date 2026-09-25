@@ -1,7 +1,7 @@
 # Instructions for training Gemma3-12B-MaxText on TPU trillium (v6e-256)
 
-## XPK setup
-Please follow the [XPK_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
+## Cluster Toolkit setup
+Please follow the [Cluster Toolkit Cloud TPU deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview) to create your GKE cluster with Cluster Toolkit (`gcluster`) v1.104.0.
 
 ## Prep for Maxtext
 
@@ -20,19 +20,17 @@ bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable JAX_VERSION=0.7.0
 
 ## Run Maxtext Gemma3-12B workloads on GKE
 
-### Starting workload
+### Starting workload (Cluster Toolkit)
 
-From the MaxText root directory, start your Gemma3-12B workload.
-```
-python3 -m benchmarks.benchmark_runner xpk \
-    --project=$PROJECT \
-    --zone=$ZONE \
-    --device_type=v6e-256 \
-    --num_slices=1  \
-    --cluster_name=${CLUSTER_NAME} \
-    --base_output_directory=${OUTPUT_DIR} \
-    --model_name="gemma3_12b_32768_v6e256" \
-    --base_docker_image=maxtext_base_image
+From the `cluster_toolkit` directory, start your Gemma3-12B workload:
+```bash
+cd tpu-recipes/training/trillium/Gemma3-12B-MaxText/v6e-256/cluster_toolkit
+export PROJECT_ID=$PROJECT
+export CLUSTER_NAME=$CLUSTER_NAME
+export ZONE=$ZONE
+export BASE_OUTPUT_DIR=$OUTPUT_DIR
+export WORKLOAD_IMAGE=<YOUR_MAXTEXT_RUNNER_IMAGE>
+./run_recipe.sh
 ```
 
 From your workload logs, you should start seeing step time logs like the following:
