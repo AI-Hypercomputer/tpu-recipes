@@ -1,19 +1,15 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.12 virtual environment with xpk installed.
-# If you haven't set up uv and the environment, please refer to the README.md.
+# This script requires Cluster Toolkit (gcluster v1.104.0) installed.
+# If you haven't set up gcluster and the environment, please refer to the README.md.
 
-UV_VENV_PATH="/data/wan2.1-14b/.venv"
-UV_PYTHON_VERSION="3.12"
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
 
-# Activate the virtual environment
-source "${UV_VENV_PATH}/bin/activate"
-
-# Check if xpk is installed in the venv
-if ! pip show xpk &> /dev/null; then
-    echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.16.1"
+# Check if gcluster is installed in PATH
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "gcluster not found in PATH. Please install Cluster Toolkit v1.104.0 per README.md."
     exit 1
 fi
 # --- End Environment Setup ---
@@ -43,7 +39,7 @@ export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""  # must be pushed: docker push <this>
 
-export WORKLOAD_NAME="$(printf "%.24s" "${USER//_/-}-wan21")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.14s" "${USER//_/-}-wan21")-$(date +%Y%m%d-%H%M)"
 # DATASET_DIR is where the preprocessed tfrecords were uploaded (NOT the raw HF dataset).
 export DATASET_DIR=${BASE_OUTPUT_DIR}/wan_tfr_dataset_pusa_v1
 
@@ -99,17 +95,17 @@ checkpoint_dir=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}/checkpoints \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
-xpk workload create \
+"${GCLUSTER_BIN}" job submit --skip-prereqs --queue multislice-queue \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
-  --zone=$ZONE \
+  --location=$ZONE \
   --priority=very-high \
-  --max-restarts=0 \
-  --device-type=v5p-16 \
+  --restarts=0 \
+  --compute-type=tpu-v5p --topology=2x2x2 \
   --num-slices=1 \
-  --docker-image="${WORKLOAD_IMAGE}" \
-  --enable-debug-logs \
-  --workload="${WORKLOAD_NAME}" \
+  --image="${WORKLOAD_IMAGE}" \
+  --verbose --gke-namespace=default \
+  --name="${WORKLOAD_NAME}" \
   --command="set -e && \
 export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export JAX_PLATFORMS='tpu,cpu' && \
