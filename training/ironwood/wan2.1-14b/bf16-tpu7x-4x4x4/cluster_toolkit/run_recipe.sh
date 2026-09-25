@@ -39,6 +39,7 @@ export DATASET_DIR="${DATASET_DIR:-${BASE_OUTPUT_DIR}/PusaV1_training}"
 
 # XLA Flags
 XLA_FLAGS=" \
+  --xla_tpu_dvfs_p_state=3 \
   --xla_enable_async_all_gather=true \
   --xla_tpu_enable_async_collective_fusion=true \
   --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true \
@@ -59,7 +60,8 @@ XLA_FLAGS=" \
   --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true \
   --xla_tpu_scoped_vmem_limit_kib=65536 \
   --xla_tpu_enable_tpu_custom_call_scoped_vmem_adjustments=true \
-  --xla_enable_transpose_trace=false "
+  --xla_enable_transpose_trace=false \
+  --xla_tpu_use_enhanced_launch_barrier=true "
 
 # MaxDiffusion Workload Overrides
 MAXDIFFUSION_ARGS="\
@@ -80,7 +82,7 @@ num_frames=81 \
 num_inference_steps=50 \
 prompt='a japanese pop star young woman with black hair is singing with a smile. She is inside a studio with dim lighting and musical instruments.' \
 jax_cache_dir=${BASE_OUTPUT_DIR}/jax_cache/ \
-max_train_steps=150 \
+max_train_steps=30 \
 enable_profiler=True \
 dataset_save_location=${DATASET_DIR} \
 remat_policy=FULL \
@@ -90,7 +92,8 @@ skip_first_n_steps_for_profiler=5 \
 profiler_steps=10 \
 per_device_batch_size=0.25 \
 ici_data_parallelism=32 \
-ici_fsdp_parallelism=4 \
+ici_context_parallelism=4 \
+ici_fsdp_parallelism=1 \
 ici_tensor_parallelism=1 \
 allow_split_physical_axes=True \
 base_output_directory=${BASE_OUTPUT_DIR} \
