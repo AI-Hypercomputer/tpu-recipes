@@ -144,7 +144,7 @@ across all commands and configurations.
     default, matching the image built in the
     [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-deepseek3-671b-$(date +%H%M)` by default.
+    `run_recipe.sh` to `${USER}-ds3-671b-$(date +%H%M)` by default.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `v5p-1024`, topology `8x8x8`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
