@@ -19,7 +19,8 @@ if ! command -v "${GCLUSTER_BIN}" &> /dev/null; then
 fi
 # --- End Environment Setup ---
 
-set -euo pipefail
+set -e
+set -o pipefail
 
 # --- Environment Variables ---
 export PROJECT_ID="${PROJECT_ID:-}"
@@ -41,14 +42,7 @@ if [[ ! "${BASE_OUTPUT_DIR}" =~ ^gs:// ]]; then
     exit 1
 fi
 
-TIMESTAMP=$(date +%m%d%H%M)
-SHORT_USER="${USER:-anon}"
-SHORT_USER="${SHORT_USER//_/-}"
-SHORT_USER="${SHORT_USER,,}"
-SHORT_USER=$(echo "${SHORT_USER}" | tr -cd 'a-z0-9-' | cut -c1-6)
-SHORT_USER="${SHORT_USER:-anon}"
-DEFAULT_NAME="${SHORT_USER}-gm3-12b-1x256-${TIMESTAMP}"
-export WORKLOAD_NAME="${WORKLOAD_NAME:-${DEFAULT_NAME:0:26}}"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-gemma3-12b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 # XLA Flags matching MaxText@tpu-recipes-v0.1.5 (xla_flags_library.CUSTOM_VMEM_LIMIT_FLAG(vmem_limit=122880))
@@ -113,7 +107,7 @@ export ARTIFACT_DIR=\"${ARTIFACT_DIR}\" && \
 export JAX_PLATFORMS=\"tpu,cpu\" && \
 export ENABLE_PJRT_COMPATIBILITY=\"true\" && \
 if [ -d /deps/MaxText ]; then cd /deps/MaxText; elif [ -d /deps ]; then cd /deps; fi && \
-export PYTHONPATH=.:./src:\\${PYTHONPATH:-} && \
+export PYTHONPATH=.:./src:\${PYTHONPATH:-} && \
 mkdir -p assets && \
 if [ -f assets/tokenizers/tokenizer.gemma3 ] && [ ! -f assets/tokenizer.gemma3 ]; then \
   cp assets/tokenizers/tokenizer.gemma3 assets/tokenizer.gemma3 || true; \
@@ -127,12 +121,12 @@ if [ -f MaxText/train.py ]; then \
 else \
   python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \
 fi; \
-TRAIN_EXIT_CODE=\\${PIPESTATUS[0]}; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s train.log ]; then \
   if command -v gcloud &> /dev/null; then \
-    timeout 30s gcloud storage cp --no-user-output-enabled train.log \\${ARTIFACT_DIR}/logs/train-\\${TPU_WORKER_ID:-\\${JOBSET_WORKER_INDEX:-\\${HOSTNAME:-0}}}.log || true; \
+    timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
   elif command -v gsutil &> /dev/null; then \
-    timeout 30s gsutil cp train.log \\${ARTIFACT_DIR}/logs/train-\\${TPU_WORKER_ID:-\\${JOBSET_WORKER_INDEX:-\\${HOSTNAME:-0}}}.log || true; \
+    timeout 30s gsutil cp train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
   fi; \
 fi; \
-exit \\${TRAIN_EXIT_CODE}'"
+exit \${TRAIN_EXIT_CODE}'"
