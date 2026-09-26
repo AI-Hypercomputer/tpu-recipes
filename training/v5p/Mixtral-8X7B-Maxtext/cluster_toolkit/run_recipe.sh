@@ -38,15 +38,16 @@ export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 
 # XLA Flags (from scripts/run_mixtral-8x7b.sh)
+# The async collective fusion flags from the original script
+# (--xla_tpu_enable_async_collective_fusion, ..._fuse_all_gather and
+# ..._multiple_steps) are omitted: current libtpu rejects async collective
+# fusion on TPU v5p at backend initialization.
 XLA_FLAGS=" \
-  --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true \
   --xla_tpu_megacore_fusion_allow_ags=false \
   --xla_enable_async_collective_permute=true \
   --xla_tpu_enable_ag_backward_pipelining=true \
   --xla_tpu_enable_data_parallel_all_reduce_opt=true \
   --xla_tpu_data_parallel_opt_different_sized_ops=true \
-  --xla_tpu_enable_async_collective_fusion=true \
-  --xla_tpu_enable_async_collective_fusion_multiple_steps=true \
   --xla_tpu_overlap_compute_collective_tc=true \
   --xla_enable_async_all_gather=true \
   --xla_tpu_scoped_vmem_limit_kib=81920 "
