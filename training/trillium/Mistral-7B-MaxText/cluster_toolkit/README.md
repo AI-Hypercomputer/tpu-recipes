@@ -237,6 +237,11 @@ git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
 git checkout tpu-recipes-v0.1.2
 
+# The jax0.5.2-rev1 base image is Debian bullseye, and `apt-get install dnsutils`
+# in maxtext_jax_stable_stack.Dockerfile currently fails with 404s from
+# bullseye-security. dnsutils is not needed by this recipe, so drop it:
+sed -i 's/ && apt-get install --yes dnsutils//' maxtext_jax_stable_stack.Dockerfile
+
 # Build and upload the docker image (pushed to gcr.io/<gcloud project>/${CLOUD_IMAGE_NAME}:latest)
 BASE_IMAGE=us-docker.pkg.dev/cloud-tpu-images/jax-stable-stack/tpu:jax0.5.2-rev1
 bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${BASE_IMAGE}
