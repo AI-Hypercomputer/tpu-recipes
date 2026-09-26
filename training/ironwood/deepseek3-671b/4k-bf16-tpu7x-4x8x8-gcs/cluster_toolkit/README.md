@@ -40,26 +40,23 @@ To run this recipe, you need the following:
     section to install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and
     the `gke-gcloud-auth-plugin`.
 
-## Dataset volume prerequisite
+## Dataset bucket prerequisite
 
-This recipe reads its training data from a bucket mounted into the container,
-not from a `gs://` URI. Before running it, provision a PersistentVolumeClaim
-backed by that bucket with the
-[GCS FUSE CSI driver](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/cloud-storage-fuse-csi-driver),
-and set `DATASET_VOLUME_NAME` in `run_recipe.sh` to its name.
-
-`gcluster` mounts it via:
-
-```bash
---mount "${DATASET_VOLUME_NAME};${DATASET_BUCKET_MOUNTED_PATH};ro"
-```
-
-A bare name is interpreted as a PVC. If you would rather have `gcluster` mount
-the bucket directly and skip the PVC, pass a `gs://` source instead:
+This recipe reads its training data from a Cloud Storage bucket that `gcluster`
+mounts into the container with the
+[GCS FUSE CSI driver](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/cloud-storage-fuse-csi-driver).
+No PersistentVolume or PersistentVolumeClaim is needed. Set `DATASET_BUCKET` in
+`run_recipe.sh` to the bucket name (without the `gs://` prefix); it is mounted
+read-only at `DATASET_BUCKET_MOUNTED_PATH` (`/tmp/dataset` by default) via:
 
 ```bash
---mount "gs://<your-dataset-bucket>;${DATASET_BUCKET_MOUNTED_PATH};ro"
+--mount "gs://${DATASET_BUCKET};${DATASET_BUCKET_MOUNTED_PATH};ro;options=${DATASET_MOUNT_OPTIONS};attributes=${DATASET_VOLUME_ATTRIBUTES}"
 ```
+
+`DATASET_MOUNT_OPTIONS` and `DATASET_VOLUME_ATTRIBUTES` carry the GCS FUSE mount
+options and volume attributes used by this recipe. The GKE cluster must have the
+GCS FUSE CSI driver enabled, and the workload's service account must be able to
+read the bucket.
 
 ## Install Cluster Toolkit and dependencies
 
@@ -74,7 +71,7 @@ bundle:
 
 ```bash
 # Set Cluster Toolkit version
-export CTK_VERSION="1.104.0"
+export CTK_VERSION="1.105.0"
 
 # Download the prebuilt bundle from GitHub releases
 curl -L -O "https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
@@ -153,6 +150,8 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
+-   `DATASET_BUCKET`: Name of the bucket holding the training dataset, without
+    the `gs://` prefix. See [Dataset bucket prerequisite](#dataset-bucket-prerequisite).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
     `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-deepseek_v3-runner` by
@@ -309,11 +308,11 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.46
--   Jax version: 0.11.2.dev20260825
--   Maxtext version: 9d92bf0
+-   Libtpu version: 0.0.30
+-   Jax version: 0.8.1
+-   Maxtext version: cf051eb03
 -   Python: 3.12
--   Cluster Toolkit: 1.104.0
+-   Cluster Toolkit: 1.105.0
 
 Docker Image Building Command:
 
@@ -333,13 +332,13 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout 9d92bf0
+git checkout cf051eb03
 
 # Build and upload the docker image
 bash src/dependencies/scripts/docker_build_dependency_image.sh \
-  MODE=nightly \
-  JAX_VERSION=0.11.2.dev20260825 \
-  LIBTPU_VERSION=0.0.46
+  MODE=stable \
+  JAX_VERSION=0.8.1 \
+  LIBTPU_VERSION=0.0.30
 bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment

@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
+# This script requires the Cluster Toolkit (gcluster) CLI (v1.105.0).
 # If you haven't installed gcluster, please refer to the README.md.
 
 export PATH="${HOME}/cluster-toolkit:${PATH}"
-CTK_VERSION="1.104.0"
+CTK_VERSION="1.105.0"
 GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
 if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
     echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
@@ -36,12 +36,14 @@ export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-dsv3-gcs-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
-# Name of the PersistentVolumeClaim backed by the dataset bucket, and the path
-# it is mounted at inside the container. Under XPK this was an `xpk storage`
-# object; gcluster mounts the PVC directly, so this must match
-# `metadata.name` of the PersistentVolumeClaim in `dataset_pvc.yaml`.
-export DATASET_VOLUME_NAME="dataset-bucket-pvc"
+# Dataset bucket (name only, no gs:// prefix) and the path it is mounted at
+# inside the container. gcluster mounts it inline with the GCS FUSE CSI driver;
+# the mount options and volume attributes below match the GCS FUSE
+# PersistentVolume that the XPK version of this recipe provisioned.
+export DATASET_BUCKET=""
 export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset"
+DATASET_MOUNT_OPTIONS="implicit-dirs,metadata-cache:negative-ttl-secs:0,metadata-cache:ttl-secs:-1,metadata-cache:stat-cache-max-size-mb:-1,metadata-cache:type-cache-max-size-mb:-1,write:enable-streaming-writes:true"
+DATASET_VOLUME_ATTRIBUTES="gcsfuseMetadataPrefetchOnMount=true"
 
 
 # XLA Flags
@@ -145,7 +147,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --topology 4x8x8 \
   --num-slices 1 \
   --image "${WORKLOAD_IMAGE}" \
-  --mount "${DATASET_VOLUME_NAME};${DATASET_BUCKET_MOUNTED_PATH};ro" \
+  --mount "gs://${DATASET_BUCKET};${DATASET_BUCKET_MOUNTED_PATH};ro;options=${DATASET_MOUNT_OPTIONS};attributes=${DATASET_VOLUME_ATTRIBUTES}" \
   --verbose \
   --gke-namespace default \
   --name "${WORKLOAD_NAME}" \
