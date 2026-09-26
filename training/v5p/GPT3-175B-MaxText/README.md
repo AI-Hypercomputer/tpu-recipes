@@ -1,5 +1,10 @@
 # Instructions for training GPT3-175B-Maxtext on TPU v5p
 
+> [!NOTE]
+> A [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit)
+> (`gcluster`) version of this recipe is available in
+> [cluster_toolkit/README.md](cluster_toolkit/README.md).
+
 ## XPK setup
 Please follow this [link](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
 
