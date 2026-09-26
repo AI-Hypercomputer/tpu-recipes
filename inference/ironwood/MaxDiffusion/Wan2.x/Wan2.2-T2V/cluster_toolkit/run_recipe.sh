@@ -43,7 +43,7 @@ export BASE_YAML_CONFIG="src/maxdiffusion/configs/base_wan_27b.yml"
 export SCRIPT_PATH="src/maxdiffusion/generate_wan.py"
 
 # Default COMMAND_PREFIX tailored for Ironwood (7x)
-export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.10.0 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev_shm && export HF_HUB_ENABLE_HF_TRANSFER=1 && export TORCHINDUCTOR_FREEZING=1 && export TORCHINDUCTOR_CPP_WRAPPER=1 && export TORCHINDUCTOR_MEMORY_PLANNING=1 && export JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=-1 && export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 && export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95 && export JAX_DEFAULT_MATMUL_PRECISION=bfloat16"
+export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.10.0 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev/shm && export HF_HUB_ENABLE_HF_TRANSFER=1 && export TORCHINDUCTOR_FREEZING=1 && export TORCHINDUCTOR_CPP_WRAPPER=1 && export TORCHINDUCTOR_MEMORY_PLANNING=1 && export JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES=-1 && export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0 && export XLA_PYTHON_CLIENT_MEM_FRACTION=0.95 && export JAX_DEFAULT_MATMUL_PRECISION=bfloat16"
 
 # XLA Flags optimized for Ironwood
 XLA_FLAGS=" \
@@ -152,7 +152,6 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
 "${GCLUSTER_BIN}" job submit \
   --skip-prereqs \
   --queue multislice-queue \
-  --mount "/dev/shm;/dev_shm;rw" \
   --cluster "$CLUSTER_NAME" \
   --project "$PROJECT_ID" \
   --location "$ZONE" \
