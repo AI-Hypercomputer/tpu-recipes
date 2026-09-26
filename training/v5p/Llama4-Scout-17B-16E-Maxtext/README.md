@@ -1,5 +1,10 @@
 # Instructions for training Llama4-Scout-17B-16E Maxtext on TPU v5p-256, v5p-512, and v5p-1024
 
+> [!NOTE]
+> A [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit)
+> (`gcluster`) version of this recipe is available in
+> [cluster_toolkit/README.md](cluster_toolkit/README.md).
+
 This documents present steps to run Llama4-Scout-17B-16E [MaxText](https://github.com/google/maxtext) workload through [XPK](https://github.com/google/xpk/blob/main/README.md) tool.
 
 ## XPK setup
