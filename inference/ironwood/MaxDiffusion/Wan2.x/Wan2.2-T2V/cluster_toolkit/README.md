@@ -198,7 +198,7 @@ The following software versions are used:
 
 -   Libtpu version: 0.0.40
 -   Jax version: 0.10.0
--   MaxDiffusion version: 08566b1
+-   MaxDiffusion version: fc0c42c
 -   Python: 3.12
 -   Cluster Toolkit: 1.104.0
 
@@ -213,7 +213,7 @@ export PROJECT_ID=<YOUR_PROJECT_ID>
 # Clone MaxDiffusion Repository and checkout recipe commit
 git clone https://github.com/AI-Hypercomputer/maxdiffusion.git
 cd maxdiffusion
-git checkout 08566b1
+git checkout fc0c42c
 
 # Build and upload the docker image
 bash docker_build_dependency_image.sh
