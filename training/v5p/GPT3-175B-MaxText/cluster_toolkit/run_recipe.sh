@@ -38,6 +38,10 @@ export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 
 # XLA Flags (from MaxText configs/tpu/v5p/gpt3_175b/gpt3_175b_base.sh)
+# The async collective fusion flags from the original script
+# (--xla_tpu_enable_async_collective_fusion, ..._fuse_all_gather and
+# ..._multiple_steps) are omitted: current libtpu rejects async collective
+# fusion on TPU v5p at backend initialization.
 XLA_FLAGS=" \
   --xla_tpu_enable_experimental_fusion_cost_model=false \
   --xla_tpu_dot_dot_fusion_duplicated=false \
@@ -52,15 +56,12 @@ XLA_FLAGS=" \
   --xla_tpu_scavenge_vmem_for_fusions=false \
   --xla_tpu_vector_load_fusion_window=256 \
   --xla_tpu_vector_store_fusion_window=64 \
-  --xla_tpu_enable_async_collective_fusion=true \
-  --xla_tpu_enable_async_collective_fusion_multiple_steps=true \
   --xla_tpu_decompose_all_gather_einsum=true \
   --xla_tpu_spmd_rng_bit_generator_unsafe=true \
   --xla_tpu_enable_megacore_fusion=true \
   --xla_enable_async_all_gather=true \
   --xla_enable_async_collective_permute=true \
   --xla_always_enable_all_gather_2d_asymmetric=true \
-  --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true \
   --xla_tpu_overlap_compute_collective_tc=true \
   --xla_tpu_dcn_max_overlap_estimation=32 "
 
