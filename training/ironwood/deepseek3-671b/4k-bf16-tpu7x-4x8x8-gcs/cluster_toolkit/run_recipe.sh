@@ -37,9 +37,7 @@ export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-dsv3-gcs
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 # Dataset bucket (name only, no gs:// prefix) and the path it is mounted at
-# inside the container. gcluster mounts it inline with the GCS FUSE CSI driver;
-# the mount options and volume attributes below match the GCS FUSE
-# PersistentVolume that the XPK version of this recipe provisioned.
+# inside the container. gcluster mounts it inline with the GCS FUSE CSI driver.
 export DATASET_BUCKET=""
 export DATASET_BUCKET_MOUNTED_PATH="/tmp/dataset"
 DATASET_MOUNT_OPTIONS="implicit-dirs,metadata-cache:negative-ttl-secs:0,metadata-cache:ttl-secs:-1,metadata-cache:stat-cache-max-size-mb:-1,metadata-cache:type-cache-max-size-mb:-1,write:enable-streaming-writes:true"
