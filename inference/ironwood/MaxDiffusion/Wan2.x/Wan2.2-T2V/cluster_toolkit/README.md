@@ -1,4 +1,4 @@
-# Inference Wan-AI/Wan2.2-T2V-A14B-Diffusers workload on Ironwood GKE clusters with Cluster Toolkit.
+# Inference Wan-AI/Wan2.2-T2V-27B-Diffusers workload on Ironwood GKE clusters with Cluster Toolkit.
 
 This recipe outlines the steps for running a maxdiffusion
 [Maxdiffusion](https://github.com/AI-Hypercomputer/maxdiffusion) inference workload on
