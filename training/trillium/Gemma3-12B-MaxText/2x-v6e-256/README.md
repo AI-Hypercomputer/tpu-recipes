@@ -1,5 +1,8 @@
 # Instructions for training Gemma3-12B-MaxText on TPU trillium (2 slices of v6e-256)
 
+> **Note:** A Cluster Toolkit (`gcluster`) version of this recipe is available
+> in [cluster_toolkit/README.md](cluster_toolkit/README.md).
+
 ## XPK setup
 Please follow the [XPK_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
 
