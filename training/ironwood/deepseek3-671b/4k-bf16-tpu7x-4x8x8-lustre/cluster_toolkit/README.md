@@ -71,7 +71,7 @@ bundle:
 
 ```bash
 # Set Cluster Toolkit version
-export CTK_VERSION="1.104.0"
+export CTK_VERSION="1.105.0"
 
 # Download the prebuilt bundle from GitHub releases
 curl -L -O "https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
@@ -306,11 +306,11 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.46
--   Jax version: 0.11.2.dev20260825
--   Maxtext version: 9d92bf0
+-   Libtpu version: 0.0.30
+-   Jax version: 0.8.1
+-   Maxtext version: cf051eb03
 -   Python: 3.12
--   Cluster Toolkit: 1.104.0
+-   Cluster Toolkit: 1.105.0
 
 Docker Image Building Command:
 
@@ -330,13 +330,13 @@ if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_i
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout 9d92bf0
+git checkout cf051eb03
 
 # Build and upload the docker image
 bash src/dependencies/scripts/docker_build_dependency_image.sh \
-  MODE=nightly \
-  JAX_VERSION=0.11.2.dev20260825 \
-  LIBTPU_VERSION=0.0.46
+  MODE=stable \
+  JAX_VERSION=0.8.1 \
+  LIBTPU_VERSION=0.0.30
 bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Deactivate the virtual environment

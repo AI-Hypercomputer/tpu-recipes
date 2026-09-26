@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
+# This script requires the Cluster Toolkit (gcluster) CLI (v1.105.0).
 # If you haven't installed gcluster, please refer to the README.md.
 
 export PATH="${HOME}/cluster-toolkit:${PATH}"
-CTK_VERSION="1.104.0"
+CTK_VERSION="1.105.0"
 GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
 if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
     echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
@@ -40,6 +40,7 @@ export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-dsv3-lst
 export LUSTRE_VOLUME_NAME="lustre-volume"
 export LUSTRE_MOUNT_PATH="/mnt/lustre"
 export BASE_OUTPUT_DIR="${LUSTRE_MOUNT_PATH}/checkpoints"
+export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 export DATASET_BUCKET_MOUNTED_PATH="${LUSTRE_MOUNT_PATH}/datasets"
 
 
@@ -143,17 +144,19 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --compute-type tpu7x \
   --topology 4x8x8 \
   --num-slices 1 \
-  --base-image "${WORKLOAD_IMAGE}" \
-  --build-context "." \
+  --image "${WORKLOAD_IMAGE}" \
   --mount "${LUSTRE_VOLUME_NAME};${LUSTRE_MOUNT_PATH};rw" \
   --verbose \
   --gke-namespace default \
   --name "${WORKLOAD_NAME}" \
-  --command "set -e && \
-    export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
-    export ENABLE_PATHWAYS_PERSISTENCE=1 && \
-    export JAX_PLATFORMS=tpu,cpu && \
-    export ENABLE_PJRT_COMPATIBILITY=true && \
-    export MAXTEXT_ASSETS_ROOT=/deps/src/MaxText/assets MAXTEXT_PKG_DIR=/deps/src/maxtext && \
-    cd /deps && pip install --no-deps -e . && \
-    python3 -m src.maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS}"
+  --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
+export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
+set +e; \
+python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  mkdir -p \${ARTIFACT_DIR}/logs && cp train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOB_COMPLETION_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
