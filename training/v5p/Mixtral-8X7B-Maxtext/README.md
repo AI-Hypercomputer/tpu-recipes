@@ -1,5 +1,10 @@
 # Instructions for training Mixtral-8X7B Maxtext on TPU v5p
 
+> [!NOTE]
+> A [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit)
+> (`gcluster`) version of this recipe is available in
+> [cluster_toolkit/README.md](cluster_toolkit/README.md).
+
 This documents present steps to run Mixtral-8x7B [MaxText](https://github.com/google/maxtext) workload through [XPK](https://github.com/google/xpk/blob/main/README.md) tool.
 
 ## XPK setup
