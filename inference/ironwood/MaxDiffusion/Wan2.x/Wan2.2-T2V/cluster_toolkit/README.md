@@ -43,8 +43,6 @@ To run this recipe, you need the following:
     [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies)
     section to install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and
     the `gke-gcloud-auth-plugin`.
--   **Hugging Face Token:** The Wan 2.2 weights are pulled from Hugging Face at
-    runtime, so a valid `HF_TOKEN` is required.
 
 ## Install Cluster Toolkit and dependencies
 
@@ -137,8 +135,6 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model logs/artifacts (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `HF_TOKEN`: Your Hugging Face access token, used to download the Wan 2.1
-    weights.
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set to a
     placeholder
     `<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest` by
@@ -297,14 +293,6 @@ You can customize the run by modifying `run_recipe.sh`:
 Note that any MaxDiffusion configurations not explicitly overridden in
 `MAXDIFFUSION_ARGS` are expected to use the defaults within the specified
 `WORKLOAD_IMAGE`.
-
-### Hugging Face cache location
-
-Cluster Toolkit refuses to mount onto the reserved system path `/dev/shm`, so the
-recipe mounts the host's `/dev/shm` tmpfs at `/dev_shm` inside the container
-(`--mount "/dev/shm;/dev_shm;rw"`) and sets `HF_HUB_CACHE=/dev_shm` accordingly.
-`/tmp` is not a viable alternative: the root ephemeral disk is too small for the
-Wan model weights and the pod is evicted mid-download.
 
 ## Monitor the job
 
