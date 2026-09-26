@@ -1,7 +1,7 @@
 # Instructions for training Mistral-7B-MaxText on TPU trillium (v6e-8)
 
-## XPK setup
-Please follow the [XPK_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
+## Cluster Toolkit setup
+Please follow the [Cluster Toolkit Cloud TPU deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview) to create your GKE cluster with Cluster Toolkit (`gcluster`) v1.104.0.
 
 ## Prep for Maxtext
 
@@ -21,26 +21,33 @@ bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${B
 
 ## Run Maxtext Mistral-7B workloads on GKE
 
-### Starting workload
+### Starting workload (Cluster Toolkit)
 
-From the MaxText root directory, start your Mistral-7B workload.
+From the directory where you cloned this repository, start your Mistral-7B workload.
 ```
-python3 -m benchmarks.benchmark_runner xpk \
-    --project=$PROJECT \
-    --zone=$ZONE \
-    --device_type=v6e-8 \
-    --num_slices=1  \
-    --cluster_name=${CLUSTER_NAME} \
-    --base_output_directory=${OUTPUT_DIR} \
-    --model_name="mistral_7b" \
-    --base_docker_image=maxtext_base_image
+cd tpu-recipes/training/trillium/Mistral-7B-MaxText/cluster_toolkit
+export PROJECT_ID=$PROJECT
+export CLUSTER_NAME=$CLUSTER_NAME
+export ZONE=$ZONE
+export BASE_OUTPUT_DIR=$OUTPUT_DIR
+export WORKLOAD_IMAGE=gcr.io/${PROJECT}/${USER}_runner # image uploaded in step 4 of MAXTEXT_README
+./run_recipe.sh
 ```
 
 From your workload logs, you should start seeing step time logs like the following:
 ```
 completed step: 6, seconds: 6.320, TFLOP/s/device: 431.981, Tokens/s/device: 7776.813, total_weights: 393216, loss: 7.378
 ```
-If you would like to run on multiple slices of v6e-8, you may modify the `--num_slices` flag.
+If you would like to run on multiple slices of v6e-8, you may modify the `--num-slices` flag.
+
+### Monitor and clean up the workload
+
+`run_recipe.sh` prints the workload name when it submits the job. Use it to follow the logs or cancel the workload:
+```
+export WORKLOAD_NAME=<workload name printed by run_recipe.sh>
+gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
+gcluster job cancel ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
+```
 
 ### Workload Details
 
@@ -91,3 +98,4 @@ For reference, here are the `mistral_7b` workload details as found in `MaxText@t
 ```
 
 This equivalent workload code can be found in the [maxtext_trillium_model_configs.py](https://github.com/AI-Hypercomputer/maxtext/blob/tpu-recipes-v0.1.2/benchmarks/maxtext_trillium_model_configs.py) file within the MaxText repository.
+`run_recipe.sh` expands these `xla_flags` into `XLA_FLAGS`, plus `--xla_tpu_use_enhanced_launch_barrier=true` and `--xla_tpu_spmd_rng_bit_generator_unsafe=true`.
