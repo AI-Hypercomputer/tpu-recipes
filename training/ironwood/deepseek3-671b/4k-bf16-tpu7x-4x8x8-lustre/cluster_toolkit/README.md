@@ -23,6 +23,7 @@ To run this recipe, you need the following:
     Roles:
     -   Artifact Registry Writer
     -   Compute Admin
+    -   Google Cloud Managed Lustre Admin
     -   Kubernetes Engine Admin
     -   Logging Admin
     -   Monitoring Admin
@@ -39,24 +40,6 @@ To run this recipe, you need the following:
     [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies)
     section to install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and
     the `gke-gcloud-auth-plugin`.
-
-## Lustre volume prerequisite
-
-This recipe keeps both the dataset and the checkpoints on a Lustre filesystem
-rather than in GCS. Before running it, provision a
-[Managed Lustre](https://docs.cloud.google.com/managed-lustre/docs/create-instance)
-instance and a PersistentVolumeClaim bound to it, then set
-`LUSTRE_VOLUME_NAME` in `run_recipe.sh` to the name of that PVC.
-
-`gcluster` mounts it read-write via:
-
-```bash
---mount "${LUSTRE_VOLUME_NAME};${LUSTRE_MOUNT_PATH};rw"
-```
-
-A bare name is interpreted as a PVC. The dataset is expected at
-`${LUSTRE_MOUNT_PATH}/datasets` and checkpoints are written to
-`${LUSTRE_MOUNT_PATH}/checkpoints`.
 
 ## Install Cluster Toolkit and dependencies
 
@@ -289,6 +272,43 @@ gcloud container clusters get-credentials "${CLUSTER_NAME}" \
 kubectl get nodes
 ```
 
+### Enable Managed Lustre CSI Driver on Cluster
+
+Ensure the GKE version is `1.34.0-gke.2201000` or later. If your GKE cluster is already created, ensure the Managed Lustre CSI driver is enabled.
+
+```bash
+gcloud container clusters update ${CLUSTER_NAME} \
+  --location ${ZONE} \
+  --project ${PROJECT_ID} \
+  --update-addons=LustreCsiDriver=ENABLED
+```
+
+## Lustre Instance Setup
+
+### Create Lustre Instance
+
+1. Create new Lustre instance following [instructions](https://docs.cloud.google.com/managed-lustre/docs/create-instance) to hold the dataset and checkpoints. Mount the Lustre instance on
+[Compute Engine](https://docs.cloud.google.com/managed-lustre/docs/connect-from-compute-engine)
+or
+[Kubernetes Engine](https://docs.cloud.google.com/managed-lustre/docs/lustre-csi-driver-new-volume). It is important to use the same network as the GKE cluster when creating the Lustre instance. Since the same instance will be used for both dataloading and checkpointing, at least 36 TB of storage is recommended.
+
+2. Prepare your dataset in the Lustre instance. This recipe is configured to use the Grain loader with ArrayRecord files. Ensure your dataset files are accessible in this instance. You would first need to download the AllenAI C4 dataset dataset from its source. Follow these [instructions](https://docs.cloud.google.com/managed-lustre/docs/transfer-data) to transfer the dataset to the Lustre instance.
+
+### Mount Lustre Instance
+
+Managed Lustre lets you mount and access it as local file systems, so applications can read and write objects using standard file system semantics. Use the manifest file `lustre_pvc.yaml` from this repo to create a PersistentVolume and PersistentVolumeClaim for the instance in order to mount it to the MaxText workload.
+Be sure to update `volumeHandle` in the yamls with your correct lustre instance names. Creating a lustre instance and its PersistentVolumeClaim is a one time setup.
+```
+# Lustre PV/PVC
+kubectl apply -f lustre_pvc.yaml
+```
+
+`run_recipe.sh` mounts the PersistentVolumeClaim named by `LUSTRE_VOLUME_NAME` at
+`LUSTRE_MOUNT_PATH` (`/mnt/lustre`) via
+`--mount "${LUSTRE_VOLUME_NAME};${LUSTRE_MOUNT_PATH};rw"`. The dataset is expected
+at `${LUSTRE_MOUNT_PATH}/datasets` and checkpoints are written to
+`${LUSTRE_MOUNT_PATH}/checkpoints`.
+
 ## Docker container image
 
 To build your own image, follow the steps linked in this section. If you don't
@@ -342,7 +362,7 @@ cd ..
 
 ## Training dataset
 
-This recipe uses a mock pretraining dataset provided by the MaxText framework.
+This recipe uses the AllenAI C4 dataset with the [grain loader](https://github.com/google/grain). Ensure your dataset files are accessible in your Lustre instance following the instructions in the [Lustre Instance Setup](#lustre-instance-setup) section.
 
 ## Run the recipe
 
@@ -445,6 +465,12 @@ Or delete the JobSet directly using kubectl:
 
 ```bash
 kubectl delete jobset ${WORKLOAD_NAME} -n default
+```
+
+#### Delete the Lustre PV/PVC
+
+```bash
+kubectl delete -f lustre_pvc.yaml
 ```
 
 #### Delete the cluster deployment
