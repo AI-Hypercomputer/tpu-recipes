@@ -35,8 +35,8 @@ export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-dsv3-lstr-$(date +%H%M)}"
 
 # Name of the pre-provisioned Lustre PersistentVolumeClaim and the path it is
-# mounted at inside the container. Under XPK this was an `xpk storage` object
-# passed via --storage. Checkpoints and the dataset both live on this volume.
+# mounted at inside the container. Checkpoints and the dataset both live on
+# this volume.
 export LUSTRE_VOLUME_NAME="lustre-volume"
 export LUSTRE_MOUNT_PATH="/mnt/lustre"
 export BASE_OUTPUT_DIR="${LUSTRE_MOUNT_PATH}/checkpoints"

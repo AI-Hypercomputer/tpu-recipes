@@ -148,8 +148,9 @@ across all commands and configurations.
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
 -   `REGION`: The region for your cluster (e.g., `us-central1`). Can be derived as `${ZONE%-*}`.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
--   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
-    `"gs://<your_gcs_bucket>"`).
+-   `BASE_OUTPUT_DIR`: Output directory for model training on the Lustre
+    volume. This is set in `run_recipe.sh` to
+    `${LUSTRE_MOUNT_PATH}/checkpoints`.
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
     `run_recipe.sh` to
     `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-deepseek_v3-runner` by
@@ -164,13 +165,6 @@ across all commands and configurations.
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
-
-If you don't have a GCS bucket, create one with this command:
-
-```bash
-# Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
-gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
-```
 
 ### Sample Cluster Toolkit Cluster Creation and Deployment Command
 
@@ -482,8 +476,8 @@ After the job completes, you can check the results by:
 
 -   Accessing output logs from your job using `kubectl logs` or `gcluster job
     logs`.
--   Checking any data stored in the Google Cloud Storage bucket specified by the
-    `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
+-   Checking any data stored on the Lustre volume under the
+    `${BASE_OUTPUT_DIR}` path set in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
 
 ## Next steps: deeper exploration and customization
