@@ -144,7 +144,7 @@ across all commands and configurations.
 -   `WORKLOAD_IMAGE`: The Docker image for the workload, i.e. the image built
     in the [Docker container image](#docker-container-image) section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-mixtral-8x7b-$(date +%H%M)` by default.
+    `run_recipe.sh` to `${USER}-mx-8x7b-$(date +%H%M)` by default.
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.

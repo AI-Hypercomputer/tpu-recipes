@@ -33,7 +33,7 @@ export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.10s" "${USER//_/-}")-mixtral-8x7b-$(date +%H%M)}"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.10s" "${USER//_/-}")-mx-8x7b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 # Number of v6e-256 slices. The recipe was published for 1, 2 or 4 slices.
 export NUM_SLICES="${NUM_SLICES:-1}"
