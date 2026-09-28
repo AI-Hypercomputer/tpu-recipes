@@ -26,6 +26,7 @@ export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-llama3-70b-$(date +%H%M)}"
+export ARTIFACT_DIR="${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}"
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -89,7 +90,14 @@ run_name=${WORKLOAD_NAME}"
   --verbose --gke-namespace=default \
   --gke-disable-parallel-containers \
   --name="${WORKLOAD_NAME}" \
-  --command="set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+  --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS}"
+set +e; \
+python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
