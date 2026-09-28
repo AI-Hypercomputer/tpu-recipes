@@ -15,8 +15,7 @@ This workload is configured with the following details:
 -   Chips: 128 (v5p-256, 4x4x8 topology)
 
 The XLA flags and MaxText arguments in `run_recipe.sh` are the MaxText
-`llama4_maverick_dropless_v5p_256` benchmark configuration used by the
-[XPK instructions](https://github.com/AI-Hypercomputer/tpu-recipes/blob/eaa413055ed55630461969327ce98a1164f13371/training/v5p/Llama4-Maverick-17B-128E-Maxtext/README.md), resolved from
+`llama4_maverick_dropless_v5p_256` benchmark configuration, resolved from
 [`benchmarks/maxtext_v5p_model_configs.py`](https://github.com/AI-Hypercomputer/maxtext/blob/tpu-recipes-v0.1.3/benchmarks/maxtext_v5p_model_configs.py)
 and `benchmarks/xla_flags_library.py` at MaxText `tpu-recipes-v0.1.3`.
 
