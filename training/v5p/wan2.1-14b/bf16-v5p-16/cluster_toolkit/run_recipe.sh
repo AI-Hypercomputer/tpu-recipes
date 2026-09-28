@@ -14,6 +14,9 @@ if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; 
 fi
 # --- End Environment Setup ---
 
+set -e
+set -o pipefail
+
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
 # to match your specific GCP project and cluster setup.
@@ -39,7 +42,8 @@ export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""  # must be pushed: docker push <this>
 
-export WORKLOAD_NAME="$(printf "%.14s" "${USER//_/-}-wan21")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-wan21-$(date +%H%M)}"
+export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 # DATASET_DIR is where the preprocessed tfrecords were uploaded (NOT the raw HF dataset).
 export DATASET_DIR=${BASE_OUTPUT_DIR}/wan_tfr_dataset_pusa_v1
 
@@ -84,7 +88,7 @@ flash_min_seq_length=0 \
 seed=123456789 \
 skip_first_n_steps_for_profiler=5 \
 profiler_steps=10 \
-per_device_batch_size=0.5 \
+per_device_batch_size=1 \
 ici_data_parallelism=1 \
 ici_fsdp_parallelism=8 \
 ici_tensor_parallelism=1 \
@@ -101,20 +105,22 @@ run_name=${WORKLOAD_NAME}"
   --location=$ZONE \
   --priority=very-high \
   --restarts=0 \
-  --compute-type=tpu-v5p --topology=2x2x2 \
+  --compute-type=ct5p-hightpu-4t --topology=2x2x2 \
   --num-slices=1 \
   --image="${WORKLOAD_IMAGE}" \
   --verbose --gke-namespace=default \
   --name="${WORKLOAD_NAME}" \
-  --command="set -e && \
+  --command="set -e && set -o pipefail && \
 export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export JAX_PLATFORMS='tpu,cpu' && \
 export ENABLE_PJRT_COMPATIBILITY='true' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 pip install . && \
 pip install chex && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 echo 'Starting WAN training ...' && \
-HF_HUB_CACHE=/dev/shm python3 -m src.maxdiffusion.train_wan \
+set +e; \
+HF_HUB_CACHE=/dev/shm python3 -u -m src.maxdiffusion.train_wan \
   src/maxdiffusion/configs/base_wan_14b.yml \
   output_dir=${BASE_OUTPUT_DIR} \
   train_data_dir=${DATASET_DIR} \
@@ -122,4 +128,9 @@ HF_HUB_CACHE=/dev/shm python3 -m src.maxdiffusion.train_wan \
   dataset_save_location=${DATASET_DIR} \
   base_output_directory=${BASE_OUTPUT_DIR} \
   run_name=${WORKLOAD_NAME} \
-  ${MAXDIFFUSION_ARGS}"
+  ${MAXDIFFUSION_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"

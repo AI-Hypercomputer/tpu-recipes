@@ -129,7 +129,7 @@ across all commands and configurations.
     image built in the [Docker container image](#docker-container-image)
     section. This image must be pushed before running the workload.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `$(printf "%.14s" "${USER//_/-}-wan21")-$(date +%Y%m%d-%H%M)`
+    `run_recipe.sh` to `$(printf "%.11s" "${USER//_/-}")-wan21-$(date +%H%M)`
     by default.
 -   `DEVICE_TYPE`: The TPU device type, `v5p-16`.
 -   `RESERVATION_NAME`: Your TPU v5p reservation name. Use the reservation name
@@ -151,7 +151,7 @@ in the cluster.
 ```bash
 gcluster deploy examples/gke-tpu-v5p/gke-tpu-v5p.yaml \
   --backend-config="bucket=${PROJECT_ID}-ctk-tf-state" \
-  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,reservation=${RESERVATION_NAME}"
+  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,machine_type=ct5p-hightpu-4t,tpu_topology=2x2x2,reservation=${RESERVATION_NAME}"
 ```
 
 
