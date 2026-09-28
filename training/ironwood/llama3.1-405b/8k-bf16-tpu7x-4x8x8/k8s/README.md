@@ -1,6 +1,6 @@
-# Pretrain qwen3-235b workload on Ironwood GKE clusters with Kubernetes JobSet
+# Pretrain llama3.1-405b workload on Ironwood GKE clusters with Kubernetes JobSet
 
-This recipe outlines the steps for running a qwen3-235b
+This recipe outlines the steps for running a llama3.1-405b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine)
 by applying a Kubernetes manifest to deploy a JobSet resource.
@@ -11,9 +11,9 @@ by applying a Kubernetes manifest to deploy a JobSet resource.
 
 This workload is configured with the following details:
 
--   Sequence Length: 4096
--   Precision: bf16
--   Chips: 256 (4x8x8 topology)
+-   Sequence Length: 8192
+-   Precision: bfloat16
+-   Chips: 64 (4x8x8 topology)
 
 ## Prerequisites
 
@@ -70,17 +70,17 @@ export BASE_OUTPUT_DIR=""    # e.g., "gs://your-bucket-name/my-base-output-dir"
 export WORKLOAD_IMAGE=""   # e.g., "gcr.io/my-project/my-maxtext-runner:latest"
 
 # Set workload name (or modify as needed, make sure its unique in the cluster)
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-qwen3-235b-a22b-4096-fsdp-4x8x8")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-llama3.1-405b")-$(date +%Y%m%d-%H%M)"
 ```
 
-### 2. Run qwen3-235b Pretraining Workload
+### 2. Run llama3.1-405b Pretraining Workload
 
 Once the environment variables are set, run the following commands to fetch
 cluster credentials and deploy the JobSet:
 
 ```bash
 # Fetch cluster credentials
-gcloud container clusters get-credentials ${CLUSTER_NAME} --location ${ZONE} --project ${PROJECT_ID}
+gcloud container clusters get-credentials ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
 
 # Apply the manifest
 envsubst '${BASE_OUTPUT_DIR} ${WORKLOAD_NAME} ${WORKLOAD_IMAGE}' < k8s_manifest.yaml | kubectl apply -n default -f -
@@ -104,7 +104,7 @@ kubectl logs -f -n default ${POD_NAME}
 
 You can also monitor your cluster and TPU usage through the Google Cloud
 Console:
-`https://console.cloud.google.com/kubernetes/workload/overview?project=${PROJECT_ID}`
+`https://console.cloud.google.com/kubernetes/workload/overview?project={PROJECT_ID}`
 
 ## Delete resources
 
@@ -122,7 +122,7 @@ After the job completes, you can check the results by:
 
 -   Accessing output logs from your job using `kubectl logs`.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
-    `${BASE_OUTPUT_DIR}` environment variable.
+    `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
 
 ## Next steps: deeper exploration and customization
