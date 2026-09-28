@@ -15,7 +15,7 @@ This workload is configured with the following details:
 -   Chips: 256 (v5p-512, 4x8x8 topology)
 
 The batch size is set to achieve a 4M-token global batch on one v5p-512 slice,
-as in the [XPK instructions](../README.md). If you run on a different slice
+as in the [XPK instructions](https://github.com/AI-Hypercomputer/tpu-recipes/blob/eaa413055ed55630461969327ce98a1164f13371/training/v5p/Llama2-7B-Maxtext/README.md). If you run on a different slice
 size, change `--topology` in `run_recipe.sh` and adjust
 `per_device_batch_size` in `MAXTEXT_ARGS` accordingly.
 
