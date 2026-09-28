@@ -21,9 +21,8 @@ the single-slice `gemma3_12b_32768_v6e256` model configuration from
 (profiler settings and the unused `dataset_path` omitted) run across
 multiple slices; MaxText shards the
 data-parallel dimension across slices (`dcn_data_parallelism=-1` by
-default). Note that this uses `ici_fsdp_parallelism=-1`, whereas the
-`gemma3_12b_32768_2x_v6e256` configuration used by the XPK recipe in
-the parent directory uses `ici_fsdp_parallelism=1` and
+default). Note that this uses `ici_fsdp_parallelism=-1`, whereas the MaxText
+`gemma3_12b_32768_2x_v6e256` configuration uses `ici_fsdp_parallelism=1` and
 `ici_fsdp_transpose_parallelism=-1`.
 
 ## Prerequisites
