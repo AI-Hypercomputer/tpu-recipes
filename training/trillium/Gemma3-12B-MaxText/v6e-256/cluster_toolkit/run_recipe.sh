@@ -28,20 +28,6 @@ export CLUSTER_NAME="${CLUSTER_NAME:-}"
 export ZONE="${ZONE:-}"
 export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
 export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
-
-# Validate required environment variables before submitting
-for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
-    if [[ -z "${!var}" ]]; then
-        echo "Error: Environment variable $var is required but not set." >&2
-        exit 1
-    fi
-done
-
-if [[ ! "${BASE_OUTPUT_DIR}" =~ ^gs:// ]]; then
-    echo "Error: BASE_OUTPUT_DIR must start with 'gs://'" >&2
-    exit 1
-fi
-
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-gemma3-12b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
@@ -54,7 +40,7 @@ MAXTEXT_ARGS=" \
 model_name=gemma3-12b \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME} \
-steps=${STEPS:-30} \
+steps=30 \
 per_device_batch_size=1 \
 num_vocab_tiling=16 \
 ici_fsdp_parallelism=-1 \
@@ -87,7 +73,7 @@ sa_block_kv_dq=1024"
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
 "${GCLUSTER_BIN}" job submit \
   --skip-prereqs \
-  --queue "${QUEUE:-multislice-queue}" \
+  --queue multislice-queue \
   --cluster "$CLUSTER_NAME" \
   --project "$PROJECT_ID" \
   --location "$ZONE" \
@@ -98,35 +84,16 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --num-slices 1 \
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
-  --gke-namespace "${NAMESPACE:-default}" \
+  --gke-namespace default \
   --name "${WORKLOAD_NAME}" \
-  --command "bash -c 'set -e && set -o pipefail && \
-export ENABLE_PATHWAYS_PERSISTENCE=\"1\" && \
-export LIBTPU_INIT_ARGS=\"${XLA_FLAGS}\" && \
-export ARTIFACT_DIR=\"${ARTIFACT_DIR}\" && \
-export JAX_PLATFORMS=\"tpu,cpu\" && \
-export ENABLE_PJRT_COMPATIBILITY=\"true\" && \
-if [ -d /deps/MaxText ]; then cd /deps/MaxText; elif [ -d /deps ]; then cd /deps; fi && \
-export PYTHONPATH=.:./src:\${PYTHONPATH:-} && \
-mkdir -p assets && \
-if [ -f assets/tokenizers/tokenizer.gemma3 ] && [ ! -f assets/tokenizer.gemma3 ]; then \
-  cp assets/tokenizers/tokenizer.gemma3 assets/tokenizer.gemma3 || true; \
-fi && \
-if [ ! -f assets/tokenizer.gemma3 ] && [ -f /deps/src/maxtext/assets/tokenizers/tokenizer.gemma3 ]; then \
-  cp /deps/src/maxtext/assets/tokenizers/tokenizer.gemma3 assets/tokenizer.gemma3 || true; \
-fi && \
+  --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
+export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
 set +e; \
-if [ -f MaxText/train.py ]; then \
-  python3 -u MaxText/train.py MaxText/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \
-else \
-  python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \
-fi; \
+python3 -u -m MaxText.train src/MaxText/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
 TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s train.log ]; then \
-  if command -v gcloud &> /dev/null; then \
-    timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
-  elif command -v gsutil &> /dev/null; then \
-    timeout 30s gsutil cp train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
-  fi; \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
 fi; \
-exit \${TRAIN_EXIT_CODE}'"
+exit \${TRAIN_EXIT_CODE}"
