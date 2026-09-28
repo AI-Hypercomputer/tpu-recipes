@@ -19,6 +19,9 @@ if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; 
 fi
 # --- End Environment Setup ---
 
+set -e
+set -o pipefail
+
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
 # to match your specific GCP project and cluster setup.
@@ -34,10 +37,7 @@ export TPU_TYPE="${TPU_TYPE:-v6e-8}"
 export RESOLUTION="${RESOLUTION:-720p}"
 
 export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest}"
-# NOTE: `head -c 5` closes the pipe early, which kills `tr` with SIGPIPE. The
-# `|| true` keeps that from tripping `set -o pipefail` and aborting the script.
-random_suffix=$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5 || true)
-export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.8s" "${USER//_/-}-wan22")-${random_suffix}-$(date +%Y%m%d-%H%M)}"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-wan22-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 export BASE_YAML_CONFIG="src/maxdiffusion/configs/base_wan_27b.yml"
 export SCRIPT_PATH="src/maxdiffusion/generate_wan.py"
@@ -107,13 +107,13 @@ esac
 # - v6e-8 represents 8 TPU cores (8 physical chips with a 2x4 GKE topology)
 # - v6e-16 represents 16 TPU cores (16 physical chips with a 4x4 GKE topology)
 case "$TPU_TYPE" in
-    "v6e-8" | "2x4")
+    "v6e-8")
         TPU_TOPOLOGY="2x4"
         ICI_DATA_PARALLELISM=2
         ICI_CONTEXT_PARALLELISM=4
         PER_DEVICE_BATCH_SIZE=0.125
         ;;
-    "v6e-16" | "4x4")
+    "v6e-16")
         TPU_TOPOLOGY="4x4"
         ICI_DATA_PARALLELISM=2
         ICI_CONTEXT_PARALLELISM=8
@@ -161,7 +161,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --cluster "$CLUSTER_NAME" \
   --project "$PROJECT_ID" \
   --location "$ZONE" \
-  --priority "${PRIORITY:-medium}" \
+  --priority medium \
   --restarts 0 \
   --compute-type ct6e-standard-4t \
   --topology "${TPU_TOPOLOGY}" \
@@ -170,7 +170,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --verbose \
   --gke-namespace default \
   --name "${WORKLOAD_NAME}" \
-  --command "set -e && \
+  --command "set -e && set -o pipefail && \
 export ARTIFACT_DIR=${ARTIFACT_DIR} && \
 export OUTPUT_DIR=${BASE_OUTPUT_DIR}/${WORKLOAD_NAME} && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \

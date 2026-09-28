@@ -114,7 +114,7 @@ across all commands and configurations.
     `<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest` by default.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` using the following command:
-    `export WORKLOAD_NAME="$(printf "%.14s" "${USER//_/-}-wan2-2-t2v")-$(date +%Y%m%d-%H%M)"`
+    `export WORKLOAD_NAME="$(printf "%.11s" "${USER//_/-}")-wan22-$(date +%H%M)"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `v6e-8` or `v6e-16`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
@@ -134,8 +134,10 @@ gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --locat
 ```bash
 gcluster deploy examples/gke-tpu-v6e/gke-tpu-v6e.yaml \
   --backend-config="bucket=${PROJECT_ID}-ctk-tf-state" \
-  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,reservation=${RESERVATION_NAME}"
+  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,machine_type=ct6e-standard-4t,tpu_topology=4x4,reservation=${RESERVATION_NAME}"
 ```
+
+For `v6e-8`, use `tpu_topology=2x4`.
 
 ## Docker container image
 
