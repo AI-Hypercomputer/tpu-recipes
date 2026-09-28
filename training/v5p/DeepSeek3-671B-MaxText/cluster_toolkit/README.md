@@ -15,8 +15,7 @@ This workload is configured with the following details:
 -   Chips: 512 (v5p-1024, 8x8x8 topology)
 
 The XLA flags and MaxText arguments in `run_recipe.sh` are the MaxText
-`deepseek3_671b_v5p_1024` benchmark configuration used by the
-[XPK instructions](https://github.com/AI-Hypercomputer/tpu-recipes/blob/eaa413055ed55630461969327ce98a1164f13371/training/v5p/DeepSeek3-671B-MaxText/README.md), resolved from
+`deepseek3_671b_v5p_1024` benchmark configuration, resolved from
 [`benchmarks/maxtext_v5p_model_configs.py`](https://github.com/AI-Hypercomputer/maxtext/blob/3eb77db3c94580f56f1b738f8d254b03bd205e35/benchmarks/maxtext_v5p_model_configs.py)
 and `benchmarks/xla_flags_library.py` at MaxText `3eb77db3c`.
 
