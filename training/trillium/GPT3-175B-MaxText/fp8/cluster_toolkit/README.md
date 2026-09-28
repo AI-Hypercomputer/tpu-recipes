@@ -18,7 +18,7 @@ The MaxText arguments and XLA flags in `run_recipe.sh` are the `gpt_3_175b`
 model configuration from
 [maxtext_trillium_model_configs.py](https://github.com/AI-Hypercomputer/maxtext/blob/e7292a3a572792a0d797fc8977b21d0f255729f1/benchmarks/maxtext_trillium_model_configs.py)
 at MaxText `e7292a3`, expanded inline so the script does not depend on the
-MaxText `benchmark_runner`. As in the XPK recipe, the container installs
+MaxText `benchmark_runner`. The container installs
 `libtpu-nightly` build `20241028` at start-up (`LIBTPU_NIGHTLY_VERSION` in
 `run_recipe.sh`).
 

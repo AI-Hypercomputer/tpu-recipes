@@ -35,8 +35,7 @@ export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-gpt3-175b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
-# libtpu-nightly build installed at container start (from the XPK recipe's
-# test environment).
+# libtpu-nightly build installed at container start.
 export LIBTPU_NIGHTLY_VERSION="20241028"
 
 
