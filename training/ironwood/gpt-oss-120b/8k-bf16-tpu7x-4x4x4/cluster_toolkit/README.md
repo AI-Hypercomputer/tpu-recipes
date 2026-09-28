@@ -134,7 +134,7 @@ gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --locat
 ```bash
 gcluster deploy examples/gke-tpu-7x/gke-tpu-7x.yaml \
   --backend-config="bucket=${PROJECT_ID}-ctk-tf-state" \
-  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,reservation=${RESERVATION_NAME}"
+  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,machine_type=tpu7x-standard-4t,tpu_topology=4x4x4,reservation=${RESERVATION_NAME}"
 ```
 
 

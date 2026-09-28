@@ -110,7 +110,6 @@ ici_fsdp_transpose_parallelism=1 \
 ici_fsdp_parallelism=64 \
 ici_data_parallelism=2 \
 dataset_type=synthetic \
-dataset_path=gs://<your_gcs_bucket> \
 use_gmm_v2=True \
 wi_tile_fwd_batch_seq=256 \
 wi_tile_fwd_embed_dim=2880 \
@@ -147,15 +146,16 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --num-slices=1 \
   --image="${WORKLOAD_IMAGE}" \
   --verbose --gke-namespace=default \
-   \
-   \
+  --gke-disable-parallel-containers \
   --name="${WORKLOAD_NAME}" \
-   \
   --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
- \
- \
-python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
-gcloud storage cp --no-user-output-enabled train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
+set +e; \
+python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
