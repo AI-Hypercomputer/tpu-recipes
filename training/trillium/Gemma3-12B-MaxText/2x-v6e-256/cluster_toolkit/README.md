@@ -22,20 +22,28 @@ bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable JAX_VERSION=0.7.0
 
 ### Starting workload (Cluster Toolkit)
 
-From the `cluster_toolkit` directory, start your Gemma3-12B workload:
+From the directory where you cloned this repository, start your Gemma3-12B workload:
 ```bash
 cd tpu-recipes/training/trillium/Gemma3-12B-MaxText/2x-v6e-256/cluster_toolkit
 export PROJECT_ID=$PROJECT
 export CLUSTER_NAME=$CLUSTER_NAME
 export ZONE=$ZONE
 export BASE_OUTPUT_DIR=$OUTPUT_DIR
-export WORKLOAD_IMAGE=<YOUR_MAXTEXT_RUNNER_IMAGE>
+export WORKLOAD_IMAGE=gcr.io/${PROJECT}/${USER}_runner # image uploaded in step 4 of MAXTEXT_README
 ./run_recipe.sh
 ```
 
 From your workload logs, you should start seeing step time logs like the following:
 ```
 completed step: 29, seconds: 7.793, TFLOP/s/device: 328.139, Tokens/s/device: 4204.799, total_weights: 16777216, loss: 11.151
+```
+
+### Monitor and clean up the workload
+
+`run_recipe.sh` prints the workload name when it submits the job. Set `WORKLOAD_NAME` to that name, then follow the logs or cancel the workload:
+```
+gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
+gcluster job cancel ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
 ```
 
 ### Workload Details
