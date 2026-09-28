@@ -87,8 +87,9 @@ run_name=${WORKLOAD_NAME}"
   --num-slices=1 \
   --image="${WORKLOAD_IMAGE}" \
   --verbose --gke-namespace=default \
+  --gke-disable-parallel-containers \
   --name="${WORKLOAD_NAME}" \
   --command="set -e && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS}"
+python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS}"
