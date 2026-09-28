@@ -33,20 +33,6 @@ export CLUSTER_NAME="${CLUSTER_NAME:-}"
 export ZONE="${ZONE:-}"
 export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
 export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
-
-# Validate required environment variables
-for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
-    if [[ -z "${!var}" ]]; then
-        echo "Error: Environment variable $var is required but not set." >&2
-        exit 1
-    fi
-done
-
-if [[ ! "${BASE_OUTPUT_DIR}" =~ ^gs:// ]]; then
-    echo "Error: BASE_OUTPUT_DIR must start with 'gs://'" >&2
-    exit 1
-fi
-
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-mistral7b-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
@@ -139,24 +125,14 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --verbose \
   --gke-namespace default \
   --name "${WORKLOAD_NAME}" \
-  --command "bash -c 'set -e && set -o pipefail && \\
-export ENABLE_PATHWAYS_PERSISTENCE=\"1\" && \\
-export LIBTPU_INIT_ARGS=\"${XLA_FLAGS}\" && \\
-export ARTIFACT_DIR=\"${ARTIFACT_DIR}\" && \\
-export JAX_PLATFORMS=\"tpu,cpu\" && \\
-export ENABLE_PJRT_COMPATIBILITY=\"true\" && \\
-set +e; \\
-if [ -f MaxText/train.py ]; then \\
-  python3 -u MaxText/train.py MaxText/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \\
-else \\
-  python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \\
-fi; \\
-TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \\
-if [ -s train.log ]; then \\
-  if command -v gcloud &> /dev/null; then \\
-    timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \\
-  elif command -v gsutil &> /dev/null; then \\
-    timeout 30s gsutil cp train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \\
-  fi; \\
-fi; \\
-exit \${TRAIN_EXIT_CODE}'"
+  --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
+export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
+set +e; \
+python3 -u MaxText/train.py MaxText/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
