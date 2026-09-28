@@ -19,15 +19,6 @@ The XLA flags and MaxText arguments in `run_recipe.sh` are the MaxText
 [`benchmarks/maxtext_v5p_model_configs.py`](https://github.com/AI-Hypercomputer/maxtext/blob/3eb77db3c94580f56f1b738f8d254b03bd205e35/benchmarks/maxtext_v5p_model_configs.py)
 and `benchmarks/xla_flags_library.py` at MaxText `3eb77db3c`.
 
-`run_recipe.sh` uses v5p-256 by default. The MaxText `llama4_scout_dropless_v5p_256` configuration is used unchanged on all three slices (`ici_fsdp_parallelism=-1` shards over all chips).
-To run on a larger slice, change `--topology` in `run_recipe.sh`:
-
-| TPU type  | Topology | Chips |
-| --------- | -------- | ----- |
-| v5p-256   | 4x4x8    | 128   |
-| v5p-512   | 4x8x8    | 256   |
-| v5p-1024  | 8x8x8    | 512   |
-
 ## Prerequisites
 
 To run this recipe, you need the following:
