@@ -19,9 +19,12 @@ if ! command -v "${GCLUSTER_BIN}" &> /dev/null; then
 fi
 # --- End Environment Setup ---
 
+set -e
+set -o pipefail
+
 # --- Configuration ---
-# Before running this script, please modify the environment variables below
-# to match your specific GCP project and cluster setup.
+# Before running this script, export the environment variables below in your
+# shell (see README.md), or edit the defaults here.
 # ---
 
 # --- Environment Variables ---
@@ -30,32 +33,13 @@ export CLUSTER_NAME="${CLUSTER_NAME:-}"
 export ZONE="${ZONE:-}"
 export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
 export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
-# Supports both per_device_batch_size=5 (42.6035 s/step, 462.86 TFLOP/s/device, -3.66% vs 44.220 s Launchpad baseline)
-# and per_device_batch_size=4 (llama3_1-70b-8192-bs4 in README.md).
-# Default to per_device_batch_size=4 matching README.md (llama3_1-70b-8192-bs4); set PER_DEVICE_BATCH_SIZE=5 for Launchpad bs=5 config
-export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-4}"
-
-# Validate required environment variables
-for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
-    if [[ -z "${!var}" ]]; then
-        echo "Error: Environment variable $var is required but not set." >&2
-        exit 1
-    fi
-done
-
-if [[ ! "${BASE_OUTPUT_DIR}" =~ ^gs:// ]]; then
-    echo "Error: BASE_OUTPUT_DIR must start with 'gs://'" >&2
-    exit 1
-fi
-
-CLEAN_USER=$(echo "${USER:-workload}" | tr '[:upper:]' '[:lower:]' | tr '_' '-' | tr -cd 'a-z0-9-' | cut -c1-8)
-CLEAN_USER="${CLEAN_USER:-workload}"
-export WORKLOAD_NAME="${WORKLOAD_NAME:-${CLEAN_USER}-l70b-128-$(date +%H%M)}"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-l70b-128-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
-# XLA Flags (100% matching training/trillium/Llama3.1-70B-MaxText/v6e-128/README.md:
-# DENSE_VMEM_LIMIT_FLAG + LAYOUT_FOR_ALL_REDUCE_SCATTER + DATA_PARALLEL_OVERLAP +
-# CF_FOR_ALL_GATHER + HOST_OFFLOAD_FLAGS)
+# XLA flags: the llama3_1_70b_8192_bs4 flag groups in MaxText@tpu-recipes-v0.1.4
+# benchmarks/xla_flags_library.py (DENSE_VMEM_LIMIT_FLAG +
+# LAYOUT_FOR_ALL_REDUCE_SCATTER + DATA_PARALLEL_OVERLAP + CF_FOR_ALL_GATHER +
+# HOST_OFFLOAD_FLAGS).
 XLA_FLAGS=" \
   --xla_tpu_scoped_vmem_limit_kib=98304 \
   --xla_tpu_use_minor_sharding_for_major_trivial_input=true \
@@ -83,15 +67,13 @@ XLA_FLAGS=" \
 # MaxText Workload Overrides
 MAXTEXT_ARGS="\
 model_name=llama3.1-70b \
-per_device_batch_size=${PER_DEVICE_BATCH_SIZE} \
+per_device_batch_size=4 \
 ici_fsdp_parallelism=-1 \
 remat_policy=custom \
-device_stage_input=offload \
 decoder_layer_input=offload \
 query_proj=offload \
 key_proj=offload \
 value_proj=offload \
-out_proj=offload \
 max_target_length=8192 \
 attention=flash \
 use_iota_embed=True \
@@ -130,24 +112,14 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --verbose \
   --gke-namespace default \
   --name "${WORKLOAD_NAME}" \
-  --command "bash -c 'set -e && set -o pipefail && \\
-export ENABLE_PATHWAYS_PERSISTENCE=\"1\" && \\
-export LIBTPU_INIT_ARGS=\"${XLA_FLAGS}\" && \\
-export ARTIFACT_DIR=\"${ARTIFACT_DIR}\" && \\
-export JAX_PLATFORMS=\"tpu,cpu\" && \\
-export ENABLE_PJRT_COMPATIBILITY=\"true\" && \\
-set +e; \\
-if [ -f MaxText/train.py ]; then \\
-  python3 -u MaxText/train.py MaxText/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \\
-else \\
-  python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \\
-fi; \\
-TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \\
-if [ -s train.log ]; then \\
-  if command -v gcloud &> /dev/null; then \\
-    timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \\
-  elif command -v gsutil &> /dev/null; then \\
-    timeout 30s gsutil cp train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \\
-  fi; \\
-fi; \\
-exit \${TRAIN_EXIT_CODE}'"
+  --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
+export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
+export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
+export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
+set +e; \
+python3 -u -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
