@@ -26,45 +26,32 @@ Please follow the [Cluster Toolkit Cloud TPU deployment guide](https://docs.clou
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 ```
 
-2. Build and push a docker image.
+2. Build a docker image and push it to an Artifact Registry Docker repository (`REPOSITORY`).
 
 ```
 cd maxtext
-bash docker_build_dependency_image.sh MODE=stable DEVICE=tpu
+bash src/dependencies/scripts/docker_build_dependency_image.sh MODE=stable DEVICE=tpu
+export WORKLOAD_IMAGE=us-docker.pkg.dev/${PROJECT}/${REPOSITORY}/${USER}_runner
+bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${WORKLOAD_IMAGE}
 ```
 
-3. (Optional) Install Cluster Toolkit (`gcluster` v1.104.0) if you haven't set it up.
+3. (Optional) Install Cluster Toolkit (`gcluster` v1.104.0) if you haven't set it up. `run_recipe.sh` prints the install commands if `gcluster` is not on your `PATH`.
 
-```
-# See https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/tag/v1.104.0
-```
-
-4. Specify workload configs.
-
-```
-export CLUSTER_NAME=v5p-demo #<your cluster name>
-export WORKLOAD_NAME=llama3-1-8b-10m-test #<your workload name>
-export RUN_NAME=llama3-1-8b-10m-run #<your run name>
-export TPU_TYPE=v5p-128 #<your TPU Type: 64 chips / 128 cores>
-export NUM_SLICES=1 #<number of TPU node-pools you want to use>
-export OUTPUT_PATH=gs://v5p-demo/ #<your GCS folder for results>
-```
-
-5. Run the workload from the `cluster_toolkit` directory:
+4. Run the workload from the `cluster_toolkit` directory:
 
 ```bash
 cd tpu-recipes/training/v5p/Llama3.1-8B-LongContext-Maxtext/cluster_toolkit
 export PROJECT_ID=$PROJECT
 export CLUSTER_NAME=$CLUSTER_NAME
 export ZONE=$ZONE
-export BASE_OUTPUT_DIR=${OUTPUT_PATH:-${BASE_OUTPUT_DIR}}
-export WORKLOAD_IMAGE=<YOUR_MAXTEXT_RUNNER_IMAGE>
+export BASE_OUTPUT_DIR=$OUTPUT_DIR
+export WORKLOAD_IMAGE=$WORKLOAD_IMAGE
 ./run_recipe.sh
 ```
 
-The script defaults to a 10M (10,485,760) sequence length on a 64-chip (128-core) TPU v5p topology (`v5p-128`). Attention uses ring context parallelism with causal load balancing, Splash attention kernels, custom remat policy, and device context.
+The script defaults to a 10M (10,485,760) sequence length on a 128-chip TPU v5p slice (topology `4x4x8`, `v5p-256`). Attention uses ring context parallelism with causal load balancing, Splash attention kernels, custom remat policy, and device context.
 
-6. (Optional) Other sequence lengths.
+5. (Optional) Other sequence lengths.
 
 Shorter contexts can use a smaller context parallelism degree, with the remaining chips assigned to FSDP:
 
@@ -79,7 +66,7 @@ Shorter contexts can use a smaller context parallelism degree, with the remainin
 ./run_recipe.sh MAX_TARGET_LENGTH=1048576 ICI_CONTEXT_PARALLELISM=16 ICI_FSDP_PARALLELISM=8 PER_DEVICE_BATCH_SIZE=0.0625
 ```
 
-7. (Optional) If you need to delete any of your workload, you can run the following command:
+6. (Optional) If you need to delete any of your workload, you can run the following command:
 ```
 export WORKLOAD_NAME_TO_DELETE=llama3-1-8b-10m-test
 
