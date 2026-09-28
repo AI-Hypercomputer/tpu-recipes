@@ -37,7 +37,7 @@ export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-mx-8x7b-
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
 
-# XLA Flags (from scripts/run_mixtral-8x7b.sh)
+# XLA Flags (from the former XPK recipe scripts/run_mixtral-8x7b.sh)
 # The async collective fusion flags from the original script
 # (--xla_tpu_enable_async_collective_fusion, ..._fuse_all_gather and
 # ..._multiple_steps) are omitted: current libtpu rejects async collective
@@ -52,7 +52,7 @@ XLA_FLAGS=" \
   --xla_enable_async_all_gather=true \
   --xla_tpu_scoped_vmem_limit_kib=81920 "
 
-# MaxText Workload Overrides (from scripts/run_mixtral-8x7b.sh)
+# MaxText Workload Overrides (from the former XPK recipe scripts/run_mixtral-8x7b.sh)
 MAXTEXT_ARGS="\
 model_name=mixtral-8x7b \
 per_device_batch_size=36 \
