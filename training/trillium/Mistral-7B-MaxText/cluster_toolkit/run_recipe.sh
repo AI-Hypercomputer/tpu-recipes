@@ -40,7 +40,7 @@ export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 # MaxText@tpu-recipes-v0.1.2 benchmarks/xla_flags_library.py
 # (DENSE_VMEM_LIMIT_FLAG + LAYOUT_FOR_ALL_REDUCE_SCATTER + DATA_PARALLEL_OVERLAP +
 # CF_FOR_ALL_GATHER + ENABLE_SPARSECORE_OFFLOADING_FOR_ALL_REDUCE +
-# HOST_OFFLOAD_FLAGS + DISABLE_COLLECTIVE_MATMUL), plus the last two flags below.
+# HOST_OFFLOAD_FLAGS + DISABLE_COLLECTIVE_MATMUL).
 XLA_FLAGS=" \
   --xla_tpu_scoped_vmem_limit_kib=98304 \
   --xla_tpu_use_minor_sharding_for_major_trivial_input=true \
@@ -72,9 +72,7 @@ XLA_FLAGS=" \
   --xla_max_concurrent_host_send_recv=100 \
   --xla_tpu_scheduler_percent_shared_memory_limit=100 \
   --xla_latency_hiding_scheduler_rerun=2 \
-  --xla_jf_spmd_threshold_for_windowed_einsum_mib=1000000 \
-  --xla_tpu_use_enhanced_launch_barrier=true \
-  --xla_tpu_spmd_rng_bit_generator_unsafe=true "
+  --xla_jf_spmd_threshold_for_windowed_einsum_mib=1000000 "
 
 # MaxText Workload Overrides
 MAXTEXT_ARGS="\
@@ -130,7 +128,7 @@ export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
 set +e; \
-python3 -u MaxText/train.py MaxText/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+python3 -u -m MaxText.train MaxText/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
 TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s train.log ]; then \
   timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
