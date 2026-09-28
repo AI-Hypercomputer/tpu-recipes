@@ -1,9 +1,5 @@
 # Inference Wan-AI/Wan2.1-T/I2V-14B-Diffusers, Wan-AI/Wan2.2-T/I2V-A14B-Diffusers. workload on Trillium GKE clusters with XPK.
 
-> **Note:** A Cluster Toolkit (`gcluster`) version of the Wan2.1-T2V v6e-16
-> recipe is available in
-> [Wan2.1-T2V/cluster_toolkit/README.md](Wan2.1-T2V/cluster_toolkit/README.md).
-
 This recipe outlines the steps for running a maxdiffusion
 [Maxdiffusion](https://github.com/AI-Hypercomputer/maxdiffusion) pretraining workload on
 [Trillium GKE clusters](https://cloud.google.com/kubernetes-engine) by using
