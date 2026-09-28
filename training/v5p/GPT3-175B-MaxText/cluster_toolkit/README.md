@@ -14,8 +14,8 @@ This workload is configured with the following details:
 -   Precision: bfloat16 with int8 quantization (`quantization=int8`)
 -   Chips: 512 (v5p-1024, 8x8x8 topology)
 
-`run_recipe.sh` uses the v5p-1024 configuration, the smallest slice documented
-in the [XPK instructions](https://github.com/AI-Hypercomputer/tpu-recipes/blob/eaa413055ed55630461969327ce98a1164f13371/training/v5p/GPT3-175B-MaxText/README.md). To run on one of the larger documented
+`run_recipe.sh` uses the v5p-1024 configuration, the smallest slice with a MaxText
+`configs/tpu/v5p/gpt3_175b/v5p_<N>.sh` configuration. To run on one of the larger
 slices, change `--topology` in `run_recipe.sh` and the following
 `MAXTEXT_ARGS` values (from MaxText `configs/tpu/v5p/gpt3_175b/v5p_<N>.sh`):
 
