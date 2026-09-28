@@ -16,11 +16,11 @@ This workload is configured with the following details:
 
 The XLA flags and MaxText arguments in `run_recipe.sh` are the MaxText
 `llama4_scout_dropless_v5p_256` benchmark configuration used by the
-[XPK instructions](../README.md), resolved from
+[XPK instructions](https://github.com/AI-Hypercomputer/tpu-recipes/blob/eaa413055ed55630461969327ce98a1164f13371/training/v5p/Llama4-Scout-17B-16E-Maxtext/README.md), resolved from
 [`benchmarks/maxtext_v5p_model_configs.py`](https://github.com/AI-Hypercomputer/maxtext/blob/3eb77db3c94580f56f1b738f8d254b03bd205e35/benchmarks/maxtext_v5p_model_configs.py)
 and `benchmarks/xla_flags_library.py` at MaxText `3eb77db3c`.
 
-`run_recipe.sh` uses v5p-256 by default. The MaxText `llama4_scout_dropless_v5p_256` configuration is used unchanged on all three slices (the [XPK instructions](../README.md) run the same configuration on v5p-256, v5p-512 and v5p-1024; `ici_fsdp_parallelism=-1` shards over all chips).
+`run_recipe.sh` uses v5p-256 by default. The MaxText `llama4_scout_dropless_v5p_256` configuration is used unchanged on all three slices (the [XPK instructions](https://github.com/AI-Hypercomputer/tpu-recipes/blob/eaa413055ed55630461969327ce98a1164f13371/training/v5p/Llama4-Scout-17B-16E-Maxtext/README.md) run the same configuration on v5p-256, v5p-512 and v5p-1024; `ici_fsdp_parallelism=-1` shards over all chips).
 To run on a larger slice, change `--topology` in `run_recipe.sh`:
 
 | TPU type  | Topology | Chips |
