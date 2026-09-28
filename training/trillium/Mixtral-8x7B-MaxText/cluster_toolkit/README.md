@@ -307,7 +307,7 @@ Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
 are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
 
 From your workload logs, you should start seeing step time logs like the
-following (1 slice, from the XPK version of this recipe):
+following (1 slice; reference numbers, not yet re-measured with this recipe):
 
 ```
 completed step: 11, seconds: 13.484, TFLOP/s/device: 302.311, Tokens/s/device: 3645.203, total_weights: 12582912, loss: 10.546
