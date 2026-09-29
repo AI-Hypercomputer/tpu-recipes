@@ -1,106 +1,378 @@
-# Instructions for training Llama3.1-8B-MaxText on TPU trillium (v6e-16)
+# Pretrain llama3-1-8b workload on Trillium GKE clusters with XPK
 
-## XPK setup
-Please follow the [XPK_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
+This recipe outlines the steps for running a llama3-1-8b
+[MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
+[Trillium GKE clusters](https://cloud.google.com/kubernetes-engine) by using
+[XPK](https://github.com/AI-Hypercomputer/xpk).
 
-## Prep for Maxtext
+<!--
+================================================================================
+WARNING: WORKLOAD DETAILS MISSING
+Some workload details (Sequence Length, Precision, or Chips) are showing as "N/A".
+Please ensure these values are correctly configured in the workload or config.yml.
+================================================================================
+-->
+## Workload Details
 
-### Install MaxText and Build Docker Image
-Please follow the [MAXTEXT_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/MAXTEXT_README.md) to install maxtext and build the docker image. The following variables should be set:
+This workload is configured with the following details:
 
-In step 1, use the MaxText [tpu-recipes-v0.1.4](https://github.com/AI-Hypercomputer/maxtext/releases/tag/tpu-recipes-v0.1.4) tag to run this recipe:
-```
-git checkout tpu-recipes-v0.1.4
-```
+-   Sequence Length: 8192
+-   Precision: bf16
+-   Chips: 16 (4x4 topology)
 
-> [!IMPORTANT]
-> **Required Patches for `tpu-recipes-v0.1.4`**:
-> The `tpu-recipes-v0.1.4` tag contains JAX 0.6.1 stable stack configuration errors. You **must** apply the following patches inside your cloned `maxtext` directory before building the docker image (Step 3):
-> 
-> 1.  **Patch A (Dockerfile Base Image Mismatch)**: In `maxtext_jax_ai_image.Dockerfile`, rename the base image variable check:
->     ```diff
->     -RUN if [ "$DEVICE" = "tpu" ] && [ "$JAX_STABLE_STACK_BASEIMAGE" = "us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.6.1-rev1" ]; then \
->     +RUN if [ "$DEVICE" = "tpu" ] && [ "$JAX_AI_IMAGE_BASEIMAGE" = "us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.6.1-rev1" ]; then \
->     ```
-> 2.  **Patch B (Requirements Conflicts)**: Clean up conflicts in `requirements_with_jax_stable_stack_0_6_1_pipreqs.txt` (e.g., change `aqt` to `aqtp`, and change `jetstream` to `google-jetstream@git+https://github.com/AI-Hypercomputer/JetStream.git` to avoid pulling the wrong package from PyPI).
-> 3.  **Troubleshooting (XPK / Docker Build Kit)**:
->     *   If your build host does not support `buildx` or you use pre-built runner images, you may need to patch `benchmarks/maxtext_xpk_runner.py` to use `--docker-image` instead of `--base-docker-image`.
->     *   If your Docker daemon does not support BuildKit, set `export DOCKER_BUILDKIT=0` in `docker_build_dependency_image.sh`.
+## Prerequisites
 
-In step 3, use the jax-stable-stack image containing JAX 0.6.1:
-```
-BASE_IMAGE=us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.6.1-rev1
-bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${BASE_IMAGE}
-```
+To run this recipe, you need the following:
 
-## Run Maxtext Llama3.1-8B workloads on GKE
+-   **GCP Project Setup:** Ensure you have a GCP project with billing enabled
+    and are allowlisted for Trillium access.
+-   **User Project Permissions:** The account used requires the following IAM
+    Roles:
+    -   Artifact Registry Writer
+    -   Compute Admin
+    -   Kubernetes Engine Admin
+    -   Logging Admin
+    -   Monitoring Admin
+    -   Service Account User
+    -   Storage Admin
+    -   Vertex AI Administrator
+    -   Service Usage Consumer
+    -   TPU Viewer
+-   **Docker:** Docker must be installed on your workstation. Follow the steps
+    in the [Install XPK and dependencies](#install-xpk-and-dependencies) section
+    to install Docker.
+-   **Python 3.13 Virtual Environment:** A Python
+    3.13 virtual environment is required. Instructions
+    for setting this up are also in the
+    [Install XPK and dependencies](#install-xpk-and-dependencies) section.
+-   **XPK and Dependencies:** Follow the steps in the
+    [Install XPK and dependencies](#install-xpk-and-dependencies) section to
+    install XPK, `kubectl`, `kubectl-kueue`, and `kubectl-kjob`.
 
-### Starting workload
 
-From the MaxText root directory, start your Llama3.1-8B workload.
-```
-python3 -m benchmarks.benchmark_runner xpk \
-    --project=$PROJECT \
-    --zone=$ZONE \
-    --device_type=v6e-16 \
-    --num_slices=1  \
-    --cluster_name=${CLUSTER_NAME} \
-    --base_output_directory=${OUTPUT_DIR} \
-    --model_name="llama3_1_8b_8192_no_collective_matmul" \
-    --base_docker_image=maxtext_base_image
-```
+## Install XPK and dependencies
 
-From your workload logs, you should start seeing step time logs like the following:
-```
-completed step: 14, seconds: 3.393, TFLOP/s/device: 419.485, Tokens/s/device: 7243.378, total_weights: 393216, loss: 3.974
-```
+### XPK and Dependency Installation
 
-### Workload Details
+#### Virtual Python Environment
 
-For reference, here are the `llama3_1_8b_8192_no_collective_matmul` workload details as found in `MaxText@tpu-recipes-v0.1.4`:
+Run the following to create a virtual Python environment:
 
-```
-MaxTextModel(
-    model_name="llama3_1-8b-8192-no-collective-matmul",
-    model_type="llama3.1-8b",
-    tuning_params={
-        "per_device_batch_size": 3,
-        "ici_fsdp_parallelism": -1,
-        "remat_policy": "custom",
-        "decoder_layer_input": "offload",
-        "out_proj": "offload",
-        "query_proj": "offload",
-        "key_proj": "offload",
-        "value_proj": "offload",
-        "max_target_length": 8192,
-        "attention": "flash",
-        "use_iota_embed": True,
-        "dataset_path": "gs://max-datasets-rogue",
-        "dataset_type": "synthetic",
-        "enable_checkpointing": False,
-        "sa_block_q": 2048,
-        "sa_block_kv": 2048,
-        "sa_block_kv_compute": 2048,
-        "sa_block_q_dkv": 2048,
-        "sa_block_kv_dkv": 2048,
-        "sa_block_kv_dkv_compute": 2048,
-        "sa_block_q_dq": 2048,
-        "sa_block_kv_dq": 2048,
-        "sa_use_fused_bwd_kernel": True,
-        "profiler": "xplane",
-        "skip_first_n_steps_for_profiler": 10,
-        "profiler_steps": 5,
-    },
-    xla_flags=(
-        xla_flags_library.DENSE_VMEM_LIMIT_FLAG
-        + xla_flags_library.LAYOUT_FOR_ALL_REDUCE_SCATTER
-        + xla_flags_library.DATA_PARALLEL_OVERLAP
-        + xla_flags_library.CF_FOR_ALL_GATHER
-        + xla_flags_library.ENABLE_SPARSECORE_OFFLOADING_FOR_ALL_REDUCE
-        + xla_flags_library.HOST_OFFLOAD_FLAGS
-        + xla_flags_library.DISABLE_COLLECTIVE_MATMUL
-    ),
-)
+```bash
+# Set up uv
+sudo apt update
+curl -LsSf https://astral.sh/uv/install.sh -o install-uv.sh
+chmod +x install-uv.sh
+./install-uv.sh
+rm install-uv.sh
+source ${HOME}/.local/bin/env
+
+# Set up and Activate Python 3.13 virtual environment
+uv venv --seed ${HOME}/.local/bin/venv --python 3.13 --clear
+source ${HOME}/.local/bin/venv/bin/activate
+pip install --upgrade pip
 ```
 
-This equivalent workload code can be found in the [maxtext_trillium_model_configs.py](https://github.com/AI-Hypercomputer/maxtext/blob/9f1820b472ef362e7b5c782fe1d6fda8a0943eff/benchmarks/maxtext_trillium_model_configs.py) file within the MaxText repository.
+#### XPK
+
+Make sure you have the virtual environment activated when running XPK.
+
+Install XPK and necessary tools:
+
+```bash
+# Install gcloud, if not already installed, https://cloud.google.com/sdk/docs/install
+# Install kubectl, if not already installed, https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_kubectl
+
+# Ensure to log in to your gcloud
+
+# Install latest xpk
+pip install xpk==1.16.0
+
+# Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
+curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.16.0/tools/install-xpk.sh -o install-xpk.sh
+chmod +x install-xpk.sh
+sudo ./install-xpk.sh
+rm install-xpk.sh
+
+# Follow https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin to install gke-gcloud-auth-plugin
+```
+
+#### Docker
+
+Install Docker using instructions provided by your administrator. Once
+installed, run the following commands:
+
+```bash
+## Configure docker and test installation
+gcloud auth configure-docker
+sudo usermod -aG docker $USER ## relaunch the terminal and make sure you have the virtual environment activated after running this command
+docker run hello-world # Test docker
+```
+
+
+## Orchestration and deployment tools
+
+For this recipe, the following setup is used:
+
+-   **Orchestration** -
+    [Google Kubernetes Engine (GKE)](https://cloud.google.com/kubernetes-engine)
+-   **Pretraining job configuration and deployment** - XPK is used to configure
+    and deploy the
+    [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
+    resource, which manages the execution of the llama3-1-8b workload.
+
+
+## Test environment
+
+This recipe is optimized for and tested with v6e-16.
+
+-   **GKE cluster** To create your GKE cluster, use the XPK instructions.
+    [XPK instructions](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#cluster-create).
+    A sample command to create an XPK cluster is provided below.
+
+### Environment Variables for Cluster Creation
+
+The environment variables required for cluster creation and workload execution
+are defined at the beginning of the `run_recipe.sh` script. **Before running the
+`xpk workload create` command**, please open `run_recipe.sh` and modify the
+`export` statements to set these variables to match your environment. It is
+crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
+across all commands and configurations.
+
+-   `PROJECT_ID`: Your GCP project name.
+-   `CLUSTER_NAME`: The target cluster name.
+-   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
+-   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
+-   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
+    `"gs://<your_gcs_bucket>"`).
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
+    `run_recipe.sh` to
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-llama3-1-8b-runner` by
+    default, matching the image built in the
+    [Docker container image](#docker-container-image) section.
+-   `WORKLOAD_NAME`: A unique name for your workload. This is set in
+    `run_recipe.sh` to `${USER}-llama3-1-8b-$(date +%H%M)` by default.
+-   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
+    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
+-   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
+    within the same project. For a shared project, use
+    `"projects/<project_number>/reservations/<reservation_name>"`.
+
+If you don't have a GCS bucket, create one with this command:
+
+```bash
+# Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
+gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
+```
+
+### Sample XPK Cluster Creation Command
+
+```bash
+xpk cluster create \
+  --cluster=${CLUSTER_NAME} \
+  --project=${PROJECT_ID} \
+  --zone=${ZONE} \
+  --tpu-type=${ACCELERATOR_TYPE} \
+  --num-slices=1 \
+  --reservation=${RESERVATION_NAME}
+```
+
+
+## Docker container image
+
+To build your own image, follow the steps linked in this section. If you don't
+have Docker installed on your workstation, see the section below for installing
+XPK and its dependencies. Docker installation is part of this process.
+
+### Steps for building workload image
+
+**Warning:** If any of the software versions below show as "N/A", you *must*
+fill in the correct versions. To find the missing versions (e.g., for MaxText
+commit hash, Libtpu, and Jax/Jaxlib), you may need to:
+1.  Pull the Docker image from the workload that this recipe is based on.
+2.  Start the Docker container.
+3.  Run commands within the container to get the specific versions. For example,
+to find the MaxText commit, you can use `git rev-parse HEAD` inside the cloned
+MaxText repository within the container. For Python package versions, use
+`pip show <package_name>`.
+
+The following software versions are used:
+
+-   Libtpu version: 0.0.46
+-   Jax version: 0.11.2.dev20260825
+-   Maxtext version: 9d92bf0
+-   Python: 3.13
+-   XPK: 1.16.0
+
+Docker Image Building Command:
+
+```bash
+export CONTAINER_REGISTRY="" # Initialize with your registry
+export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
+export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
+
+# Set up and Activate Python 3.12 virtual environment for Docker build
+uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
+source ${HOME}/.local/bin/venv-docker/bin/activate
+pip install --upgrade pip
+
+# Make sure you're running on a Virtual Environment with python 3.12
+if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
+
+# Clone MaxText Repository and Checkout Recipe Branch
+git clone https://github.com/AI-Hypercomputer/maxtext.git
+cd maxtext
+git checkout 9d92bf0
+
+# Build and upload the docker image
+bash src/dependencies/scripts/docker_build_dependency_image.sh \
+  MODE=nightly \
+  JAX_VERSION=0.11.2.dev20260825 \
+  LIBTPU_VERSION=0.0.46
+bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
+
+# Deactivate the virtual environment
+deactivate
+
+# Return to the recipe directory
+cd ..
+```
+
+## Training dataset
+
+This recipe uses a mock pretraining dataset provided by the MaxText framework.
+
+## Run the recipe
+
+### Configure environment settings
+
+Before running any commands in this section, ensure you have set the environment
+variables as described in
+[Environment Variables for Cluster Creation](#environment-variables-for-cluster-creation).
+
+### Connect to an existing cluster (Optional)
+
+If you want to connect to your GKE cluster to see its current state before
+running the benchmark, you can use the following gcloud command. (Note that XPK
+does this for you already):
+
+```bash
+gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+```
+
+### Run llama3-1-8b Pretraining Workload
+
+The `run_recipe.sh` script contains all the necessary environment variables and
+configurations to launch the llama3-1-8b pretraining workload.
+
+To run the benchmark, first make the script executable, edit it to configure
+environment variables, and then run it:
+
+```bash
+chmod +x run_recipe.sh
+nano run_recipe.sh
+./run_recipe.sh
+```
+
+You can customize the run by modifying `run_recipe.sh`:
+
+-   **Environment Variables:** Variables like `PROJECT_ID`, `CLUSTER_NAME`,
+    `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, and `BASE_OUTPUT_DIR` are defined
+    at the beginning of the script. Adjust these to match your environment.
+-   **XLA Flags:** The `XLA_FLAGS` variable contains a set of XLA configurations
+    optimized for this workload. These can be tuned for performance or
+    debugging.
+-   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
+    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
+    command. This includes model-specific settings like `per_device_batch_size`,
+    `max_target_length`, and others. You can modify these to experiment with
+    different model configurations.
+-   **Virtual Environment:** The script activates the virtual environment
+    created during the
+    [Install XPK and dependencies](#install-xpk-and-dependencies) steps. If you
+    used a different virtual environment, modify the `source` command at the top
+    of `run_recipe.sh`.
+
+Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
+are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
+
+## Monitor the job
+
+To monitor your job's progress, you can use kubectl to check the Jobset status
+and logs:
+
+```bash
+kubectl get jobset -n default ${WORKLOAD_NAME}
+
+# Get the name of the first pod in the JobSet
+POD_NAME=$(kubectl get pods -l jobset.sigs.k8s.io/jobset-name=${WORKLOAD_NAME} -n default -o jsonpath='{.items[0].metadata.name}')
+
+# Follow the logs of that pod
+kubectl logs -f -n default ${POD_NAME}
+```
+
+You can also monitor your cluster and TPU usage through the Google Cloud
+Console.
+
+### Follow Workload and View Metrics
+
+After running `xpk workload create`, you will get a link to the Google Cloud
+Console to view your workload logs. Example: `[XPK] Follow your workload here:
+https://console.cloud.google.com/kubernetes/service/${ZONE}/${PROJECT_ID}/default/${WORKLOAD_NAME}/details?project=${PROJECT_ID}`
+Alternatively, list workloads: (`xpk workload list`)
+
+```bash
+xpk workload list --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+```
+
+For more in-depth debugging, use xpk inspector: (`xpk inspector`)
+
+```bash
+xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload ${WORKLOAD_NAME}]
+```
+
+
+### Delete resources
+
+#### Delete a specific workload
+
+```bash
+xpk workload delete --workload ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+# Or filter and delete:
+xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} --filter-by-job=${USER}
+```
+
+#### Delete the entire XPK cluster
+
+```bash
+xpk cluster delete --cluster ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
+```
+
+
+## Check results
+
+After the job completes, you can check the results by:
+
+-   Accessing output logs from your job.
+-   Checking any data stored in the Google Cloud Storage bucket specified by the
+    `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
+-   Reviewing metrics in Cloud Monitoring, if configured.
+
+
+## Next steps: deeper exploration and customization
+
+This recipe is designed to provide a simple, reproducible "0-to-1" experience
+for running a MaxText pre-training workload. Its primary purpose is to help you
+verify your environment and achieve a first success with TPUs quickly and
+reliably.
+
+For deeper exploration, including customizing model configurations, tuning
+performance with different XLA flags, and running custom experiments, we
+recommend using the benchmark_runner.py script directly from the MaxText
+repository. This script offers the full range of MaxText's flexibility and is
+the ideal tool for power users and researchers who want to move beyond the
+initial benchmark and tailor the workload to their specific needs. To learn
+more, see the
+[MaxText Benchmark Runner Guide](https://github.com/AI-Hypercomputer/maxtext/blob/main/benchmarks/Getting_Started_Benchmarking.md)
+on using benchmark_runner.py for advanced benchmarking.
