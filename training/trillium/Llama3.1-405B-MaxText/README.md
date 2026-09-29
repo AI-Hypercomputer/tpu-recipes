@@ -16,7 +16,7 @@ git checkout tpu-recipes-v0.1.2
 In step 3, use the jax-stable-stack image containing JAX 0.5.2:
 ```
 BASE_IMAGE=us-docker.pkg.dev/cloud-tpu-images/jax-stable-stack/tpu:jax0.5.2-rev1
-bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${BASE_IMAGE}
+bash src/dependencies/scripts/docker_build_dependency_image.sh DEVICE=tpu MODE=stable BASEIMAGE=${BASE_IMAGE}
 ```
 
 ## Run Maxtext Llama3.1-405B workloads on GKE
