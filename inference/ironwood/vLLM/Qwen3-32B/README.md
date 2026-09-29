@@ -171,8 +171,10 @@ create a node pool with a single TPU v7 node in 1x1x1 configuration.
 4. Apply the vLLM manifest using the provided [qwen3_32b-server.yaml](./qwen3_32b-server.yaml) file in this directory
 
     **Note:** This config is for 1k/8k and 8k/1k workloads. If users want to run
-    a 1k/1k (other) workload, please change `max-model-len` and restart the
-    server.
+    a 1k/1k workload, please change `--max-model-len` to `2048`, set
+    `"compilation_sizes"` in `--additional-config` to
+    `[320]`, remove the
+    `LAYOUT_Q_PROJ_AS_NDH` environment variable, and restart the server.
 
     ```bash
     kubectl apply -f qwen3_32b-server.yaml
@@ -376,7 +378,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260914-2ea06d0-51da0ca
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -420,7 +422,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260914-2ea06d0-51da0ca
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -464,7 +466,7 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
       terminationGracePeriodSeconds: 60
       containers:
       - name: vllm-bench
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260914-2ea06d0-51da0ca
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -528,9 +530,9 @@ First, download the client code: `git clone https://github.com/SemiAnalysisAI/In
 
     Workload | Output Token Throughput (tok/s) Per Chip
     :------- | :---------------------------------------
-    1k/1k    | 6556.72
-    1k/8k    | 3959.56
-    8k/1k    | 1382.18
+    1k/1k    | 7709.61
+    1k/8k    | 4929.07
+    8k/1k    | 1509.15
 
     **Note**: These benchmark results are based on the `InferenceX` client. The
     development team is continuously improving and optimizing performance; as such,

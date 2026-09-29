@@ -40,7 +40,7 @@ spec:
         cloud.google.com/gke-tpu-topology: 1x1x1
       containers:
       - name: vllm-tpu
-        image: vllm/vllm-tpu:nightly-20260330-2f76400-8c0b626
+        image: vllm/vllm-tpu:nightly-20260914-2ea06d0-51da0ca
         command: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
         args:
         - --host=0.0.0.0
@@ -51,13 +51,13 @@ spec:
         - --data-parallel-size=1
         - --max-model-len=9216
         - --max-num-batched-tokens=4096
-        - --max-num-seqs=135
+        - --max-num-seqs=320
         - --gpu-memory-utilization=0.98
         - --block-size=256
         - --kv-cache-dtype=fp8
         - --no-enable-prefix-caching
         - --async-scheduling
-        - '--additional-config={"quantization": {"qwix": {"rules": [{"module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}'
+        - '--additional-config={"quantization": {"qwix": {"rules": [{"module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}, "compilation_sizes": [96, 160, 192, 224, 288, 320]}'
         - --download-dir=/data
         env:
         - name: HF_HOME
