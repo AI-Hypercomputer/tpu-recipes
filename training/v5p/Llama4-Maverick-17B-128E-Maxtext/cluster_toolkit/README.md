@@ -137,11 +137,11 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-llama4-maverick-runner` by
-    default, matching the image built in the
-    [Docker container image](#docker-container-image) section.
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. `run_recipe.sh` leaves
+    it empty; set it to the image you built in the
+    [Docker container image](#docker-container-image) section, i.e.
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}` (by default
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner`).
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` to `${USER}-l4-maverick-$(date +%H%M)` by default.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `v5p-256`, topology `4x4x8`). See topologies
