@@ -62,21 +62,21 @@ xpk workload create \
 --command "bash src/maxtext/configs/run_llama3.1-8b-long-context.sh RUN_NAME=${RUN_NAME} OUTPUT_PATH=${OUTPUT_PATH}"
 ```
 
-The script defaults to a 10M (10,485,760) sequence length on a 64-chip (128-core) TPU v5p topology (`v5p-128`). Attention uses ring context parallelism with causal load balancing, Splash attention kernels, custom remat policy, and device context.
+The script defaults to a 10M (10,485,760) sequence length on a 64-chip (128-core) TPU v5p topology (`v5p-128`, one JAX device per chip). Attention uses ring context parallelism (`ici_context_parallelism=64`) with causal load balancing and Splash attention kernels. At 10M, full rematerialization is required to fit in the 95 GB of HBM per chip.
 
 6. (Optional) Other sequence lengths.
 
-Shorter contexts can use a smaller context parallelism degree, with the remaining chips assigned to FSDP:
+All sequence lengths use context parallelism across all 64 chips. Shorter contexts fit a larger per-device batch and cheaper remat settings:
 
-| Sequence length | ici_context_parallelism | ici_fsdp_parallelism | per_device_batch_size |
-| --------------- | ----------------------- | -------------------- | --------------------- |
-| 1048576 (1M)    | 16                      | 8                    | 0.0625                |
-| 2097152 (2M)    | 32                      | 4                    | 0.03125               |
-| 5242880 (5M)    | 64                      | 2                    | 0.015625              |
-| 10485760 (10M)  | 128                     | 1                    | 0.0078125             |
+| Sequence length | ici_context_parallelism | ici_fsdp_parallelism | per_device_batch_size | REMAT_POLICY | CONTEXT |
+| --------------- | ----------------------- | -------------------- | --------------------- | ------------ | ------- |
+| 1048576 (1M)    | 64                      | 1                    | 0.03125               | custom       | offload |
+| 2097152 (2M)    | 64                      | 1                    | 0.03125               | custom       | device  |
+| 5242880 (5M)    | 64                      | 1                    | 0.015625              | custom       | offload |
+| 10485760 (10M)  | 64                      | 1                    | 0.015625              | full         | remat   |
 
 ```
---command "bash src/maxtext/configs/run_llama3.1-8b-long-context.sh RUN_NAME=${RUN_NAME} OUTPUT_PATH=${OUTPUT_PATH} MAX_TARGET_LENGTH=1048576 ICI_CONTEXT_PARALLELISM=16 ICI_FSDP_PARALLELISM=8 PER_DEVICE_BATCH_SIZE=0.0625"
+--command "bash src/maxtext/configs/run_llama3.1-8b-long-context.sh RUN_NAME=${RUN_NAME} OUTPUT_PATH=${OUTPUT_PATH} MAX_TARGET_LENGTH=1048576 PER_DEVICE_BATCH_SIZE=0.03125 REMAT_POLICY=custom CONTEXT=offload"
 ```
 
 7. (Optional) If you need to delete any of your workload, you can run the following command:
