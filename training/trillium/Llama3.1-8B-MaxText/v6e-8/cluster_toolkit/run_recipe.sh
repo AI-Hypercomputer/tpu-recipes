@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
-# If you haven't installed gcluster, please refer to the README.md.
+# This script requires Cluster Toolkit (gcluster v1.104.0) installed.
+# If you haven't set up gcluster and the environment, please refer to the README.md.
 
 export PATH="${HOME}/cluster-toolkit:${PATH}"
 CTK_VERSION="1.104.0"
