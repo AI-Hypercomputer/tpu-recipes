@@ -298,14 +298,6 @@ Note that any MaxDiffusion configurations not explicitly overridden in
 `MAXDIFFUSION_ARGS` are expected to use the defaults within the specified
 `WORKLOAD_IMAGE`.
 
-### Hugging Face cache location
-
-Cluster Toolkit refuses to mount onto the reserved system path `/dev/shm`, so the
-recipe mounts the host's `/dev/shm` tmpfs at `/dev_shm` inside the container
-(`--mount "/dev/shm;/dev_shm;rw"`) and sets `HF_HUB_CACHE=/dev_shm` accordingly.
-`/tmp` is not a viable alternative: the root ephemeral disk is too small for the
-Wan model weights and the pod is evicted mid-download.
-
 ## Monitor the job
 
 To monitor your job's progress, you can use kubectl to check the Jobset status
