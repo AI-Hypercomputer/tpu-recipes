@@ -77,6 +77,7 @@ use_iota_embed=True \
 dataset_type=synthetic \
 reuse_example_batch=1 \
 enable_checkpointing=False \
+profiler=xplane \
 sa_block_q=1024 \
 sa_block_q_dkv=2048 \
 sa_block_q_dq=2048 \

@@ -127,27 +127,30 @@ hosts in total).
 
 ### Environment Variables for Cluster Creation
 
-The environment variables required for cluster creation and workload execution
-are defined at the beginning of the `run_recipe.sh` script. **Before running the
-`gcluster job submit` command**, please open `run_recipe.sh` and modify the
-`export` statements to set these variables to match your environment. It is
-crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
-across all commands and configurations.
+The following environment variables are defined at the beginning of the
+`run_recipe.sh` script. **Before running the `gcluster job submit` command**,
+please open `run_recipe.sh` and modify the `export` statements to set these
+variables to match your environment. The commands in this README use the same
+variables, so export them in your shell as well. It is crucial to use consistent
+values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE` across all commands and
+configurations.
 
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
 -   `ZONE`: The zone for your cluster (e.g., `us-east5-b`).
--   `REGION`: The region for your cluster (e.g., `us-east5`). Can be derived as `${ZONE%-*}`.
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload, i.e. the image built
     in the [Docker container image](#docker-container-image) section (e.g.
     `gcr.io/${PROJECT_ID}/${USER}_runner`).
--   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-l405b-$(date +%H%M)` by default.
--   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
-    within the same project. For a shared project, use
-    `"projects/<project_number>/reservations/<reservation_name>"`.
+-   `WORKLOAD_NAME`: A unique name for your workload. By default,
+    `run_recipe.sh` sets it to `<user>-l405b-$(date +%H%M)`, where `<user>` is
+    the first 11 characters of `${USER}` with `_` replaced by `-`, so that the
+    name stays within gcluster's 28-character limit.
+
+`REGION` (e.g., `us-east5`) is derived as `${ZONE%-*}` in the cluster creation
+commands below. Your TPU reservation is set in the Cluster Toolkit deployment
+file (see [Deploy Cluster with Cluster Toolkit](#2-deploy-cluster-with-cluster-toolkit)).
 
 If you don't have a GCS bucket, create one with this command:
 
