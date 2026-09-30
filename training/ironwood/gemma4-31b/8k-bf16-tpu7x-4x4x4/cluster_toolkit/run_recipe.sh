@@ -100,7 +100,10 @@ gcs_metrics=True \
 dataset_type=synthetic \
 steps=30 \
 base_output_directory=${BASE_OUTPUT_DIR} \
-run_name=${WORKLOAD_NAME}"
+run_name=${WORKLOAD_NAME} \
+profiler=xplane \
+skip_first_n_steps_for_profiler=5 \
+profiler_steps=3"
 
 
 echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
@@ -118,6 +121,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
   --gke-namespace default \
+  --gke-disable-parallel-containers \
   --name "${WORKLOAD_NAME}" \
   --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
