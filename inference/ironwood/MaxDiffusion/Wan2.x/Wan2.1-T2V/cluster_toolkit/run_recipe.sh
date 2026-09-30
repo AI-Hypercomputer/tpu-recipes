@@ -162,6 +162,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --skip-prereqs \
   --queue multislice-queue \
   --mount "/dev/shm;/dev_shm;rw" \
+  --gke-disable-parallel-containers \
   --cluster "$CLUSTER_NAME" \
   --project "$PROJECT_ID" \
   --location "$ZONE" \
@@ -182,7 +183,7 @@ ${COMMAND_PREFIX} && export HF_TOKEN=${HF_TOKEN} && \
 set +e; \
 python ${SCRIPT_PATH} \
   ${BASE_YAML_CONFIG} \
-  ${MAXDIFFUSION_ARGS} | tee generate.log; \
+  ${MAXDIFFUSION_ARGS} 2>&1 | tee generate.log; \
 GENERATE_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s generate.log ]; then \
   timeout 30s gcloud storage cp --no-user-output-enabled generate.log \${ARTIFACT_DIR}/logs/generate-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
