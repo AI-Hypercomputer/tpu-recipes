@@ -123,32 +123,34 @@ This recipe is configured for v5p-1024 (8x8x8 topology).
 
 ### Environment Variables for Cluster Creation
 
-The environment variables required for cluster creation and workload execution
-are defined at the beginning of the `run_recipe.sh` script. **Before running the
-`gcluster job submit` command**, please open `run_recipe.sh` and modify the
-`export` statements to set these variables to match your environment. It is
-crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
-across all commands and configurations.
+The following environment variables are defined at the beginning of the
+`run_recipe.sh` script. **Before running the `gcluster job submit` command**,
+please open `run_recipe.sh` and modify the `export` statements to set these
+variables to match your environment. The commands in this README use the same
+variables, so export them in your shell as well. It is crucial to use consistent
+values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE` across all commands and
+configurations.
 
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
--   `REGION`: The region for your cluster (e.g., `us-central1`). Can be derived as `${ZONE%-*}`.
--   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-deepseek3-671b-runner` by
-    default, matching the image built in the
-    [Docker container image](#docker-container-image) section.
--   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-ds3-671b-$(date +%H%M)` by default.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `v5p-1024`, topology `8x8x8`). See topologies
-    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
--   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
-    within the same project. For a shared project, use
-    `"projects/<project_number>/reservations/<reservation_name>"`.
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. This is empty in
+    `run_recipe.sh`; set it to the image built in the
+    [Docker container image](#docker-container-image) section
+    (`${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner`).
+-   `WORKLOAD_NAME`: A unique name for your workload. By default,
+    `run_recipe.sh` sets it to `<user>-ds3-671b-$(date +%H%M)`, where `<user>`
+    is the first 11 characters of `${USER}` with `_` replaced by `-`, so that the
+    name stays within gcluster's 28-character limit.
+
+The following variables are set in the commands below that use them:
+
+-   `REGION`: The region for your cluster (e.g., `us-central1`), derived as
+    `${ZONE%-*}` in the cluster creation commands.
+-   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`), set in
+    the [Docker container image](#docker-container-image) commands.
 
 If you don't have a GCS bucket, create one with this command:
 
@@ -392,6 +394,20 @@ After the job completes, you can check the results by:
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
+
+As training progresses, the workload logs show a line like the following for
+each step:
+
+```
+completed step: 11, seconds: 90.668, TFLOP/s/device: 152.415, Tokens/s/device: 542.108, total_weights: 25165824, loss: 10.989
+```
+
+This reference line is from the previous version of this recipe, which ran the
+[`deepseek3_671b_v5p_1024`](https://github.com/AI-Hypercomputer/maxtext/blob/3eb77db3c94580f56f1b738f8d254b03bd205e35/benchmarks/maxtext_v5p_model_configs.py)
+configuration on v5p-1024 with MaxText 3eb77db and JAX 0.7.0. Numbers with the
+software versions listed in
+[Steps for building workload image](#steps-for-building-workload-image) may
+differ.
 
 
 ## Next steps: deeper exploration and customization
