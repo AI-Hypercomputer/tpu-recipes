@@ -12,12 +12,16 @@ This workload is configured with the following details:
 
 -   Sequence Length: 8192
 -   Precision: bfloat16 compute, float32 weights
--   Chips: 128 (v5p-256, 4x4x8 topology)
+-   Chips: 512 (v5p-1024, 8x8x8 topology)
 
 The XLA flags and MaxText arguments in `run_recipe.sh` are the MaxText
 `llama3_1_405b_8192_v5p_1024` benchmark configuration, resolved from
 [`benchmarks/maxtext_v5p_model_configs.py`](https://github.com/AI-Hypercomputer/maxtext/blob/3eb77db3c94580f56f1b738f8d254b03bd205e35/benchmarks/maxtext_v5p_model_configs.py)
-and `benchmarks/xla_flags_library.py` at MaxText `3eb77db3c`.
+and `benchmarks/xla_flags_library.py` at MaxText `3eb77db3c94580f56f1b738f8d254b03bd205e35`.
+
+Please note that this configuration is appropriate for `v5p-256` (`4x4x8`),
+`v5p-512` (`4x8x8`), and `v5p-1024` (`8x8x8`); `run_recipe.sh` defaults
+`TPU_TOPOLOGY` to `8x8x8` (`v5p-1024`).
 
 ## Prerequisites
 
@@ -114,7 +118,8 @@ For this recipe, the following setup is used:
 
 ## Test environment
 
-This recipe is configured for v5p-256 (4x4x8 topology).
+This recipe is configured for v5p-1024 (`8x8x8` topology, 512 chips) by default,
+and also supports v5p-512 (`4x8x8`) and v5p-256 (`4x4x8`).
 
 -   **GKE cluster** To create your GKE cluster, refer to the
     [Cloud TPU deployments overview](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview)
@@ -124,27 +129,30 @@ This recipe is configured for v5p-256 (4x4x8 topology).
 ### Environment Variables for Cluster Creation
 
 The environment variables required for cluster creation and workload execution
-are defined at the beginning of the `run_recipe.sh` script. **Before running the
-`gcluster job submit` command**, please open `run_recipe.sh` and modify the
-`export` statements to set these variables to match your environment. It is
-crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
-across all commands and configurations.
+are listed below. Export them in your shell before running the commands in this
+README: `run_recipe.sh` reads the exported values (you can also edit the
+defaults at the beginning of `run_recipe.sh`), and exits with an error if any
+required variable is empty. It is crucial to use consistent values for
+`PROJECT_ID`, `CLUSTER_NAME`, and `ZONE` across all commands and
+configurations.
 
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
 -   `ZONE`: The zone for your cluster (e.g., `us-central1-c`).
 -   `REGION`: The region for your cluster (e.g., `us-central1`). Can be derived as `${ZONE%-*}`.
--   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-llama3-1-405b-runner` by
-    default, matching the image built in the
-    [Docker container image](#docker-container-image) section.
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. `run_recipe.sh` has no
+    default for it; the [Docker container image](#docker-container-image)
+    section exports it as
+    `gcr.io/${PROJECT_ID}/${CLOUD_IMAGE_NAME}:latest` (by default
+    `gcr.io/${PROJECT_ID}/${USER}_runner:latest`), the image it builds and
+    uploads.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` to `${USER}-llama3-405b-$(date +%H%M)` by default.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `v5p-256`, topology `4x4x8`). See topologies
+-   `TPU_TOPOLOGY`: The TPU slice topology passed to `gcluster job submit`
+    (defaults to `8x8x8` for `v5p-1024`; can also be set to `4x8x8` for
+    `v5p-512` or `4x4x8` for `v5p-256`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
@@ -153,7 +161,7 @@ across all commands and configurations.
 If you don't have a GCS bucket, create one with this command:
 
 ```bash
-# Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
+# Make sure BASE_OUTPUT_DIR and PROJECT_ID are exported before running this.
 gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
 ```
 
@@ -196,7 +204,7 @@ cd ~/cluster-toolkit
 ./gcluster deploy -d examples/gke-tpu-v5p/gke-tpu-v5p-deployment.yaml \
   examples/gke-tpu-v5p/gke-tpu-v5p.yaml \
   --backend-config="bucket=${TF_STATE_BUCKET}" \
-  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${REGION},zone=${ZONE},num_slices=1,machine_type=ct5p-hightpu-4t,tpu_topology=4x4x8"
+  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${REGION},zone=${ZONE},num_slices=1,machine_type=ct5p-hightpu-4t,tpu_topology=${TPU_TOPOLOGY:-8x8x8}"
 ```
 
 #### 3. Connect to Your Cluster
@@ -226,41 +234,26 @@ process.
 
 The following software versions are used:
 
--   Libtpu version: 0.0.46
--   Jax version: 0.11.2.dev20260825
--   Maxtext version: 9d92bf0
--   Python: 3.12
+-   MaxText version: `3eb77db3c94580f56f1b738f8d254b03bd205e35`
+-   Jax version: 0.7.0 (`MODE=stable`)
+-   Python: 3.12 (in container image)
 -   Cluster Toolkit: 1.104.0
 
 Docker Image Building Command:
 
 ```bash
-export CONTAINER_REGISTRY="" # Initialize with your registry
-export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
-export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
+export CLOUD_IMAGE_NAME="${USER}_runner"
+export WORKLOAD_IMAGE="gcr.io/${PROJECT_ID}/${CLOUD_IMAGE_NAME}:latest"
+gcloud config set project "${PROJECT_ID}"
 
-# Set up and Activate Python 3.12 virtual environment for Docker build
-uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
-source ${HOME}/.local/bin/venv-docker/bin/activate
-pip install --upgrade pip
-
-# Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
-
-# Clone MaxText Repository and Checkout Recipe Branch
+# Clone MaxText Repository and Checkout Recipe Commit
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout 9d92bf0
+git checkout 3eb77db3c94580f56f1b738f8d254b03bd205e35
 
-# Build and upload the docker image
-bash src/dependencies/scripts/docker_build_dependency_image.sh \
-  MODE=nightly \
-  JAX_VERSION=0.11.2.dev20260825 \
-  LIBTPU_VERSION=0.0.46
-bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
-
-# Deactivate the virtual environment
-deactivate
+# Build and upload the docker image (pushed to gcr.io/${PROJECT_ID}/${CLOUD_IMAGE_NAME}:latest)
+bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable JAX_VERSION=0.7.0
+bash docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
 # Return to the recipe directory
 cd ..
@@ -292,31 +285,41 @@ gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the llama3-1-405b pretraining workload.
 
-To run the benchmark, first make the script executable, edit it to configure
-environment variables, and then run it:
+To run the benchmark, make sure the environment variables from
+[Environment Variables for Cluster Creation](#environment-variables-for-cluster-creation)
+are exported (including `WORKLOAD_IMAGE` from the
+[Docker container image](#docker-container-image) section), then make the
+script executable and run it:
 
 ```bash
 chmod +x run_recipe.sh
-nano run_recipe.sh
 ./run_recipe.sh
 ```
 
 You can customize the run by modifying `run_recipe.sh`:
 
 -   **Environment Variables:** Variables like `PROJECT_ID`, `CLUSTER_NAME`,
-    `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, and `BASE_OUTPUT_DIR` are defined
-    at the beginning of the script. Adjust these to match your environment.
+    `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, `BASE_OUTPUT_DIR`, and
+    `TPU_TOPOLOGY` are read from your shell at the beginning of the script.
+    Export them, or edit the defaults in the script, to match your environment.
 -   **XLA Flags:** The `XLA_FLAGS` variable contains a set of XLA configurations
     optimized for this workload. These can be tuned for performance or
     debugging.
 -   **MaxText Workload Overrides:** The `MAXTEXT_ARGS` variable holds the
-    arguments passed to the `python3 -m maxtext.trainers.pre_train.train`
+    arguments passed to the `python3 -m MaxText.train`
     command. This includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
 
 Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
 are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
+
+From your workload logs on v5p-1024, you should see step time logs like the
+following as training progresses:
+
+```
+completed step: 10, seconds: 131.474, TFLOP/s/device: 314.530, Tokens/s/device: 124.618, total_weights: 8388608, loss: 4.453
+```
 
 ## Monitor the job
 

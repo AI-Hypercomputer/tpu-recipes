@@ -7,13 +7,12 @@
 export PATH="${HOME}/cluster-toolkit:${PATH}"
 CTK_VERSION="1.104.0"
 GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
-if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null; then
     echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
     echo "  mkdir -p \${HOME}/cluster-toolkit"
     echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
-    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit"
     echo "  rm -f /tmp/gcluster_bundle.tgz"
-    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
     echo "  export PATH=\"\${HOME}/cluster-toolkit:\${PATH}\""
     exit 1
 fi
@@ -23,28 +22,35 @@ set -e
 set -o pipefail
 
 # --- Configuration ---
-# Before running this script, please modify the environment variables below
-# to match your specific GCP project and cluster setup.
+# Before running this script, export the environment variables below in your
+# shell (see README.md), or edit the defaults here.
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID=""
-export CLUSTER_NAME=""
-export ZONE=""
-export BASE_OUTPUT_DIR=""
-export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-llama3-405b-$(date +%H%M)}"
+export PROJECT_ID="${PROJECT_ID:-}"
+export CLUSTER_NAME="${CLUSTER_NAME:-}"
+export ZONE="${ZONE:-}"
+export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
+export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER:-runner}" | tr '[:upper:]_' '[:lower:]-')-llama3-405b-$(date +%H%M)}"
+export TPU_TOPOLOGY="${TPU_TOPOLOGY:-8x8x8}" # 8x8x8 (v5p-1024), 4x8x8 (v5p-512), or 4x4x8 (v5p-256)
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
+for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
+  if [[ -z "${!var}" ]]; then
+    echo "Error: ${var} is not set. Export it in your shell or set it in run_recipe.sh." >&2
+    exit 1
+  fi
+done
 
-# XLA Flags (from MaxText benchmarks/maxtext_v5p_model_configs.py `llama3_1_405b_8192_v5p_1024` @ 3eb77db3c):
+
+# XLA Flags (from MaxText benchmarks/maxtext_v5p_model_configs.py `llama3_1_405b_8192_v5p_1024` @ 3eb77db3c94580f56f1b738f8d254b03bd205e35):
 # DENSE_VMEM_LIMIT_FLAG + CF_FOR_ALL_GATHER + HOST_OFFLOAD_FLAGS
-# The async collective fusion flags from CF_FOR_ALL_GATHER
-# (--xla_tpu_enable_async_collective_fusion, ..._fuse_all_gather and
-# ..._multiple_steps) are omitted: current libtpu rejects async collective
-# fusion on TPU v5p at backend initialization.
 XLA_FLAGS=" \
   --xla_tpu_scoped_vmem_limit_kib=98304 \
+  --xla_tpu_enable_async_collective_fusion=true \
+  --xla_tpu_enable_async_collective_fusion_fuse_all_gather=true \
+  --xla_tpu_enable_async_collective_fusion_multiple_steps=true \
   --xla_tpu_overlap_compute_collective_tc=true \
   --xla_enable_async_all_gather=true \
   --xla_tpu_enable_all_experimental_scheduler_features=true \
@@ -59,7 +65,7 @@ XLA_FLAGS=" \
   --xla_tpu_scheduler_percent_shared_memory_limit=100 \
   --xla_latency_hiding_scheduler_rerun=2 "
 
-# MaxText Workload Overrides (from MaxText benchmarks/maxtext_v5p_model_configs.py `llama3_1_405b_8192_v5p_1024` @ 3eb77db3c)
+# MaxText Workload Overrides (from MaxText benchmarks/maxtext_v5p_model_configs.py `llama3_1_405b_8192_v5p_1024` @ 3eb77db3c94580f56f1b738f8d254b03bd205e35)
 MAXTEXT_ARGS="\
 model_name=llama3.1-405b \
 per_device_batch_size=2 \
@@ -86,7 +92,7 @@ enable_checkpointing=false \
 profiler=xplane \
 skip_first_n_steps_for_profiler=5 \
 profiler_steps=5 \
-steps=30 \
+steps=20 \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
@@ -101,7 +107,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --priority medium \
   --restarts 0 \
   --compute-type v5p \
-  --topology 4x4x8 \
+  --topology "${TPU_TOPOLOGY}" \
   --num-slices 1 \
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
@@ -112,7 +118,7 @@ export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
 set +e; \
-python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \
+python3 -u -m MaxText.train src/MaxText/configs/base.yml ${MAXTEXT_ARGS} 2>&1 | tee train.log; \
 TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
 if [ -s train.log ]; then \
   timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
