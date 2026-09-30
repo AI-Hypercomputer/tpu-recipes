@@ -1,18 +1,18 @@
-# Pretrain qwen3-235b workload on Ironwood GKE clusters with XPK
+# Pretrain gpt-oss-120b workload on Ironwood GKE clusters with Cluster Toolkit
 
-This recipe outlines the steps for running a qwen3-235b
+This recipe outlines the steps for running a gpt-oss-120b
 [MaxText](https://github.com/AI-Hypercomputer/maxtext) pretraining workload on
 [Ironwood GKE clusters](https://cloud.google.com/kubernetes-engine) by using
-[XPK](https://github.com/AI-Hypercomputer/xpk).
+[Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit).
 
 
 ## Workload Details
 
 This workload is configured with the following details:
 
--   Sequence Length: 4096
--   Precision: bf16
--   Chips: 256 (4x8x8 topology)
+-   Sequence Length: 8192
+-   Precision: bfloat16
+-   Chips: 64 (4x4x4 topology)
 
 ## Prerequisites
 
@@ -32,46 +32,21 @@ To run this recipe, you need the following:
     -   Vertex AI Administrator
     -   Service Usage Consumer
     -   TPU Viewer
--   **Docker:** Docker must be installed on your workstation. Follow the steps
-    in the [Install XPK and dependencies](#install-xpk-and-dependencies) section
-    to install Docker.
--   **Python 3.11 Virtual Environment:** A Python
-    3.11 virtual environment is required. Instructions
-    for setting this up are also in the
-    [Install XPK and dependencies](#install-xpk-and-dependencies) section.
--   **XPK and Dependencies:** Follow the steps in the
-    [Install XPK and dependencies](#install-xpk-and-dependencies) section to
-    install XPK, `kubectl`, `kubectl-kueue`, and `kubectl-kjob`.
+-   **Docker (Optional):** Only required if building a custom workload image from source instead of using the pre-built `WORKLOAD_IMAGE` default (`gcluster` itself does not require Docker). Follow the steps
+    in the [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies) section
+    to install Docker if needed.
+-   **Cluster Toolkit and Dependencies:** Follow the steps in the
+    [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies) section to
+    install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and `gke-gcloud-auth-plugin`.
 
 
-## Install XPK and dependencies
+## Install Cluster Toolkit and dependencies
 
-### XPK and Dependency Installation
+### Cluster Toolkit (gcluster)
 
-#### Virtual Python Environment
+Make sure you have Cluster Toolkit (`gcluster`) added to your `PATH`.
 
-Run the following to create a virtual Python environment:
-
-```bash
-# Set up uv
-sudo apt update
-curl -LsSf https://astral.sh/uv/install.sh -o install-uv.sh
-chmod +x install-uv.sh
-./install-uv.sh
-rm install-uv.sh
-source ${HOME}/.local/bin/env
-
-# Set up and Activate Python 3.11 virtual environment
-uv venv --seed ${HOME}/.local/bin/venv --python 3.11 --clear
-source ${HOME}/.local/bin/venv/bin/activate
-pip install --upgrade pip
-```
-
-#### XPK
-
-Make sure you have the virtual environment activated when running XPK.
-
-Install XPK and necessary tools:
+Install Cluster Toolkit (`gcluster`) and necessary tools:
 
 ```bash
 # Install gcloud, if not already installed, https://cloud.google.com/sdk/docs/install
@@ -79,19 +54,16 @@ Install XPK and necessary tools:
 
 # Ensure to log in to your gcloud
 
-# Install latest xpk
-pip install xpk==1.4.0
-
-# Install xpk pre-reqs kubectl-kueue and kjob (if you installed xpk via pip)
-curl -LsSf https://raw.githubusercontent.com/AI-Hypercomputer/xpk/refs/tags/v1.4.0/tools/install-xpk.sh -o install-xpk.sh
-chmod +x install-xpk.sh
-sudo ./install-xpk.sh
-rm install-xpk.sh
+# Install Cluster Toolkit (gcluster)
+# Download and install Cluster Toolkit (gcluster) v1.104.0
+curl -L -O "https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v1.104.0/gcluster_bundle_linux_amd64.tgz"
+mkdir -p "${HOME}/cluster-toolkit" && tar -xzf gcluster_bundle_linux_amd64.tgz -C "${HOME}/cluster-toolkit" && rm gcluster_bundle_linux_amd64.tgz
+export PATH="${HOME}/cluster-toolkit:${PATH}"
 
 # Follow https://cloud.google.com/kubernetes-engine/docs/how-to/cluster-access-for-kubectl#install_plugin to install gke-gcloud-auth-plugin
 ```
 
-#### Docker
+### Docker (Optional — only required if building a custom image from source)
 
 Install Docker using instructions provided by your administrator. Once
 installed, run the following commands:
@@ -99,7 +71,7 @@ installed, run the following commands:
 ```bash
 ## Configure docker and test installation
 gcloud auth configure-docker
-sudo usermod -aG docker $USER ## relaunch the terminal and make sure you have the virtual environment activated after running this command
+sudo usermod -aG docker $USER ## relaunch the terminal after running this command
 docker run hello-world # Test docker
 ```
 
@@ -110,25 +82,24 @@ For this recipe, the following setup is used:
 
 -   **Orchestration** -
     [Google Kubernetes Engine (GKE)](https://cloud.google.com/kubernetes-engine)
--   **Pretraining job configuration and deployment** - XPK is used to configure
+-   **Pretraining job configuration and deployment** - Cluster Toolkit (`gcluster`) is used to configure
     and deploy the
     [Kubernetes Jobset](https://kubernetes.io/blog/2025/03/23/introducing-jobset)
-    resource, which manages the execution of the qwen3-235b workload.
+    resource, which manages the execution of the gpt-oss-120b workload.
 
 
 ## Test environment
 
-This recipe is optimized for and tested with tpu7x-4x8x8.
+This recipe is optimized for and tested with tpu7x-4x4x4.
 
--   **GKE cluster** To create your GKE cluster, use the XPK instructions.
-    [XPK instructions](https://github.com/AI-Hypercomputer/xpk?tab=readme-ov-file#cluster-create).
-    A sample command to create an XPK cluster is provided below.
+-   **GKE cluster** To create your GKE cluster, use the [Cluster Toolkit Cloud TPU deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview).
+    A sample command to create a Cluster Toolkit cluster is provided below.
 
 ### Environment Variables for Cluster Creation
 
 The environment variables required for cluster creation and workload execution
 are defined at the beginning of the `run_recipe.sh` script. **Before running the
-`xpk workload create` command**, please open `run_recipe.sh` and modify the
+`gcluster job submit` command**, please open `run_recipe.sh` and modify the
 `export` statements to set these variables to match your environment. It is
 crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
 across all commands and configurations.
@@ -139,15 +110,13 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-qwen3-235b-runner` by
-    default, matching the image built in the
-    [Docker container image](#docker-container-image) section.
+-   `WORKLOAD_IMAGE`: The path to your custom MaxText Docker image (e.g.,
+    `"${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner"`).
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
-    `run_recipe.sh` to `${USER}-qwen3-235b-$(date +%H%M)` by default.
+    `run_recipe.sh` using the following command:
+    `export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.10s" "${USER//_/-}")-gptoss120b-$(date +%H%M)}"`
 -   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x8x8`). See topologies
+-   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
     [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
@@ -160,34 +129,40 @@ If you don't have a GCS bucket, create one with this command:
 gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
 ```
 
-### Sample XPK Cluster Creation Command
+### Sample Cluster Toolkit Cluster Creation Command
 
 ```bash
-xpk cluster create \
-  --cluster=${CLUSTER_NAME} \
-  --project=${PROJECT_ID} \
-  --zone=${ZONE} \
-  --tpu-type=${ACCELERATOR_TYPE} \
-  --num-slices=1 \
-  --reservation=${RESERVATION_NAME}
+gcluster deploy examples/gke-tpu-7x/gke-tpu-7x.yaml \
+  --backend-config="bucket=${PROJECT_ID}-ctk-tf-state" \
+  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,machine_type=tpu7x-standard-4t,tpu_topology=4x4x4,reservation=${RESERVATION_NAME}"
 ```
 
 
-## Docker container image
+## Docker container image (Optional — only required if building a custom image from source)
 
 To build your own image, follow the steps linked in this section. If you don't
 have Docker installed on your workstation, see the section below for installing
-XPK and its dependencies. Docker installation is part of this process.
+Cluster Toolkit and its dependencies. Docker installation is part of this process.
 
 ### Steps for building workload image
 
+**Warning:** If any of the software versions below show as "N/A", you *must*
+fill in the correct versions. To find the missing versions (e.g., for MaxText
+commit hash, Libtpu, and Jax/Jaxlib), you may need to:
+1.  Pull the Docker image from the workload that this recipe is based on.
+2.  Start the Docker container.
+3.  Run commands within the container to get the specific versions. For example,
+to find the MaxText commit, you can use `git rev-parse HEAD` inside the cloned
+MaxText repository within the container. For Python package versions, use
+`pip show <package_name>`.
+
 The following software versions are used:
 
--   Libtpu version: 0.0.37
--   Jax version: 0.9.2.dev20260306
--   Maxtext version: a0fceb5
+-   Libtpu version: 0.0.47
+-   Jax version: 0.11.2.dev20260914
+-   Maxtext version: 4e2396c
 -   Python: 3.12
--   XPK: 1.4.0
+-   Cluster Toolkit: 1.104.0
 
 Docker Image Building Command:
 
@@ -196,28 +171,20 @@ export CONTAINER_REGISTRY="" # Initialize with your registry
 export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
-# Set up and Activate Python 3.12 virtual environment for Docker build
-uv venv --seed ${HOME}/.local/bin/venv-docker --python 3.12 --clear
-source ${HOME}/.local/bin/venv-docker/bin/activate
-pip install --upgrade pip
-
-# Make sure you're running on a Virtual Environment with python 3.12
-if [[ "$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null)" == "3.12" ]]; then { echo "You have the correct Python version 3.12"; } else { >&2 echo "Error: Python version must be 3.12."; false; } fi
-
 # Clone MaxText Repository and Checkout Recipe Branch
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 cd maxtext
-git checkout a0fceb5
+git checkout 4e2396c
 
 # Build and upload the docker image
 bash src/dependencies/scripts/docker_build_dependency_image.sh \
   MODE=nightly \
-  JAX_VERSION=0.9.2.dev20260306 \
-  LIBTPU_VERSION=0.0.37
+  JAX_VERSION=0.11.2.dev20260914 \
+  LIBTPU_VERSION=0.0.47
 bash src/dependencies/scripts/docker_upload_runner.sh CLOUD_IMAGE_NAME=${CLOUD_IMAGE_NAME}
 
-# Deactivate the virtual environment
-deactivate
+# Return to the recipe directory
+cd ..
 ```
 
 ## Training dataset
@@ -235,29 +202,23 @@ variables as described in
 ### Connect to an existing cluster (Optional)
 
 If you want to connect to your GKE cluster to see its current state before
-running the benchmark, you can use the following gcloud command. (Note that XPK
-does this for you already):
+running the benchmark, you can use the following gcloud command:
 
 ```bash
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
-## Get the recipe
-```bash
-cd ~
-git clone https://github.com/ai-hypercomputer/tpu-recipes.git
-cd tpu-recipes/training/ironwood/qwen3-235b-a22b/4k-bf16-tpu7x-4x8x8/xpk
-```
-
-### Run qwen3-235b Pretraining Workload
+### Run gpt-oss-120b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
-configurations to launch the qwen3-235b pretraining workload.
+configurations to launch the gpt-oss-120b pretraining workload.
 
-To run the benchmark, first make the script executable and then run it:
+To run the benchmark, first make the script executable, edit it to configure
+environment variables, and then run it:
 
 ```bash
 chmod +x run_recipe.sh
+nano run_recipe.sh
 ./run_recipe.sh
 ```
 
@@ -274,11 +235,6 @@ You can customize the run by modifying `run_recipe.sh`:
     command. This includes model-specific settings like `per_device_batch_size`,
     `max_target_length`, and others. You can modify these to experiment with
     different model configurations.
--   **Virtual Environment:** The script activates the virtual environment
-    created during the
-    [Install XPK and dependencies](#install-xpk-and-dependencies) steps. If you
-    used a different virtual environment, modify the `source` command at the top
-    of `run_recipe.sh`.
 
 Note that any MaxText configurations not explicitly overridden in `MAXTEXT_ARGS`
 are expected to use the defaults within the specified `WORKLOAD_IMAGE`.
@@ -290,7 +246,12 @@ and logs:
 
 ```bash
 kubectl get jobset -n default ${WORKLOAD_NAME}
-kubectl logs -f -n default jobset/${WORKLOAD_NAME}-0-worker-0
+
+# Get the name of the first pod in the JobSet
+POD_NAME=$(kubectl get pods -l jobset.sigs.k8s.io/jobset-name=${WORKLOAD_NAME} -n default -o jsonpath='{.items[0].metadata.name}')
+
+# Follow the logs of that pod
+kubectl logs -f -n default ${POD_NAME}
 ```
 
 You can also monitor your cluster and TPU usage through the Google Cloud
@@ -298,19 +259,19 @@ Console.
 
 ### Follow Workload and View Metrics
 
-After running `xpk workload create`, you will get a link to the Google Cloud
-Console to view your workload logs. Example: `[XPK] Follow your workload here:
+After running `gcluster job submit`, you will get a link to the Google Cloud
+Console to view your workload logs. Example: `Follow your workload here:
 https://console.cloud.google.com/kubernetes/service/${ZONE}/${PROJECT_ID}/default/${WORKLOAD_NAME}/details?project=${PROJECT_ID}`
-Alternatively, list workloads: (`xpk workload list`)
+Alternatively, list workloads: (`gcluster job list`)
 
 ```bash
-xpk workload list --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
+gcluster job list --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
 ```
 
-For more in-depth debugging, use xpk inspector: (`xpk inspector`)
+For more in-depth debugging, inspect the job: (`gcluster job inspect`)
 
 ```bash
-xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [--workload ${WORKLOAD_NAME}]
+gcluster job inspect --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE} --name ${WORKLOAD_NAME}
 ```
 
 
@@ -319,15 +280,13 @@ xpk inspector --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} [
 #### Delete a specific workload
 
 ```bash
-xpk workload delete --workload ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
-# Or filter and delete:
-xpk workload delete --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE} --filter-by-job=${USER}
+gcluster job cancel ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
 ```
 
-#### Delete the entire XPK cluster
+#### Delete the entire Cluster Toolkit cluster
 
 ```bash
-xpk cluster delete --cluster ${CLUSTER_NAME} --zone ${ZONE} --project ${PROJECT_ID}
+gcluster destroy ${CLUSTER_NAME} --auto-approve
 ```
 
 

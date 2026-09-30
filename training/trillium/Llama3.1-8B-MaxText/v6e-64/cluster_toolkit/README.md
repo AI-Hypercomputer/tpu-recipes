@@ -1,7 +1,7 @@
-# Instructions for training Llama3.1-8B-MaxText on TPU trillium (v6e-16)
+# Instructions for training Llama3.1-8B-MaxText on TPU trillium (v6e-64)
 
-## XPK setup
-Please follow the [XPK_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
+## Cluster Toolkit setup
+Please follow the [Cluster Toolkit Cloud TPU deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview) to create your GKE cluster with Cluster Toolkit (`gcluster`) v1.104.0.
 
 ## Prep for Maxtext
 
@@ -23,8 +23,7 @@ git checkout tpu-recipes-v0.1.4
 >     +RUN if [ "$DEVICE" = "tpu" ] && [ "$JAX_AI_IMAGE_BASEIMAGE" = "us-docker.pkg.dev/cloud-tpu-images/jax-ai-image/tpu:jax0.6.1-rev1" ]; then \
 >     ```
 > 2.  **Patch B (Requirements Conflicts)**: Clean up conflicts in `requirements_with_jax_stable_stack_0_6_1_pipreqs.txt` (e.g., change `aqt` to `aqtp`, and change `jetstream` to `google-jetstream@git+https://github.com/AI-Hypercomputer/JetStream.git` to avoid pulling the wrong package from PyPI).
-> 3.  **Troubleshooting (XPK / Docker Build Kit)**:
->     *   If your build host does not support `buildx` or you use pre-built runner images, you may need to patch `benchmarks/maxtext_xpk_runner.py` to use `--docker-image` instead of `--base-docker-image`.
+> 3.  **Troubleshooting (Docker BuildKit)**:
 >     *   If your Docker daemon does not support BuildKit, set `export DOCKER_BUILDKIT=0` in `docker_build_dependency_image.sh`.
 
 In step 3, use the jax-stable-stack image containing JAX 0.6.1:
@@ -35,36 +34,34 @@ bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${B
 
 ## Run Maxtext Llama3.1-8B workloads on GKE
 
-### Starting workload
+### Starting workload (Cluster Toolkit)
 
-From the MaxText root directory, start your Llama3.1-8B workload.
-```
-python3 -m benchmarks.benchmark_runner xpk \
-    --project=$PROJECT \
-    --zone=$ZONE \
-    --device_type=v6e-16 \
-    --num_slices=1  \
-    --cluster_name=${CLUSTER_NAME} \
-    --base_output_directory=${OUTPUT_DIR} \
-    --model_name="llama3_1_8b_8192_no_collective_matmul" \
-    --base_docker_image=maxtext_base_image
+From the `cluster_toolkit` directory, start your Llama3.1-8B workload:
+```bash
+cd tpu-recipes/training/trillium/Llama3.1-8B-MaxText/v6e-64/cluster_toolkit
+export PROJECT_ID=$PROJECT
+export CLUSTER_NAME=$CLUSTER_NAME
+export ZONE=$ZONE
+export BASE_OUTPUT_DIR=$OUTPUT_DIR
+export WORKLOAD_IMAGE=$WORKLOAD_IMAGE
+./run_recipe.sh
 ```
 
 From your workload logs, you should start seeing step time logs like the following:
 ```
-completed step: 14, seconds: 3.393, TFLOP/s/device: 419.485, Tokens/s/device: 7243.378, total_weights: 393216, loss: 3.974
+completed step: 14, seconds: 5.652, TFLOP/s/device: 419.701, Tokens/s/device: 7247.111, total_weights: 2621440, loss: 8.534
 ```
 
 ### Workload Details
 
-For reference, here are the `llama3_1_8b_8192_no_collective_matmul` workload details as found in `MaxText@tpu-recipes-v0.1.4`:
+For reference, here are the `llama3_1_8b_8192_bs5` workload details as found in `MaxText@tpu-recipes-v0.1.4`:
 
 ```
 MaxTextModel(
-    model_name="llama3_1-8b-8192-no-collective-matmul",
+    model_name="llama3_1-8b-8192-bs5",
     model_type="llama3.1-8b",
     tuning_params={
-        "per_device_batch_size": 3,
+        "per_device_batch_size": 5,
         "ici_fsdp_parallelism": -1,
         "remat_policy": "custom",
         "decoder_layer_input": "offload",
@@ -98,9 +95,8 @@ MaxTextModel(
         + xla_flags_library.CF_FOR_ALL_GATHER
         + xla_flags_library.ENABLE_SPARSECORE_OFFLOADING_FOR_ALL_REDUCE
         + xla_flags_library.HOST_OFFLOAD_FLAGS
-        + xla_flags_library.DISABLE_COLLECTIVE_MATMUL
     ),
-)
+),
 ```
 
 This equivalent workload code can be found in the [maxtext_trillium_model_configs.py](https://github.com/AI-Hypercomputer/maxtext/blob/9f1820b472ef362e7b5c782fe1d6fda8a0943eff/benchmarks/maxtext_trillium_model_configs.py) file within the MaxText repository.
