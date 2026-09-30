@@ -49,13 +49,13 @@ export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-l8b-lc-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 
-# Default workload configs (10M sequence length on 128 chips), override by
+# Default workload configs (1M sequence length on 128 chips), override by
 # passing KEY=VALUE arguments. ICI_CONTEXT_PARALLELISM * ICI_FSDP_PARALLELISM
-# must equal the number of chips (128); see README.md for other lengths.
-export MAX_TARGET_LENGTH=10485760
-export ICI_CONTEXT_PARALLELISM=128
-export ICI_FSDP_PARALLELISM=1
-export PER_DEVICE_BATCH_SIZE=0.0078125
+# must equal the number of chips (128).
+export MAX_TARGET_LENGTH=1048576
+export ICI_CONTEXT_PARALLELISM=16
+export ICI_FSDP_PARALLELISM=8
+export PER_DEVICE_BATCH_SIZE=0.0625
 
 for ARGUMENT in "$@"; do
     IFS='=' read -r KEY VALUE <<< "$ARGUMENT"
@@ -122,7 +122,7 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
   --num-slices 1 \
   --image "${WORKLOAD_IMAGE}" \
   --verbose \
-  --gke-namespace default \
+  --gke-namespace "${NAMESPACE:-default}" \
   --name "${WORKLOAD_NAME}" \
   --command "set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \

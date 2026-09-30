@@ -1,6 +1,6 @@
-# Instructions for training Llama3.1-8B with long context on TPU v5p
+# Instructions for training Llama3.1-8B with long context (1M) on TPU v5p
 
-This document presents steps to run an ultra long-context (up to 10M sequence length) Llama3.1-8B [MaxText](https://github.com/AI-Hypercomputer/maxtext) workload with ring context parallelism through [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit) (`gcluster`).
+This document presents steps to run a 1M (1,048,576 tokens) long-context Llama3.1-8B [MaxText](https://github.com/AI-Hypercomputer/maxtext) workload with ring context parallelism through [Cluster Toolkit](https://github.com/GoogleCloudPlatform/cluster-toolkit) (`gcluster`).
 
 ## Model configuration
 
@@ -22,13 +22,13 @@ Please follow the [Cluster Toolkit Cloud TPU deployment guide](https://docs.clou
 ## Run script
 
 1. Clone [Maxtext](https://github.com/AI-Hypercomputer/maxtext) repo.
-```
+```bash
 git clone https://github.com/AI-Hypercomputer/maxtext.git
 ```
 
 2. Build a docker image and push it to an Artifact Registry Docker repository (`REPOSITORY`).
 
-```
+```bash
 cd maxtext
 bash src/dependencies/scripts/docker_build_dependency_image.sh MODE=stable DEVICE=tpu
 export WORKLOAD_IMAGE=us-docker.pkg.dev/${PROJECT}/${REPOSITORY}/${USER}_runner
@@ -49,26 +49,30 @@ export WORKLOAD_IMAGE=$WORKLOAD_IMAGE
 ./run_recipe.sh
 ```
 
-The script defaults to a 10M (10,485,760) sequence length on a 128-chip TPU v5p slice (topology `4x4x8`, `v5p-256`). Attention uses ring context parallelism with causal load balancing, Splash attention kernels, custom remat policy, and device context.
+The script runs a 1M (1,048,576) sequence length on a 128-chip TPU v5p slice (topology `4x4x8`, `v5p-256`) with `ici_context_parallelism=16`, `ici_fsdp_parallelism=8`, and `per_device_batch_size=0.0625`. Attention uses ring context parallelism with causal load balancing, Splash attention kernels, custom remat policy, and device context.
 
-5. (Optional) Other sequence lengths.
+## Verified benchmark performance
 
-Shorter contexts can use a smaller context parallelism degree, with the remaining chips assigned to FSDP:
+The 1M configuration was benchmarked on TPU v5p `4x4x8` (128 chips / 32 hosts of `ct5p-hightpu-4t`):
 
-| Sequence length | ici_context_parallelism | ici_fsdp_parallelism | per_device_batch_size |
-| --------------- | ----------------------- | -------------------- | --------------------- |
-| 1048576 (1M)    | 16                      | 8                    | 0.0625                |
-| 2097152 (2M)    | 32                      | 4                    | 0.03125               |
-| 5242880 (5M)    | 64                      | 2                    | 0.015625              |
-| 10485760 (10M)  | 128                     | 1                    | 0.0078125             |
+| Metric | Measured Value |
+| :--- | :--- |
+| **Sequence Length** | 1,048,576 tokens (1M) |
+| **Topology** | TPU v5p `4x4x8` (128 chips, `v5p-256`) |
+| **Mesh Parallelism** | `ici_context_parallelism=16`, `ici_fsdp_parallelism=8` |
+| **Per-Device Batch Size** | 0.0625 (Global Batch = 8 sequences) |
+| **Steady-State Step Time** | 401.62 s (std: 0.006 s) |
+| **Per-Chip Throughput** | 163.18 tok/s/chip |
+| **Total Workload Throughput** | 20,886.89 tok/s |
+| **TFLOP/s/device** | 141.91 (30.92% MFU of 459 TFLOP/s peak) |
+| **Exit Code** | 0 (All 32 workers completed successfully) |
+
+## Cleanup
+
+If you need to cancel or clean up your workload, run:
 
 ```bash
-./run_recipe.sh MAX_TARGET_LENGTH=1048576 ICI_CONTEXT_PARALLELISM=16 ICI_FSDP_PARALLELISM=8 PER_DEVICE_BATCH_SIZE=0.0625
-```
-
-6. (Optional) If you need to delete any of your workload, you can run the following command:
-```
-export WORKLOAD_NAME_TO_DELETE=llama3-1-8b-10m-test
+export WORKLOAD_NAME_TO_DELETE=llama3-1-8b-1m-test
 
 gcluster job cancel ${WORKLOAD_NAME_TO_DELETE} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
 ```
