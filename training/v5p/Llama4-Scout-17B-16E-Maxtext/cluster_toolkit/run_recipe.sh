@@ -7,13 +7,12 @@
 export PATH="${HOME}/cluster-toolkit:${PATH}"
 CTK_VERSION="1.104.0"
 GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
-if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null; then
     echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
     echo "  mkdir -p \${HOME}/cluster-toolkit"
     echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
-    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit"
     echo "  rm -f /tmp/gcluster_bundle.tgz"
-    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
     echo "  export PATH=\"\${HOME}/cluster-toolkit:\${PATH}\""
     exit 1
 fi
@@ -23,18 +22,25 @@ set -e
 set -o pipefail
 
 # --- Configuration ---
-# Before running this script, please modify the environment variables below
-# to match your specific GCP project and cluster setup.
+# Before running this script, export the environment variables below in your
+# shell (see README.md), or edit the defaults here.
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID=""
-export CLUSTER_NAME=""
-export ZONE=""
-export BASE_OUTPUT_DIR=""
-export WORKLOAD_IMAGE=""
+export PROJECT_ID="${PROJECT_ID:-}"
+export CLUSTER_NAME="${CLUSTER_NAME:-}"
+export ZONE="${ZONE:-}"
+export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
+export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-l4-scout-$(date +%H%M)}"
 export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
+
+for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
+  if [[ -z "${!var}" ]]; then
+    echo "Error: ${var} is not set. Export it in your shell or set it in run_recipe.sh." >&2
+    exit 1
+  fi
+done
 
 
 # XLA Flags (from MaxText benchmarks/maxtext_v5p_model_configs.py `llama4_scout_dropless_v5p_256` @ 3eb77db3c):

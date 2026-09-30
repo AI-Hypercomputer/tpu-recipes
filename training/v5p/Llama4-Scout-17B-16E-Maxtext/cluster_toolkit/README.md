@@ -45,6 +45,9 @@ To run this recipe, you need the following:
     [Install Cluster Toolkit and dependencies](#install-cluster-toolkit-and-dependencies)
     section to install Cluster Toolkit (`gcluster`), `gcloud`, `kubectl`, and
     the `gke-gcloud-auth-plugin`.
+-   **uv:** Used to create the Python 3.12 virtual environment for the Docker
+    image build (`uv` downloads Python 3.12 if it is not installed). See the
+    [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
 
 ## Install Cluster Toolkit and dependencies
@@ -124,11 +127,12 @@ This recipe is configured for v5p-256 (4x4x8 topology).
 ### Environment Variables for Cluster Creation
 
 The environment variables required for cluster creation and workload execution
-are defined at the beginning of the `run_recipe.sh` script. **Before running the
-`gcluster job submit` command**, please open `run_recipe.sh` and modify the
-`export` statements to set these variables to match your environment. It is
-crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
-across all commands and configurations.
+are listed below. Export them in your shell before running the commands in this
+README: `run_recipe.sh` reads the exported values (you can also edit the
+defaults at the beginning of `run_recipe.sh`), and exits with an error if any
+required variable is empty. It is crucial to use consistent values for
+`PROJECT_ID`, `CLUSTER_NAME`, and `ZONE` across all commands and
+configurations.
 
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
@@ -137,11 +141,12 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-llama4-scout-runner` by
-    default, matching the image built in the
-    [Docker container image](#docker-container-image) section.
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. `run_recipe.sh` has no
+    default for it; the [Docker container image](#docker-container-image)
+    section exports it as
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}` (by default
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner`), the image
+    it builds and uploads.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` to `${USER}-l4-scout-$(date +%H%M)` by default.
 -   `ACCELERATOR_TYPE`: The TPU type (e.g., `v5p-256`, topology `4x4x8`). See topologies
@@ -153,7 +158,7 @@ across all commands and configurations.
 If you don't have a GCS bucket, create one with this command:
 
 ```bash
-# Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
+# Make sure BASE_OUTPUT_DIR and PROJECT_ID are exported before running this.
 gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
 ```
 
@@ -292,20 +297,23 @@ gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the llama4-scout pretraining workload.
 
-To run the benchmark, first make the script executable, edit it to configure
-environment variables, and then run it:
+To run the benchmark, make sure the environment variables from
+[Environment Variables for Cluster Creation](#environment-variables-for-cluster-creation)
+are exported (including `WORKLOAD_IMAGE` from the
+[Docker container image](#docker-container-image) section), then make the
+script executable and run it:
 
 ```bash
 chmod +x run_recipe.sh
-nano run_recipe.sh
 ./run_recipe.sh
 ```
 
 You can customize the run by modifying `run_recipe.sh`:
 
 -   **Environment Variables:** Variables like `PROJECT_ID`, `CLUSTER_NAME`,
-    `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, and `BASE_OUTPUT_DIR` are defined
-    at the beginning of the script. Adjust these to match your environment.
+    `ZONE`, `WORKLOAD_NAME`, `WORKLOAD_IMAGE`, and `BASE_OUTPUT_DIR` are read
+    from your shell at the beginning of the script. Export them, or edit the
+    defaults in the script, to match your environment.
 -   **XLA Flags:** The `XLA_FLAGS` variable contains a set of XLA configurations
     optimized for this workload. These can be tuned for performance or
     debugging.
