@@ -20,18 +20,25 @@ fi
 # --- End Environment Setup ---
 
 # --- Configuration ---
-# Before running this script, please modify the environment variables below
-# to match your specific GCP project and cluster setup.
+# Before running this script, export the environment variables below in your
+# shell (see README.md), or edit the defaults here.
 # ---
 
 # Environmental Variables
-export PROJECT_ID=""
-export CLUSTER_NAME=""
-export ZONE=""
-export BASE_OUTPUT_DIR=""
-export WORKLOAD_IMAGE=""
+export PROJECT_ID="${PROJECT_ID:-}"
+export CLUSTER_NAME="${CLUSTER_NAME:-}"
+export ZONE="${ZONE:-}"
+export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
+export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
 # Optional: Hugging Face token. The Wan2.1-T2V-14B-Diffusers weights are public.
 export HF_TOKEN="${HF_TOKEN:-}"
+
+for var in PROJECT_ID CLUSTER_NAME ZONE BASE_OUTPUT_DIR WORKLOAD_IMAGE; do
+  if [[ -z "${!var}" ]]; then
+    echo "Error: ${var} is not set. Export it in your shell or set it in run_recipe.sh." >&2
+    exit 1
+  fi
+done
 
 # NOTE: `head -c 5` closes the pipe early, which kills `tr` with SIGPIPE. The
 # `|| true` keeps that from tripping `set -o pipefail` and aborting the script.
@@ -41,10 +48,9 @@ export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
 export BASE_YAML_CONFIG="src/maxdiffusion/configs/base_wan_14b.yml"
 export SCRIPT_PATH="src/maxdiffusion/generate_wan.py"
 
-# NOTE: HF_HUB_CACHE points at /dev_shm rather than /dev/shm. Cluster Toolkit
-# refuses to mount onto the reserved system path /dev/shm, so the host tmpfs is
-# mounted at /dev_shm instead (see the --mount flag on the job submit below).
-export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.9.2 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev_shm && export HF_HUB_ENABLE_HF_TRANSFER=1"
+# HF_HUB_CACHE uses /dev/shm, which Cluster Toolkit mounts as an in-memory
+# emptyDir in every workload container.
+export COMMAND_PREFIX="bash setup.sh MODE=stable DEVICE=tpu && pip install jax[tpu]==0.9.2 && pip install -e . --no-deps && export HF_HUB_CACHE=/dev/shm && export HF_HUB_ENABLE_HF_TRANSFER=1"
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -91,7 +97,6 @@ echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
 "${GCLUSTER_BIN}" job submit \
   --skip-prereqs \
   --queue multislice-queue \
-  --mount "/dev/shm;/dev_shm;rw" \
   --cluster "$CLUSTER_NAME" \
   --project "$PROJECT_ID" \
   --location "$ZONE" \

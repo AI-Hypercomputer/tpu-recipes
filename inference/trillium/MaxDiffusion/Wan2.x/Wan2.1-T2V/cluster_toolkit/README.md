@@ -98,11 +98,12 @@ This recipe is tested with `v6e-16` (4x4).
 ### Environment Variables for Cluster Creation
 
 The environment variables required for cluster creation and workload execution
-are defined at the beginning of the `run_recipe.sh` script. **Before running the
-`gcluster job submit` command**, please open `run_recipe.sh` and modify the
-`export` statements to set these variables to match your environment. It is
-crucial to use consistent values for `PROJECT_ID`, `CLUSTER_NAME`, and `ZONE`
-across all commands and configurations.
+are listed below. Export them in your shell before running the commands in this
+README: `run_recipe.sh` reads the exported values (you can also edit the
+defaults at the beginning of `run_recipe.sh`), and exits with an error if any
+required variable is empty. It is crucial to use consistent values for
+`PROJECT_ID`, `CLUSTER_NAME`, and `ZONE` across all commands and
+configurations.
 
 -   `PROJECT_ID`: Your GCP project name.
 -   `CLUSTER_NAME`: The target cluster name.
@@ -110,8 +111,9 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model logs/artifacts (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set to a placeholder
-    `<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest` by default.
+-   `WORKLOAD_IMAGE`: The Docker image for the workload. `run_recipe.sh` has no
+    default for it; the [Docker container image](#docker-container-image)
+    section exports it as the image it builds and uploads.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` using the following command:
     `export WORKLOAD_NAME="$(printf "%.8s" "${USER//_/-}-wan21")-${random_suffix}-$(date +%Y%m%d-%H%M)"`
@@ -121,20 +123,27 @@ across all commands and configurations.
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
+-   `AUTHORIZED_CIDR`: The IP range allowed to reach the cluster control plane,
+    e.g. `<YOUR_IP_ADDRESS>/32` for your workstation.
 
 If you don't have a GCS bucket, create one with this command:
 
 ```bash
-# Make sure BASE_OUTPUT_DIR is set in run_recipe.sh before running this.
+# Make sure BASE_OUTPUT_DIR and PROJECT_ID are exported before running this.
 gcloud storage buckets create ${BASE_OUTPUT_DIR} --project=${PROJECT_ID} --location=US  --default-storage-class=STANDARD --uniform-bucket-level-access
 ```
 
 ### Sample Cluster Toolkit Cluster Creation Command
 
 ```bash
+# Create the bucket that stores the Terraform state (skip if it already exists)
+gcloud storage buckets create gs://${PROJECT_ID}-ctk-tf-state --project=${PROJECT_ID} --location=${ZONE%-*} --uniform-bucket-level-access
+
+# The blueprint path is relative to the Cluster Toolkit bundle directory
+cd ~/cluster-toolkit
 gcluster deploy examples/gke-tpu-v6e/gke-tpu-v6e.yaml \
   --backend-config="bucket=${PROJECT_ID}-ctk-tf-state" \
-  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,reservation=${RESERVATION_NAME}"
+  --vars="project_id=${PROJECT_ID},deployment_name=${CLUSTER_NAME},region=${ZONE%-*},zone=${ZONE},num_slices=1,machine_type=ct6e-standard-4t,tpu_topology=4x4,authorized_cidr=${AUTHORIZED_CIDR},reservation=${RESERVATION_NAME}"
 ```
 
 ## Docker container image
@@ -145,10 +154,12 @@ Cluster Toolkit and its dependencies. Docker installation is part of this proces
 
 ### Steps for building workload image
 
-The following software versions are used:
+The following software versions are used (the stack this recipe was tested
+with):
 
--   Jax version: 0.9.2 (installed at container start by `run_recipe.sh`)
--   MaxDiffusion version: git+https://github.com/AI-Hypercomputer/maxdiffusion.git
+-   MaxDiffusion version: [`08566b1`](https://github.com/AI-Hypercomputer/maxdiffusion/commit/08566b1b85b269d26f4125ab130796624bb02f78),
+    image built with `MODE=nightly`
+-   Jax version: 0.9.2, with libtpu 0.0.37 (installed at container start by `run_recipe.sh`)
 -   Python: 3.12
 -   Cluster Toolkit: 1.104.0
 
@@ -160,12 +171,13 @@ export CONTAINER_REGISTRY="" # Initialize with your registry
 export CLOUD_IMAGE_NAME="${USER}-maxdiffusion-runner"
 export WORKLOAD_IMAGE="${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}"
 
-# Clone MaxDiffusion Repository
+# Clone MaxDiffusion Repository and check out the tested commit
 git clone https://github.com/AI-Hypercomputer/maxdiffusion.git
 cd maxdiffusion
+git checkout 08566b1b85b269d26f4125ab130796624bb02f78
 
 # Build and upload the docker image
-bash docker_build_dependency_image.sh
+bash docker_build_dependency_image.sh MODE=nightly
 
 # Connect to your project
 gcloud config set project ${PROJECT_ID}
@@ -207,7 +219,8 @@ cd tpu-recipes/inference/trillium/MaxDiffusion/Wan2.x/Wan2.1-T2V/cluster_toolkit
 The `run_recipe.sh` script contains all the necessary environment variables and
 configurations to launch the Wan inference workload.
 
-Before execution, use `nano ./run_recipe.sh` to edit the script and configure the environment variables to match your specific environment.
+`run_recipe.sh` reads the environment variables below from your shell (you can
+also edit the defaults at the top of the script).
 
 To configure and run the benchmark:
 
@@ -221,7 +234,6 @@ export WORKLOAD_IMAGE=<YOUR_WORKLOAD_IMAGE> # E.g. gcr.io/<YOUR_PROJECT_ID>/<YOU
 export HF_TOKEN=<YOUR_HF_TOKEN> # Optional; the model weights are public
 
 chmod +x run_recipe.sh
-nano ./run_recipe.sh
 ./run_recipe.sh
 ```
 
