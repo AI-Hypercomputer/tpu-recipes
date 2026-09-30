@@ -89,7 +89,7 @@ echo \"net.ipv4.tcp_rmem: \$(cat /proc/sys/net/ipv4/tcp_rmem)\" && \
 ${FETCH_CONFIG}set +e; \
 python3 -u src/run_benchmark.py --config=${BENCHMARK_CONFIG} | tee benchmark.log; \
 BENCHMARK_EXIT_CODE=\${PIPESTATUS[0]}; \
-WORKER_ID=\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}; \
+WORKER_ID=\${MEGASCALE_SLICE_ID:-0}-\${TPU_WORKER_ID:-\${HOSTNAME:-0}}; \
 if [ -s benchmark.log ]; then \
   timeout 30s gcloud storage cp --no-user-output-enabled benchmark.log \${ARTIFACT_DIR}/logs/benchmark-\${WORKER_ID}.log || true; \
 fi; \
