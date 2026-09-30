@@ -1,19 +1,15 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.13 virtual environment with xpk installed.
-# If you haven't set up uv and the environment, please refer to the README.md.
+# This script requires Cluster Toolkit (gcluster v1.104.0) installed.
+# If you haven't set up gcluster and the environment, please refer to the README.md.
 
-UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.13"
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
 
-# Activate the virtual environment
-source "${UV_VENV_PATH}/bin/activate"
-
-# Check if xpk is installed in the venv
-if ! pip show xpk &> /dev/null; then
-    echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==1.11.0"
+# Check if gcluster is installed in PATH
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "gcluster not found in PATH. Please install Cluster Toolkit v1.104.0 per README.md."
     exit 1
 fi
 # --- End Environment Setup ---
@@ -32,7 +28,7 @@ export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR=""
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-gpt-oss-120b")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.10s" "${USER//_/-}")-gptoss120b-$(date +%H%M)}"
 export ARTIFACT_DIR="${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}"
 
 
@@ -85,7 +81,7 @@ enable_checkpointing=False \
 use_custom_sort_vjp=True \
 shard_exp_on_fsdp=True \
 use_tokamax_gmm=True \
-use_random_routing=True \
+use_random_routing=False \
 remat_policy=custom \
 decoder_layer_input=offload \
 mlpwo=offload \
@@ -114,7 +110,6 @@ ici_fsdp_transpose_parallelism=1 \
 ici_fsdp_parallelism=64 \
 ici_data_parallelism=2 \
 dataset_type=synthetic \
-dataset_path=gs://<your_gcs_bucket> \
 use_gmm_v2=True \
 wi_tile_fwd_batch_seq=256 \
 wi_tile_fwd_embed_dim=2880 \
@@ -140,26 +135,27 @@ run_name=${WORKLOAD_NAME}"
 
 
 
-echo "=== Creating XPK Workload: $WORKLOAD_NAME ==="
-xpk workload create \
+echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
+"${GCLUSTER_BIN}" job submit --skip-prereqs --queue multislice-queue \
   --cluster=$CLUSTER_NAME \
   --project=$PROJECT_ID \
-  --zone=$ZONE \
+  --location=$ZONE \
   --priority=very-high \
-  --max-restarts=0 \
-  --device-type=tpu7x-4x4x4 \
+  --restarts=0 \
+  --compute-type=tpu7x --topology=4x4x4 \
   --num-slices=1 \
-  --docker-image="${WORKLOAD_IMAGE}" \
-  --enable-debug-logs \
-   \
-   \
-  --workload="${WORKLOAD_NAME}" \
-   \
+  --image="${WORKLOAD_IMAGE}" \
+  --verbose --gke-namespace=default \
+  --gke-disable-parallel-containers \
+  --name="${WORKLOAD_NAME}" \
   --command="set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export ARTIFACT_DIR='${ARTIFACT_DIR}' && \
 export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && \
- \
- \
-python3 -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log && \
-gcloud storage cp --no-user-output-enabled train.log ${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID}.log"
+set +e; \
+python3 -u -m maxtext.trainers.pre_train.train maxtext/configs/base.yml ${MAXTEXT_ARGS} | tee train.log; \
+TRAIN_EXIT_CODE=\${PIPESTATUS[0]}; \
+if [ -s train.log ]; then \
+  timeout 30s gcloud storage cp --no-user-output-enabled train.log \${ARTIFACT_DIR}/logs/train-\${TPU_WORKER_ID:-\${JOBSET_WORKER_INDEX:-\${HOSTNAME:-0}}}.log || true; \
+fi; \
+exit \${TRAIN_EXIT_CODE}"
