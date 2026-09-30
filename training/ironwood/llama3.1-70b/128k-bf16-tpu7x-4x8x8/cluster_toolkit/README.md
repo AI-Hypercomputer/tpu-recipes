@@ -132,17 +132,13 @@ across all commands and configurations.
 -   `CONTAINER_REGISTRY`: The container registry to use (e.g., `gcr.io`).
 -   `BASE_OUTPUT_DIR`: Output directory for model training (e.g.,
     `"gs://<your_gcs_bucket>"`).
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set in
-    `run_recipe.sh` to
-    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-llama3_1_70b-runner` by
-    default, matching the image built in the
-    [Docker container image](#docker-container-image) section.
+-   `WORKLOAD_IMAGE`: The Docker image for the workload (e.g.,
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxtext-runner`), matching the
+    image built in the [Docker container image](#docker-container-image)
+    section.
 -   `WORKLOAD_NAME`: A unique name for your workload (maximum 28 characters).
     This is set in `run_recipe.sh` to
     `${USER}-l70b-128k-$(date +%H%M)` by default.
--   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (e.g., `tpu7x-4x4x4`). See topologies
-    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
@@ -349,6 +345,14 @@ running the benchmark, you can use the following gcloud command:
 gcloud container clusters get-credentials ${CLUSTER_NAME} --project ${PROJECT_ID} --zone ${ZONE}
 ```
 
+## Get the recipe
+
+```bash
+cd ~
+git clone https://github.com/ai-hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/ironwood/llama3.1-70b/128k-bf16-tpu7x-4x8x8/cluster_toolkit
+```
+
 ### Run llama3_1_70b Pretraining Workload
 
 The `run_recipe.sh` script contains all the necessary environment variables and
@@ -413,12 +417,6 @@ For more in-depth debugging, inspect the workload with `gcluster job inspect`:
 gcluster job inspect --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE} --name ${WORKLOAD_NAME}
 ```
 
-View workload logs with `gcluster job logs`:
-
-```bash
-gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
-```
-
 ### Delete resources
 
 #### Delete a specific workload
@@ -462,8 +460,7 @@ You can pass `--auto-approve` to skip the interactive confirmation prompt:
 
 After the job completes, you can check the results by:
 
--   Accessing output logs from your job using `kubectl logs` or `gcluster job
-    logs`.
+-   Accessing output logs from your job using `kubectl logs`.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
