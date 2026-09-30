@@ -1,22 +1,26 @@
 #!/bin/bash
 
 # --- Environment Setup ---
-# This script requires uv and a Python 3.12 virtual environment with xpk installed.
-# If you haven't set up uv and the environment, please refer to the README.md.
+# This script requires the Cluster Toolkit (gcluster) CLI (v1.104.0).
+# If you haven't installed gcluster, please refer to the README.md.
 
-UV_VENV_PATH="${HOME}/.local/bin/venv"
-UV_PYTHON_VERSION="3.12"
-
-# Activate the virtual environment
-source "${UV_VENV_PATH}/bin/activate"
-
-# Check if xpk is installed in the venv
-if ! pip show xpk &> /dev/null; then
-    echo "xpk not found in the virtual environment. Please install it by running:"
-    echo "pip install xpk==0.16.1"
+export PATH="${HOME}/cluster-toolkit:${PATH}"
+CTK_VERSION="1.104.0"
+GCLUSTER_BIN="${GCLUSTER_BIN:-gcluster}"
+if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; then
+    echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
+    echo "  mkdir -p \${HOME}/cluster-toolkit"
+    echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  rm -f /tmp/gcluster_bundle.tgz"
+    echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
+    echo '  export PATH="${HOME}/cluster-toolkit:${PATH}"'
     exit 1
 fi
 # --- End Environment Setup ---
+
+set -e
+set -o pipefail
 
 # --- Configuration ---
 # Before running this script, please modify the environment variables below
@@ -29,9 +33,9 @@ export CLUSTER_NAME=""
 export ZONE=""
 export BASE_OUTPUT_DIR="" # for example, gs://<your_gcs_bucket>
 export WORKLOAD_IMAGE=""
-export WORKLOAD_NAME="$(printf "%.26s" "${USER//_/-}-wan")-$(date +%Y%m%d-%H%M)"
+export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-wan2-1-$(date +%H%M)}"
 # DATASET_DIR is where pre-training data was uploaded.
-export DATASET_DIR=${BASE_OUTPUT_DIR}/PusaV1_training
+export DATASET_DIR="${DATASET_DIR:-${BASE_OUTPUT_DIR}/PusaV1_training}"
 
 # XLA Flags
 XLA_FLAGS=" \
@@ -94,18 +98,24 @@ allow_split_physical_axes=True \
 base_output_directory=${BASE_OUTPUT_DIR} \
 run_name=${WORKLOAD_NAME}"
 
-xpk workload create \
-  --cluster=$CLUSTER_NAME \
-  --project=$PROJECT_ID \
-  --zone=$ZONE \
-  --priority=very-high \
-  --max-restarts=0 \
-  --device-type=tpu7x-4x4x4 \
-  --num-slices=1 \
-  --docker-image="${WORKLOAD_IMAGE}" \
-  --enable-debug-logs \
-  --workload="${WORKLOAD_NAME}" \
-  --command="set -e && \
+echo "=== Creating Cluster Toolkit Workload: $WORKLOAD_NAME ==="
+"${GCLUSTER_BIN}" job submit \
+  --skip-prereqs \
+  --queue multislice-queue \
+  --cluster "$CLUSTER_NAME" \
+  --project "$PROJECT_ID" \
+  --location "$ZONE" \
+  --priority medium \
+  --restarts 0 \
+  --compute-type tpu7x \
+  --topology 4x4x4 \
+  --num-slices 1 \
+  --image "${WORKLOAD_IMAGE}" \
+  --verbose \
+  --gke-namespace default \
+  --gke-disable-parallel-containers \
+  --name "${WORKLOAD_NAME}" \
+  --command "set -e && \
 export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export JAX_PLATFORMS='tpu,cpu' && \
 export ENABLE_PJRT_COMPATIBILITY='true' && \
@@ -121,4 +131,3 @@ HF_HUB_CACHE=/dev/shm python3 -m src.maxdiffusion.train_wan \
   base_output_directory=${BASE_OUTPUT_DIR} \
   run_name=${WORKLOAD_NAME} \
   ${MAXDIFFUSION_ARGS}"
-  
