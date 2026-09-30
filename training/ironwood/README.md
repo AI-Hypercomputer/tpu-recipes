@@ -25,4 +25,4 @@ The training recipes contained in this folder are optimized for Ironwood TPU. He
 | llama3.1-70b    | 256                | 64           | 131072                   | fp8_full           | 30.11       | 1,014.45     | 1,087.99              |
 | qwen3-235b-a22b | 256                | 8192         | 4096                     | bf16               | 30.87       | 629.79       | 4,245.89              |
 | qwen3-235b-a22b | 256                | 8192         | 4096                     | fp8_full           | 27.67       | 702.60       | 4,736.72              |
-| wan2.1-14b      | 64                 | 32           | 75600                    | bf16               | 21.98       | 222.60       | N/A                   |
+| wan2.1-14b      | 64                 | 32           | 75600                    | bf16               | 24.58       | 209.55       | N/A                   |
