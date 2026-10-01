@@ -200,7 +200,6 @@ pip install --upgrade pip
 cd ~/
 git clone https://github.com/AI-Hypercomputer/maxdiffusion.git
 cd maxdiffusion
-git checkout v3
 
 # Run WAN 2.1 Docker build
 export RECIPE_DOCKER_IMAGE=maxdiffusion_base_image
