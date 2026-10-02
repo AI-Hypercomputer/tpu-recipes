@@ -146,7 +146,7 @@ configurations.
     default for it; the [Docker container image](#docker-container-image)
     section exports it as
     `gcr.io/${PROJECT_ID}/${CLOUD_IMAGE_NAME}:latest` (by default
-    `gcr.io/${PROJECT_ID}/${USER}_runner:latest`), the image it builds and
+    `gcr.io/${PROJECT_ID}/${USER}-maxtext-runner:latest`), the image it builds and
     uploads.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` to `${USER}-llama3-405b-$(date +%H%M)` by default.
@@ -242,7 +242,7 @@ The following software versions are used:
 Docker Image Building Command:
 
 ```bash
-export CLOUD_IMAGE_NAME="${USER}_runner"
+export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
 export WORKLOAD_IMAGE="gcr.io/${PROJECT_ID}/${CLOUD_IMAGE_NAME}:latest"
 gcloud config set project "${PROJECT_ID}"
 
@@ -262,6 +262,13 @@ cd ..
 ## Training dataset
 
 This recipe uses a mock pretraining dataset provided by the MaxText framework.
+
+## Get the recipe
+
+```bash
+git clone https://github.com/AI-Hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/v5p/Llama3.1-405B-MaxText/cluster_toolkit
+```
 
 ## Run the recipe
 
@@ -354,12 +361,6 @@ For more in-depth debugging, inspect the workload with `gcluster job inspect`:
 gcluster job inspect --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE} --name ${WORKLOAD_NAME}
 ```
 
-View workload logs with `gcluster job logs`:
-
-```bash
-gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
-```
-
 ### Delete resources
 
 #### Delete a specific workload
@@ -390,8 +391,7 @@ cd ~/cluster-toolkit
 
 After the job completes, you can check the results by:
 
--   Accessing output logs from your job using `kubectl logs` or `gcluster job
-    logs`.
+-   Accessing output logs from your job using `kubectl logs`.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
