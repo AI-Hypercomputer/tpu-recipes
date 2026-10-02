@@ -272,6 +272,13 @@ cd ..
 
 This recipe uses a mock pretraining dataset provided by the MaxText framework.
 
+## Get the recipe
+
+```bash
+git clone https://github.com/AI-Hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/v5p/DeepSeek3-671B-MaxText/cluster_toolkit
+```
+
 ## Run the recipe
 
 ### Configure environment settings
@@ -353,12 +360,6 @@ For more in-depth debugging, inspect the workload with `gcluster job inspect`:
 gcluster job inspect --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE} --name ${WORKLOAD_NAME}
 ```
 
-View workload logs with `gcluster job logs`:
-
-```bash
-gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
-```
-
 ### Delete resources
 
 #### Delete a specific workload
@@ -389,8 +390,7 @@ cd ~/cluster-toolkit
 
 After the job completes, you can check the results by:
 
--   Accessing output logs from your job using `kubectl logs` or `gcluster job
-    logs`.
+-   Accessing output logs from your job using `kubectl logs`.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.

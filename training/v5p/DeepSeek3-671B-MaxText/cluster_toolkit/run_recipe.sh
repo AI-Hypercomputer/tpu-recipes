@@ -11,7 +11,7 @@ if ! command -v "${GCLUSTER_BIN}" &> /dev/null && [[ ! -x "${GCLUSTER_BIN}" ]]; 
     echo "gcluster not found. Please install Cluster Toolkit v${CTK_VERSION} by running:"
     echo "  mkdir -p \${HOME}/cluster-toolkit"
     echo "  curl -Lo /tmp/gcluster_bundle.tgz https://github.com/GoogleCloudPlatform/cluster-toolkit/releases/download/v${CTK_VERSION}/gcluster_bundle_linux_amd64.tgz"
-    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit gcluster"
+    echo "  tar -xzf /tmp/gcluster_bundle.tgz -C \${HOME}/cluster-toolkit"
     echo "  rm -f /tmp/gcluster_bundle.tgz"
     echo "  chmod +x \${HOME}/cluster-toolkit/gcluster"
     echo "  export PATH=\"\${HOME}/cluster-toolkit:\${PATH}\""
@@ -28,13 +28,13 @@ set -o pipefail
 # ---
 
 # --- Environment Variables ---
-export PROJECT_ID=""
-export CLUSTER_NAME=""
-export ZONE=""
-export BASE_OUTPUT_DIR=""
-export WORKLOAD_IMAGE=""
+export PROJECT_ID="${PROJECT_ID:-}"
+export CLUSTER_NAME="${CLUSTER_NAME:-}"
+export ZONE="${ZONE:-}"
+export BASE_OUTPUT_DIR="${BASE_OUTPUT_DIR:-}"
+export WORKLOAD_IMAGE="${WORKLOAD_IMAGE:-}"
 export WORKLOAD_NAME="${WORKLOAD_NAME:-$(printf "%.11s" "${USER//_/-}")-ds3-671b-$(date +%H%M)}"
-export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}"
+export ARTIFACT_DIR="${ARTIFACT_DIR:-${BASE_OUTPUT_DIR:+${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}}}"
 
 
 # XLA Flags (from MaxText benchmarks/maxtext_v5p_model_configs.py `deepseek3_671b_v5p_1024` @ 3eb77db3c):
