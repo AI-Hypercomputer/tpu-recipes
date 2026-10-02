@@ -40,7 +40,7 @@ fi
 # shape is overridden to 16 query heads / 4 KV heads / head_dim 256 (stock is
 # 32 / 8 / 128). Total attention width (16 * 256 = 4096) and the 4:1 GQA ratio are
 # unchanged, so the parameter count matches stock Llama3.1-8B.
-export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_tpu_dvfs_p_state=7 --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true --xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true --xla_enable_async_all_gather=true --xla_enable_async_collective_permute=true --xla_tpu_overlap_compute_collective_tc=true --xla_tpu_use_enhanced_launch_barrier=true"
+export LIBTPU_INIT_ARGS="--xla_tpu_scoped_vmem_limit_kib=98304 --xla_tpu_dvfs_p_state=7"
 python3 -m maxtext.trainers.pre_train.train src/maxtext/configs/base.yml \
     model_name=llama3.1-8b steps=8 enable_checkpointing=false \
     override_model_config=true head_dim=256 base_num_query_heads=16 base_num_kv_heads=4 num_vocab_tiling=16 \
