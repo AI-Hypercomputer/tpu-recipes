@@ -142,7 +142,7 @@ configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload, i.e. the image built
     in the [Docker container image](#docker-container-image) section (e.g.
-    `gcr.io/${PROJECT_ID}/${USER}_runner`).
+    `gcr.io/${PROJECT_ID}/${USER}-maxtext-runner:latest`).
 -   `WORKLOAD_NAME`: A unique name for your workload. By default,
     `run_recipe.sh` sets it to `<user>-l405b-$(date +%H%M)`, where `<user>` is
     the first 11 characters of `${USER}` with `_` replaced by `-`, so that the
@@ -234,7 +234,8 @@ The following software versions are used:
 Docker Image Building Command:
 
 ```bash
-export CLOUD_IMAGE_NAME="${USER}_runner"
+export CLOUD_IMAGE_NAME="${USER}-maxtext-runner"
+export WORKLOAD_IMAGE="gcr.io/${PROJECT_ID}/${CLOUD_IMAGE_NAME}:latest"
 
 # Clone MaxText Repository and Checkout Recipe Tag
 git clone https://github.com/AI-Hypercomputer/maxtext.git
@@ -258,6 +259,13 @@ cd ..
 ## Training dataset
 
 This recipe uses a mock pretraining dataset provided by the MaxText framework.
+
+## Get the recipe
+
+```bash
+git clone https://github.com/AI-Hypercomputer/tpu-recipes.git
+cd tpu-recipes/training/trillium/Llama3.1-405B-MaxText/cluster_toolkit
+```
 
 ## Run the recipe
 
@@ -347,12 +355,6 @@ For more in-depth debugging, inspect the workload with `gcluster job inspect`:
 gcluster job inspect --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE} --name ${WORKLOAD_NAME}
 ```
 
-View workload logs with `gcluster job logs`:
-
-```bash
-gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
-```
-
 ### Delete resources
 
 #### Delete a specific workload
@@ -383,8 +385,7 @@ cd ~/cluster-toolkit
 
 After the job completes, you can check the results by:
 
--   Accessing output logs from your job using `kubectl logs` or `gcluster job
-    logs`.
+-   Accessing output logs from your job using `kubectl logs`.
 -   Checking any data stored in the Google Cloud Storage bucket specified by the
     `${BASE_OUTPUT_DIR}` variable in your `run_recipe.sh`.
 -   Reviewing metrics in Cloud Monitoring, if configured.
