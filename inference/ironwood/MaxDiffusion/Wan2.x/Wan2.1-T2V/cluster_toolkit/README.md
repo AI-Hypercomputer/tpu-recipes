@@ -139,17 +139,14 @@ across all commands and configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `HF_TOKEN`: Your Hugging Face access token, used to download the Wan 2.1
     weights.
--   `WORKLOAD_IMAGE`: The Docker image for the workload. This is set to a
-    placeholder
-    `<YOUR_CONTAINER_REGISTRY>/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>:latest` by
-    default.
+-   `WORKLOAD_IMAGE`: The Docker image for the workload (e.g.,
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxdiffusion-runner`), matching
+    the image built in the [Docker container image](#docker-container-image)
+    section.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is generated in
     `run_recipe.sh` from your username and a timestamp. Cluster Toolkit rejects
     names longer than 28 characters, so keep that limit in mind if you override
     it.
--   `ACCELERATOR_TYPE`: The TPU machine type and topology (e.g.,
-    `tpu7x-standard-4t` with topology `2x2x1` or `2x2x2`). See topologies
-    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
@@ -273,7 +270,7 @@ export BASE_OUTPUT_DIR="" # E.g. gs://<YOUR_BUCKET_NAME>
 export HF_TOKEN=<YOUR_HF_TOKEN>
 export TPU_TYPE=<YOUR_HARDWARE_TYPE> # Supported values: 7x-8, 7x-16 (or exact TPU topologies: tpu7x-2x2x1, tpu7x-2x2x2)
 export RESOLUTION=<720p or 480p> # Supported: 720p, 480p (Defaults to 720p)
-export WORKLOAD_IMAGE=<YOUR_WORKLOAD_IMAGE> # E.g. gcr.io/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME> or nightly pre-built image
+export WORKLOAD_IMAGE=<YOUR_WORKLOAD_IMAGE> # E.g. ${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxdiffusion-runner
 
 chmod +x run_recipe.sh
 nano ./run_recipe.sh
@@ -330,12 +327,6 @@ For more in-depth debugging, inspect the workload with `gcluster job inspect`:
 gcluster job inspect --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE} --name ${WORKLOAD_NAME}
 ```
 
-View workload logs with `gcluster job logs`:
-
-```bash
-gcluster job logs ${WORKLOAD_NAME} --cluster ${CLUSTER_NAME} --project ${PROJECT_ID} --location ${ZONE}
-```
-
 ### Delete resources
 
 #### Delete a specific workload
@@ -371,8 +362,8 @@ After the job completes, you can check the results by:
 -   Per video generation time (throughput) can be found by extracting the
     tensorboard content using event_accumulator inside
     tensorboard.backend.event_processing.
--   Accessing output logs from your job using `kubectl logs` or `gcluster job
-    logs`. The recipe also uploads the captured stdout to
+-   Accessing output logs from your job using `kubectl logs`. The recipe also
+    uploads the captured stdout to
     `${BASE_OUTPUT_DIR}/${WORKLOAD_NAME}/logs/`.
 
 ## Next steps: deeper exploration and customization
