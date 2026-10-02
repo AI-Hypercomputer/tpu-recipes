@@ -1,19 +1,20 @@
 # Instructions for training Llama3.1-8B with long context on TPU v5p
 
-This document presents steps to run an ultra long-context (up to 10M sequence length) Llama3.1-8B [MaxText](https://github.com/AI-Hypercomputer/maxtext) workload with ring context parallelism through [XPK](https://github.com/google/xpk/blob/main/README.md) tool.
+This document presents steps to run a long-context (1M sequence length) Llama3.1-8B [MaxText](https://github.com/AI-Hypercomputer/maxtext) workload with ring context parallelism on a 64-chip TPU v5p slice (`v5p-128`) through [XPK](https://github.com/google/xpk/blob/main/README.md) tool.
 
 ## Model configuration
 
-> [!IMPORTANT]
-> This recipe trains a **variant** of Llama3.1-8B, not the stock architecture. The attention shape is overridden on the command line (`override_model_config=true`) to use fewer, wider heads:
->
-> | Config | Stock `llama3.1-8b` | This recipe |
-> | ---------------------- | ------------------- | ----------- |
-> | `head_dim`             | 128                 | 256         |
-> | `base_num_query_heads` | 32                  | 16          |
-> | `base_num_kv_heads`    | 8                   | 4           |
->
-> The total attention width (`base_num_query_heads * head_dim = 4096`) and the 4:1 GQA ratio are unchanged, so the parameter count is identical to stock Llama3.1-8B. Every other model dimension (`base_emb_dim`, `base_mlp_dim`, `base_num_decoder_layers`, `vocab_size`) is stock. The performance numbers in this recipe were measured with this variant; running the stock head configuration will give different results.
+This recipe uses the stock MaxText `llama3.1-8b` model config (`head_dim=128`, `base_num_query_heads=32`, `base_num_kv_heads=8`) with no model overrides.
+
+## Performance
+
+Measured on TPU v5p-128 (4x4x4 topology, 64 chips, 1 slice) with the default settings of `scripts/run_llama3.1-8b-long-context.sh`:
+
+| Sequence length | Global batch size | Step time | TFLOP/s/chip | MFU    | Tokens/s/chip |
+| --------------- | ----------------- | --------- | ------------ | ------ | ------------- |
+| 1048576 (1M)    | 2                 | 111.05 s  | 256.6        | 55.9%  | 295           |
+
+Software versions used for the measurement: MaxText `9af4c5e`, JAX `0.11.1.dev20260811`, libtpu `0.0.45`. Results with other versions may differ.
 
 ## XPK setup
 
@@ -43,8 +44,8 @@ pip install xpk
 
 ```
 export CLUSTER_NAME=v5p-demo #<your cluster name>
-export WORKLOAD_NAME=llama3-1-8b-10m-test #<your workload name>
-export RUN_NAME=llama3-1-8b-10m-run #<your run name>
+export WORKLOAD_NAME=llama3-1-8b-1m-test #<your workload name>
+export RUN_NAME=llama3-1-8b-1m-run #<your run name>
 export TPU_TYPE=v5p-128 #<your TPU Type: 64 chips / 128 cores>
 export NUM_SLICES=1 #<number of TPU node-pools you want to use>
 export OUTPUT_PATH=gs://v5p-demo/ #<your GCS folder for results>
@@ -62,26 +63,11 @@ xpk workload create \
 --command "bash src/maxtext/configs/run_llama3.1-8b-long-context.sh RUN_NAME=${RUN_NAME} OUTPUT_PATH=${OUTPUT_PATH}"
 ```
 
-The script defaults to a 10M (10,485,760) sequence length on a 64-chip (128-core) TPU v5p topology (`v5p-128`, one JAX device per chip). Attention uses ring context parallelism (`ici_context_parallelism=64`) with causal load balancing and Splash attention kernels. At 10M, full rematerialization is required to fit in the 95 GB of HBM per chip.
+The script defaults to a 1M (1,048,576) sequence length on a 64-chip (128-core) TPU v5p topology (`v5p-128`, one JAX device per chip) with `per_device_batch_size=0.03125` (global batch size 2). Attention uses ring context parallelism across all 64 chips (`ici_context_parallelism=64`, `ici_fsdp_parallelism=1`) with causal load balancing and Splash attention kernels, the `custom` remat policy, and host-offloaded context (`context=offload`).
 
-6. (Optional) Other sequence lengths.
-
-All sequence lengths use context parallelism across all 64 chips. Shorter contexts fit a larger per-device batch and cheaper remat settings:
-
-| Sequence length | ici_context_parallelism | ici_fsdp_parallelism | per_device_batch_size | REMAT_POLICY | CONTEXT |
-| --------------- | ----------------------- | -------------------- | --------------------- | ------------ | ------- |
-| 1048576 (1M)    | 64                      | 1                    | 0.03125               | custom       | offload |
-| 2097152 (2M)    | 64                      | 1                    | 0.03125               | custom       | device  |
-| 5242880 (5M)    | 64                      | 1                    | 0.015625              | custom       | offload |
-| 10485760 (10M)  | 64                      | 1                    | 0.015625              | full         | remat   |
-
+6. (Optional) If you need to delete any of your workload, you can run the following command:
 ```
---command "bash src/maxtext/configs/run_llama3.1-8b-long-context.sh RUN_NAME=${RUN_NAME} OUTPUT_PATH=${OUTPUT_PATH} MAX_TARGET_LENGTH=1048576 PER_DEVICE_BATCH_SIZE=0.03125 REMAT_POLICY=custom CONTEXT=offload"
-```
-
-7. (Optional) If you need to delete any of your workload, you can run the following command:
-```
-export WORKLOAD_NAME_TO_DELETE=llama3-1-8b-10m-test
+export WORKLOAD_NAME_TO_DELETE=llama3-1-8b-1m-test
 
 xpk workload delete \
 --workload ${WORKLOAD_NAME_TO_DELETE} \
