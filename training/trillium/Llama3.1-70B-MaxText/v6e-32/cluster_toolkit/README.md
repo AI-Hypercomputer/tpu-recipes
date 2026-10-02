@@ -1,7 +1,7 @@
 # Instructions for training Llama3.1-70B-MaxText on TPU trillium (v6e-32)
 
-## XPK setup
-Please follow the [XPK_README](https://github.com/AI-Hypercomputer/tpu-recipes/blob/main/training/XPK_README.md) to create your GKE cluster with XPK
+## Cluster Toolkit setup
+Please follow the [Cluster Toolkit Cloud TPU deployment guide](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-overview) to create your GKE cluster with Cluster Toolkit (`gcluster`) v1.104.0.
 
 ## Prep for Maxtext
 
@@ -21,19 +21,17 @@ bash docker_build_dependency_image.sh DEVICE=tpu MODE=stable_stack BASEIMAGE=${B
 
 ## Run Maxtext Llama3.1-70B workloads on GKE
 
-### Starting workload
+### Starting workload (Cluster Toolkit)
 
-From the MaxText root directory, start your Llama3.1-70B workload.
+From your tpu-recipes checkout, start your Llama3.1-70B workload.
 ```
-python3 -m benchmarks.benchmark_runner xpk \
-    --project=$PROJECT \
-    --zone=$ZONE \
-    --device_type=v6e-32 \
-    --num_slices=1  \
-    --cluster_name=${CLUSTER_NAME} \
-    --base_output_directory=${OUTPUT_DIR} \
-    --model_name="llama3_1_70b_8192_bs2_bfloat16_no_collective_matmul" \
-    --base_docker_image=maxtext_base_image
+cd tpu-recipes/training/trillium/Llama3.1-70B-MaxText/v6e-32/cluster_toolkit
+export PROJECT_ID=$PROJECT
+export CLUSTER_NAME=$CLUSTER_NAME
+export ZONE=$ZONE
+export BASE_OUTPUT_DIR=$OUTPUT_DIR
+export WORKLOAD_IMAGE=$WORKLOAD_IMAGE
+./run_recipe.sh
 ```
 
 From your workload logs, you should start seeing step time logs like the following:
