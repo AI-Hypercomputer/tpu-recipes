@@ -113,13 +113,13 @@ configurations.
     `"gs://<your_gcs_bucket>"`).
 -   `WORKLOAD_IMAGE`: The Docker image for the workload. `run_recipe.sh` has no
     default for it; the [Docker container image](#docker-container-image)
-    section exports it as the image it builds and uploads.
+    section exports it as
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${CLOUD_IMAGE_NAME}` (by default
+    `${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxdiffusion-runner`), the
+    image it builds and uploads.
 -   `WORKLOAD_NAME`: A unique name for your workload. This is set in
     `run_recipe.sh` using the following command:
     `export WORKLOAD_NAME="$(printf "%.8s" "${USER//_/-}-wan21")-${random_suffix}-$(date +%Y%m%d-%H%M)"`
--   `GKE_VERSION`: The GKE version, `1.34.0-gke.2201000` or later.
--   `ACCELERATOR_TYPE`: The TPU type (`v6e-16`). See topologies
-    [here](https://cloud.google.com/kubernetes-engine/docs/concepts/plan-tpus#configuration).
 -   `RESERVATION_NAME`: Your TPU reservation name. Use the reservation name if
     within the same project. For a shared project, use
     `"projects/<project_number>/reservations/<reservation_name>"`.
@@ -230,7 +230,7 @@ export PROJECT_ID=<YOUR_PROJECT_ID>
 export CLUSTER_NAME=<YOUR_CLUSTER_NAME>
 export ZONE=<YOUR_CLUSTER_ZONE>
 export BASE_OUTPUT_DIR="" # E.g. gs://<YOUR_BUCKET_NAME>
-export WORKLOAD_IMAGE=<YOUR_WORKLOAD_IMAGE> # E.g. gcr.io/<YOUR_PROJECT_ID>/<YOUR_IMAGE_NAME>
+export WORKLOAD_IMAGE=<YOUR_WORKLOAD_IMAGE> # E.g. ${CONTAINER_REGISTRY}/${PROJECT_ID}/${USER}-maxdiffusion-runner
 export HF_TOKEN=<YOUR_HF_TOKEN> # Optional; the model weights are public
 
 chmod +x run_recipe.sh
