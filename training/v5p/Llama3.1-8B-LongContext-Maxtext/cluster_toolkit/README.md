@@ -85,13 +85,13 @@ Examples:
 
 The configurations below were verified on a 64-chip TPU v5p slice (`v5p-128`, topology `4x4x4`, 64 Megacore devices, `459 TFLOP/s/device` BF16 peak):
 
-| Context Length | Parallelism & Offload Config | UBench / Benchmark Run ID | Steady-State Step Time | Measured TFLOP/s/device | Measured MFU (%) |
+| Context Length | Parallelism & Offload Config | UBench Run Name & BigQuery `run_id` | Steady-State Step Time | Throughput (`TFLOP/s` & `Tokens/s/chip`) | Measured MFU (%) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **1M** (`1,048,576`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload` | `chengnuojin-ubench-wm87mo94` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_173709-20730566-a238-463e-918e-1f353c039538`) | **95.73 s** | **297.7 TFLOP/s** | **64.86%** (`68.75%` in `O_h2_1024k_ring_cp64_b2_r2`) |
-| **2M** (`2,097,152`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-w3jvwbkr` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_183624-083a4c98-0783-46af-a0a8-cd91be9efeb5`) | **357.68 s** | **310.4 TFLOP/s** | **67.63%** (`69.88%` in `O_r5_2m_ring_b2_inoff`) |
-| **4M** (`4,194,304`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-asb6kxmv` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_215125-766e1e52-4ecf-4a87-a439-8a0d23bacc1c`) | **1,373.73 s** | **319.0 TFLOP/s** | **69.50%** (`70.29%` in `O_r5_4m_ring_b2_inoff`) |
-| **10M** (`10,485,760`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `remat_policy=full` | `chengnuojin-ubench-uujda4kd` / `O_reach_fullremat_10m_scan_r3` | **8,056.40 s** | **168.6 TFLOP/s** | **36.74%** |
-| **14M** (`14,680,064`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `context=remat`, `decoder_layer_input=offload` | `chengnuojin-ubench-bjzjtsvd` / `O_r9_14m_ring_b1_frm_inoff_r2` | **15,623.09 s** | **170.2 TFLOP/s** | **37.07%** |
+| **1M** (`1,048,576`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload` | `chengnuojin-ubench-wm87mo94` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_173709-20730566-a238-463e-918e-1f353c039538`) | **95.73 s** | **297.7 TFLOP/s** (`342.4 tok/s/chip`) | **64.86%** (`68.75%` in `O_h2_1024k_ring_cp64_b2_r2`) |
+| **2M** (`2,097,152`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-w3jvwbkr` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_183624-083a4c98-0783-46af-a0a8-cd91be9efeb5`) | **357.68 s** | **310.4 TFLOP/s** (`183.2 tok/s/chip`) | **67.63%** (`69.88%` in `O_r5_2m_ring_b2_inoff`) |
+| **4M** (`4,194,304`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-asb6kxmv` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_215125-766e1e52-4ecf-4a87-a439-8a0d23bacc1c`) | **1,373.73 s** | **319.0 TFLOP/s** (`95.4 tok/s/chip`) | **69.50%** (`70.29%` in `O_r5_4m_ring_b2_inoff`) |
+| **10M** (`10,485,760`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `remat_policy=full` | `chengnuojin-ubench-uujda4kd` / `O_reach_fullremat_10m_scan_r3` | **8,056.40 s** | **168.6 TFLOP/s** (`20.3 tok/s/chip`) | **36.74%** |
+| **14M** (`14,680,064`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `context=remat`, `decoder_layer_input=offload` | `chengnuojin-ubench-bjzjtsvd` / `O_r9_14m_ring_b1_frm_inoff_r2` | **15,623.09 s** | **170.2 TFLOP/s** (`14.7 tok/s/chip`) | **37.07%** |
 
 ## Cleanup
 
