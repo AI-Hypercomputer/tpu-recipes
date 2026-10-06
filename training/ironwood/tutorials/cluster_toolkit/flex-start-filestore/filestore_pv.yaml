@@ -1,0 +1,43 @@
+# Pre-provisioned Filestore instance exposed to the cluster as a
+# PersistentVolume / PersistentVolumeClaim pair. Replace the <...> placeholders
+# with values from `gcloud filestore instances describe`.
+#
+# Static provisioning reference:
+# https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/blob/master/docs/kubernetes/pre-provisioned-pv.md
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: filestore-pv
+  annotations:
+    pv.kubernetes.io/provisioned-by: filestore.csi.storage.gke.io
+spec:
+  storageClassName: ""
+  capacity:
+    storage: <INSTANCE CAPACITY>            # e.g. 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  claimRef:
+    namespace: default
+    name: filestore-volume
+  csi:
+    driver: filestore.csi.storage.gke.io
+    volumeHandle: "modeInstance/<ZONE>/<FILESTORE_INSTANCE_NAME>/<FILE_SHARE_NAME>"
+    volumeAttributes:
+      ip: <INSTANCE IP>                     # networks[0].ipAddresses[0]
+      volume: <FILE_SHARE_NAME>             # fileShares[0].name, e.g. default
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: filestore-volume
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: filestore-pv
+  resources:
+    requests:
+      storage: <INSTANCE CAPACITY>            # must match the PV capacity
