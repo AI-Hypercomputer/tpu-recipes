@@ -137,9 +137,27 @@ gcloud compute tpus tpu-vm ssh $TPU_NAME --project $PROJECT --zone=$ZONE
 
 ## Step 8: Access the running container
 
+Depending on how you deployed the vLLM container, use one of the following methods to access the container's shell:
+
+### Option A: If you used the `docker run` command (standard deployment)
+
 ```bash
 sudo docker exec -it $USER-vllm bash
 ```
+
+### Option B: If you used Docker Compose
+
+1. List your running containers to find your container's name, for example, `gemma4-vllm-server-1`:
+
+    ```bash
+    sudo docker ps
+    ```
+
+2. Access the container shell by replacing `<container_name>` with the name you found in step 1:
+
+    ```bash
+    sudo docker exec -it <container_name> bash
+    ```
 
 ## Step 9: Test the server (Text + Image)
 
@@ -177,7 +195,8 @@ curl http://localhost:8000/v1/chat/completions \
 
 You can benchmark the serving performance using the built-in `vllm bench serve` tools inside the running container.
 
-First, access the running container if you haven't already:
+Access the running container if you haven't already. See step 8 for the exact command based on your deployment method. For example, if you deployed the container using the `docker run` command in Step 4, access the shell by running:
+   
 ```bash
 sudo docker exec -it $USER-vllm bash
 ```
