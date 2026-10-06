@@ -63,8 +63,8 @@ You can override sequence length, parallelism, and activation offload/remat flag
 | 1048576 (1M)    | 64                        | 1                      | 0.03125                 | `custom`       | `offload` | `device`              | 64.9% – 68.7%            | 95.73 s (UBench) / 90.30 s |
 | 2097152 (2M)    | 64                        | 1                      | 0.03125                 | `custom`       | `offload` | `offload`             | 67.6% – 69.9%            | 357.68 s (UBench) / 346.18 s |
 | 4194304 (4M)    | 64                        | 1                      | 0.03125                 | `custom`       | `offload` | `offload`             | 69.5% – 70.3%            | 1,373.73 s (UBench) / 1,358.40 s |
-| 10485760 (10M)  | 64                        | 1                      | 0.015625                | `full`         | `device`  | `device`              | 36.7%                    | 8,056.40 s         |
-| 14680064 (14M)  | 64                        | 1                      | 0.015625                | `custom`       | `remat`   | `offload`             | 37.1%                    | 15,623.09 s        |
+| 10485760 (10M)  | 64                        | 1                      | 0.015625                | `full`         | `device`  | `device`              | 36.7%                    | 8,060.20 s (UBench) / 8,056.40 s |
+| 14680064 (14M)  | 64                        | 1                      | 0.015625                | `custom`       | `remat`   | `offload`             | 36.7% – 37.1%            | 15,766.82 s (UBench) / 15,623.09 s |
 
 Examples:
 ```bash
@@ -90,8 +90,8 @@ The configurations below were verified on a 64-chip TPU v5p slice (`v5p-128`, to
 | **1M** (`1,048,576`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload` | `chengnuojin-ubench-wm87mo94` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_173709-20730566-a238-463e-918e-1f353c039538`) | **95.73 s** | **297.7 TFLOP/s** (`342.4 tok/s/chip`) | **64.86%** (`68.75%` in `O_h2_1024k_ring_cp64_b2_r2`) |
 | **2M** (`2,097,152`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-w3jvwbkr` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_183624-083a4c98-0783-46af-a0a8-cd91be9efeb5`) | **357.68 s** | **310.4 TFLOP/s** (`183.2 tok/s/chip`) | **67.63%** (`69.88%` in `O_r5_2m_ring_b2_inoff`) |
 | **4M** (`4,194,304`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-asb6kxmv` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_215125-766e1e52-4ecf-4a87-a439-8a0d23bacc1c`) | **1,373.73 s** | **319.0 TFLOP/s** (`95.4 tok/s/chip`) | **69.50%** (`70.29%` in `O_r5_4m_ring_b2_inoff`) |
-| **10M** (`10,485,760`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `remat_policy=full` | `chengnuojin-ubench-uujda4kd` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-06_004118-68af7d37-c827-4a37-9b7d-5df32cd80975`) | **8,060.68 s** (`8,056.40 s` ref) | **168.6 TFLOP/s** (`20.3 tok/s/chip`) | **36.72% – 36.74%** |
-| **14M** (`14,680,064`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `context=remat`, `decoder_layer_input=offload` | `chengnuojin-ubench-bjzjtsvd` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-06_004527-e97c865b-06a9-4433-8e3c-f4b6534e1407`) | **15,623.09 s** | **170.2 TFLOP/s** (`14.7 tok/s/chip`) | **37.07%** |
+| **10M** (`10,485,760`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `remat_policy=full` | `chengnuojin-ubench-uujda4kd` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-06_140929-befcf112-30da-4290-a424-9d9f39be4deb`) | **8,060.20 s** (`8,056.40 s` ref) | **168.5 TFLOP/s** (`20.3 tok/s/chip`) | **36.72% – 36.74%** |
+| **14M** (`14,680,064`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `context=remat`, `decoder_layer_input=offload` | `chengnuojin-ubench-bjzjtsvd` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-06_141408-f2a71578-1159-4612-b1a5-c97197dd1493`) | **15,766.82 s** (`15,623.09 s` ref) | **168.6 TFLOP/s** (`170.2` ref, `14.5 tok/s/chip`) | **36.73% – 37.07%** |
 
 ## Cleanup
 
