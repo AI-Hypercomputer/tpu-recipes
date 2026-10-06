@@ -147,17 +147,11 @@ sudo docker exec -it $USER-vllm bash
 
 ### Option B: If you used Docker Compose
 
-1. List your running containers to find your container's name, for example, `gemma4-vllm-server-1`:
+Access the container shell directly using `docker compose exec` from the `Gemma4` directory. Replace the file and service name if using the MoE model:
 
-    ```bash
-    sudo docker ps
-    ```
-
-2. Access the container shell by replacing `<container_name>` with the name you found in step 1:
-
-    ```bash
-    sudo docker exec -it <container_name> bash
-    ```
+```bash
+sudo docker compose -f docker-compose-gemma4-31B.yml exec vllm-gemma4-31b bash
+```
 
 ## Step 9: Test the server (Text + Image)
 
