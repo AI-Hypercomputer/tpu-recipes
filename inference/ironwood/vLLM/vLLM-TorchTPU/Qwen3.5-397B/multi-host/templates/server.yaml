@@ -1,0 +1,180 @@
+{{- $name := .Release.Name }}
+{{- $expectedTpu := mul .Values.server.num_hosts .Values.server.chips_per_host 2 }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-hf-secret
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+type: Opaque
+stringData:
+  hf_api_token: {{ .Values.hf_token | default "" | quote }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ $name }}-hyperdisk-balanced
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+# One group of `num_hosts` pods, one per host of the slice. The first pod
+# (worker index 0) starts a Ray head and runs `vllm serve`; the other pods join
+# the Ray cluster, which places the engine's TPU workers on every host.
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: {{ $name }}-vllm-server
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+    app.kubernetes.io/component: server
+    {{- with .Values.kueue.queue_name }}
+    kueue.x-k8s.io/queue-name: {{ . }}
+    {{- end }}
+  annotations:
+    # Keep every pod of the group on the same node pool, that is, the same slice.
+    leaderworkerset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: {{ .Values.server.num_hosts }}
+    restartPolicy: RecreateGroupOnPodRestart
+    # One data disk per host. The claims are owned by the underlying
+    # StatefulSets and are deleted with them.
+    volumeClaimTemplates:
+      - metadata:
+          name: data-volume
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          storageClassName: {{ $name }}-hyperdisk-balanced
+          resources:
+            requests:
+              storage: {{ .Values.server.data_disk_size }}
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Delete
+      whenScaled: Delete
+    workerTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/instance: {{ $name }}
+          app.kubernetes.io/component: server
+      spec:
+        {{- with .Values.kueue.priority_class }}
+        priorityClassName: {{ . }}
+        {{- end }}
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: {{ .Values.server.topology }}
+          {{- with .Values.reservation }}
+          cloud.google.com/reservation-name: {{ . }}
+          {{- end }}
+        tolerations:
+          - key: google.com/tpu
+            operator: Exists
+        containers:
+          - name: vllm-torchtpu
+            image: {{ .Values.server.image }}
+            securityContext:
+              privileged: true
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                mkdir -p /data/tmp
+                export TMPDIR=/data/tmp
+                export HF_TOKEN="${HUGGING_FACE_HUB_TOKEN}"
+                # libtpu must see every chip of the slice, not only this host's.
+                unset TPU_VISIBLE_CHIPS
+                RAY_PORT={{ .Values.server.ray_port }}
+                # Every host loads its own weight shards from a local path, so
+                # each host downloads the checkpoint to the same directory
+                # before it joins the Ray cluster. A rerun on the same disk
+                # only checks the files.
+                MODEL_DIR={{ .Values.server.model_dir | quote }}
+                echo "Downloading {{ .Values.server.model }} to ${MODEL_DIR}"
+                until hf download {{ .Values.server.model | quote }} --local-dir "${MODEL_DIR}"; do
+                  echo "Download failed; retrying in 30 s"
+                  sleep 30
+                done
+                if [ "${LWS_WORKER_INDEX}" = "0" ]; then
+                  echo "Starting the Ray head on ${HOSTNAME}"
+                  ray start --head --port="${RAY_PORT}"
+                  # Serving against a partial cluster sizes the engine wrong.
+                  echo "Waiting for {{ $expectedTpu }} TPU devices to join the Ray cluster"
+                  until ray status 2>/dev/null | grep -q "/{{ $expectedTpu }}.0 TPU"; do
+                    sleep 5
+                  done
+                  ray status
+                  export RAY_ADDRESS="127.0.0.1:${RAY_PORT}"
+                  exec vllm serve "${MODEL_DIR}" "$@"
+                else
+                  echo "Waiting for the Ray head at ${LWS_LEADER_ADDRESS}:${RAY_PORT}"
+                  until (echo > "/dev/tcp/${LWS_LEADER_ADDRESS}/${RAY_PORT}") 2>/dev/null; do
+                    sleep 5
+                  done
+                  exec ray start --address="${LWS_LEADER_ADDRESS}:${RAY_PORT}" --block
+                fi
+              - "--"
+              {{- range .Values.server.args }}
+              - {{ . | quote }}
+              {{- end }}
+            env:
+              - name: HUGGING_FACE_HUB_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: {{ $name }}-hf-secret
+                    key: hf_api_token
+              {{- range $k, $v := .Values.server.env }}
+              - name: {{ $k }}
+                value: {{ $v | toString | quote }}
+              {{- end }}
+            ports:
+              - containerPort: 8000
+            resources:
+              requests:
+                google.com/tpu: {{ .Values.server.chips_per_host | quote }}
+              limits:
+                google.com/tpu: {{ .Values.server.chips_per_host | quote }}
+            # Only the first pod serves HTTP; the others are ready once started.
+            readinessProbe:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - 'if [ "${LWS_WORKER_INDEX}" = "0" ]; then (echo > /dev/tcp/localhost/8000) 2>/dev/null; fi'
+              initialDelaySeconds: 15
+              periodSeconds: 10
+            volumeMounts:
+              - name: data-volume
+                mountPath: /data
+              - name: dshm
+                mountPath: /dev/shm
+        volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+          # Replaced by the per-host claim from volumeClaimTemplates above.
+          - name: data-volume
+            emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-vllm-service
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $name }}
+    app.kubernetes.io/component: server
+    leaderworkerset.sigs.k8s.io/worker-index: "0"
+  type: ClusterIP
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
