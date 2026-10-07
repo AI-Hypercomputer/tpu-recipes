@@ -1,0 +1,115 @@
+# Qwen3.5-397B-A17B-FP8 on one tpu7x 2x2x1 host with vLLM TorchTPU,
+# benchmarked with the InferenceX serving client (8k/1k, concurrency 64).
+
+# Hugging Face token with read access to Qwen/Qwen3.5-397B-A17B-FP8.
+# Pass it at install time: helm install <name> . --set hf_token=$HF_TOKEN
+hf_token: ""
+
+# Optional: name of a tpu7x GCE reservation. Leave empty to not pin one.
+reservation: ""
+
+# Optional: Kueue settings. Leave empty if your cluster does not use Kueue.
+kueue:
+  queue_name: ""
+  priority_class: ""
+
+server:
+  # vLLM TorchTPU image. This is a dated nightly build that this recipe was
+  # validated with; replace it with an official vLLM TorchTPU release image
+  # once one is published, or with any TorchTPU vLLM image your cluster can
+  # pull.
+  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261005"
+  topology: "2x2x1"
+  num_chips: 4
+  # Hyperdisk for model weights and compile caches.
+  data_disk_size: "600Gi"
+  # TorchTPU and XLA tuning used by the InferenceX Qwen3.5-397B single-host
+  # configuration at concurrency 64.
+  env:
+    TPU_PROCESS_ADDRESSES: ""
+    VLLM_ENGINE_READY_TIMEOUT_S: "7200"
+    TPU_ACCELERATOR_TYPE: "tpu7x"
+    USE_MOE_SPARSE_CORE: "1"
+    ONEHOT_MOE_PERMUTE_THRESHOLD: "2048"
+    TPU_TOKEN_BUCKET_EXTRA: "4,8,48,3072"
+    TPU_ROPE_CACHE_TRUNCATE: "1"
+    TPU_MOE_SKIP_PADDED_TOKENS: "1"
+    MOE_LOCAL_EXPERT_AFFINITY_EPSILON: "0.01"
+    VLLM_XLA_CHECK_RECOMPILATION: "0"
+    TF_CPP_MIN_LOG_LEVEL: "3"
+    ATTN_BUCKETIZED_NUM_REQS: "true"
+    ATTN_CUSTOM_NUM_REQS_BUCKETS: "8,16,32,64"
+    VLLM_MOE_CHUNK_SIZE: "256"
+    DP_SCHED_BATCH_PREFILL: "1"
+    NEW_MODEL_DESIGN: "0"
+    USE_MOE_FUSED_EP_KERNEL: "0"
+    TPU_MOE_FUSED_EP_STEP_MIN_TOKENS: "33"
+    TPU_MOE_FUSED_EP_ASYNC_ROW_GATHER: "1"
+    TPU_MOE_GATHER_THEN_ROUTE_MAX_TOKENS: "0"
+    MOE_FUSED_EP_KERNEL_MIN_TOKENS: "1024"
+    TPU_TP_HIERARCHICAL_ALL_REDUCE_MIN_TOKENS: "1024"
+    TPU_ENABLE_GDN_DYNAMIC_TILING: "0"
+    TPU_MOE_ROUTER_TOPK: "rowmax"
+    RAGGED_GATED_DELTA_RULE_IMPL: "chunked_kernel_v3_pd"
+    RAGGED_GATHER_REDUCE_VERSION: "v3"
+    USE_FUSED_MOE_GMM: "1"
+    USE_BATCHED_RPA_LONGCTX: "1"
+    TPU_RPA_FOLD_KV_HEAD_DIM: "1"
+    USE_MOE_COUNTING_SORT: "1"
+    MODEL_IMPL_TYPE: "vllm"
+    TPU_PARALLEL_PRECOMPILE: "1"
+    TPU_PREMAPPED_BUFFER_SIZE: "17179869184"
+    TPU_PREMAPPED_BUFFER_TRANSFER_THRESHOLD_BYTES: "17179869184"
+    TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL: "0"
+    HF_HOME: "/data/huggingface_cache"
+    TMPDIR: "/data/tmp"
+    LIBTPU_INIT_ARGS: "--xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_tpu_enable_sparse_core_hierarchical_all_reduce=true --xla_tpu_sparse_core_all_reduce_offload_min_size_in_bytes=8388608 --xla_enable_async_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true --xla_tpu_sparse_core_all_gather_offload_min_size_in_bytes=262144"
+    VLLM_TORCH_COMPILE_CACHE_DIR: "/data/torch_compile_cache"
+    VLLM_XLA_CACHE_PATH: "/data/xla_cache"
+  # Arguments to `vllm serve`.
+  args:
+    - "--host=0.0.0.0"
+    - "--port=8000"
+    - "--download-dir=/data"
+    - "--kv-cache-dtype=fp8"
+    - "--quantization=fp8"
+    - "--max-model-len=10240"
+    - "--gpu-memory-utilization=0.92"
+    - "--tensor-parallel-size=8"
+    - "--data-parallel-size=1"
+    - "--max-num-seqs=64"
+    - "--max-num-batched-tokens=16384"
+    - "--no-enable-prefix-caching"
+    - "--enable-expert-parallel"
+    - "--prefill-schedule-interval=1"
+    - "--async-scheduling"
+    - "--block-size=256"
+    - "--language-model-only"
+    - "--attention-backend=CUSTOM"
+    - "--limit-mm-per-prompt={\"image\": 0, \"video\": 0}"
+    - "--default-chat-template-kwargs={\"enable_thinking\": false}"
+    - "--model=Qwen/Qwen3.5-397B-A17B-FP8"
+    - "--tokenizer=Qwen/Qwen3.5-397B-A17B-FP8"
+
+client:
+  # Any image with python3, curl and apt-get; the benchmark script is cloned
+  # from InferenceX at a pinned commit.
+  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261005"
+  inferencex_commit: "f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd"
+  # Arguments to InferenceX utils/bench_serving/benchmark_serving.py.
+  # --host and --port are added by the chart.
+  args:
+    - "--backend=vllm"
+    - "--request-rate=inf"
+    - "--percentile-metrics=ttft,tpot,itl,e2el"
+    - "--dataset-name=random"
+    - "--random-input-len=8192"
+    - "--random-output-len=1024"
+    - "--random-range-ratio=0.8"
+    - "--model=Qwen/Qwen3.5-397B-A17B-FP8"
+    - "--tokenizer=Qwen/Qwen3.5-397B-A17B-FP8"
+    - "--ignore-eos"
+    - "--num-warmups=128"
+    - "--use-chat-template"
+    - "--num-prompts=640"
+    - "--max-concurrency=64"
