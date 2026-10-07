@@ -1,0 +1,131 @@
+{{- $name := .Release.Name }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-hf-secret
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+type: Opaque
+stringData:
+  hf_api_token: {{ .Values.hf_token | default "" | quote }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ $name }}-hyperdisk-balanced
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+spec:
+  storageClassName: {{ $name }}-hyperdisk-balanced
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.server.data_disk_size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-vllm-server
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+    app.kubernetes.io/component: server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $name }}
+      app.kubernetes.io/component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ $name }}
+        app.kubernetes.io/component: server
+        {{- with .Values.kueue.queue_name }}
+        kueue.x-k8s.io/queue-name: {{ . }}
+        {{- end }}
+    spec:
+      {{- with .Values.kueue.priority_class }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: {{ .Values.server.topology }}
+        {{- with .Values.reservation }}
+        cloud.google.com/reservation-name: {{ . }}
+        {{- end }}
+      tolerations:
+        - key: google.com/tpu
+          operator: Exists
+      containers:
+        - name: vllm-torchtpu
+          image: {{ .Values.server.image }}
+          command: ["/bin/bash", "-c", "mkdir -p /data/tmp && exec vllm serve \"$@\"", "--"]
+          args:
+            {{- range .Values.server.args }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-hf-secret
+                  key: hf_api_token
+            {{- range $k, $v := .Values.server.env }}
+            - name: {{ $k }}
+              value: {{ $v | toString | quote }}
+            {{- end }}
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              google.com/tpu: {{ .Values.server.num_chips | quote }}
+            limits:
+              google.com/tpu: {{ .Values.server.num_chips | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: data-volume
+              mountPath: /data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}-vllm-service
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ $name }}
+    app.kubernetes.io/component: server
+  type: ClusterIP
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
