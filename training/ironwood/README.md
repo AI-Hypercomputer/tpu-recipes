@@ -26,3 +26,4 @@ The training recipes contained in this folder are optimized for Ironwood TPU. He
 | qwen3-235b-a22b | 256                | 8192         | 4096                     | bf16               | 30.91       | 629.01       | 4,240.60              |
 | qwen3-235b-a22b | 256                | 8192         | 4096                     | fp8_full           | 27.67       | 702.60       | 4,736.72              |
 | wan2.1-14b      | 64                 | 32           | 75600                    | bf16               | 24.58       | 209.55       | N/A                   |
+| wan2.2-t2v-14b  | 32                 | 16           | 75600                    | bf16               | 12.15       | 805.34       | N/A                   |
