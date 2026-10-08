@@ -1,0 +1,895 @@
+# yamllint disable
+{{- if not .Values.client.external_server_host }}
+{{- if ne (int .Values.run_mode) 1 }}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: "{{ .Release.Name }}-hyperdisk-balanced-tpu"
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+  # provisioned-iops: "3000" # Optional: Adjust IOPS as needed
+  # provisioned-throughput: "140" # Optional: Adjust Throughput (MiB/s) as needed
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+{{- if and (not .Values.is_multi_host) (ne (default "colocated" .Values.serving_mode) "disaggregated") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: "{{ .Release.Name }}-hd-claim"
+spec:
+  storageClassName: "{{ .Release.Name }}-hyperdisk-balanced-tpu"
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{.Values.server.data_disk_size}}
+---
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if ne (int .Values.run_mode) 1 }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: "{{ .Release.Name }}-hf-secret"
+type: Opaque
+stringData:
+  hf_api_token: {{.Values.hf_token}}
+---
+{{- end }}
+# Service account for GCS Workload Identity. Skip in client-only
+# runs to prevent duplicate SA collisions during shared-server sweeps.
+{{- if and .Values.gcp_service_account (not .Values.client.external_server_host) }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.k8s_service_account | quote }}
+  namespace: default
+  annotations:
+    iam.gke.io/gcp-service-account: {{ .Values.gcp_service_account }}
+{{- end }}
+---
+{{- if not .Values.client.external_server_host }}
+{{- if ne (default "colocated" .Values.serving_mode) "disaggregated" }}
+{{- if not .Values.is_multi_host }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ .Release.Name }}-tpu-server"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "{{ .Release.Name }}-tpu-pod"
+  template:
+    metadata:
+      {{- if .Values.gcsfuse.enabled }}
+      annotations:
+        gke-gcsfuse/volumes: "true"
+      {{- end }}
+      labels:
+        app: "{{ .Release.Name }}-tpu-pod"
+        app.kubernetes.io/instance: "{{ .Release.Name }}"
+        app.kubernetes.io/component: server
+        {{- if .Values.kueue_local_queue }}
+        kueue.x-k8s.io/queue-name: {{ .Values.kueue_local_queue | quote }}
+        {{- end }}
+    spec:
+      {{- if eq (int .Values.run_mode) 1 }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      {{- if .Values.kueue_priority_class }}
+      priorityClassName: {{ .Values.kueue_priority_class | quote }}
+      {{- end }}
+      {{- if .Values.gcp_service_account }}
+      serviceAccountName: {{ .Values.k8s_service_account | quote }}
+      {{- end }}
+      nodeSelector:
+      {{- if eq (int .Values.run_mode) 1 }}
+        tpu.google.com/slice-name: {{ .Values.tpu_slice_name }}
+        tpu.google.com/type: tpu7x
+      {{- else }}
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: {{.Values.server.topology}}
+        {{- if .Values.gke_reservation }}
+        cloud.google.com/reservation-name: {{ .Values.gke_reservation | quote }}
+        {{- end }}
+        {{- if .Values.placement_policy }}
+        cloud.google.com/placement-policy-name: {{ .Values.placement_policy | quote }}
+        {{- end }}
+      {{- end }}
+      tolerations:
+      - key: "google.com/tpu"
+        operator: "Exists"
+      containers:
+      - name: {{ if eq .Values.server.engine_label "TORCH_TPU" }}vllm-torchtpu{{ else }}vllm-tpu{{ end }}
+        image: {{.Values.server.image}}
+        imagePullPolicy: IfNotPresent
+        {{- if eq (int .Values.run_mode) 1 }}
+        securityContext:
+          privileged: true
+        {{- end }}
+        command: ["/bin/bash", "-c"]
+        args:
+        - {{ .Values.server.bash_command | quote }}
+        env:
+        {{- if eq (int .Values.run_mode) 1 }}
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        {{- else }}
+        - name: HF_HOME
+          value: /data
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: "{{ .Release.Name }}-hf-secret"
+              key: hf_api_token
+        {{- end }}
+        {{if .Values.server.profile}}
+        - name: PHASED_PROFILING_DIR
+          value: {{ .Values.server.phased_profiling_dir | default "/tmp/results/profile" | quote }}
+        {{end}}
+        {{if .Values.server.model_impl_type}}
+        - name: MODEL_IMPL_TYPE
+          value: {{.Values.server.model_impl_type}}
+        {{end}}
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            google.com/tpu: "{{.Values.server.num_chips_per_node}}"
+          requests:
+            google.com/tpu: "{{.Values.server.num_chips_per_node}}"
+        readinessProbe:
+          tcpSocket:
+            port: 8000
+          {{- if .Values.server.readiness_probe }}
+          initialDelaySeconds: {{ .Values.server.readiness_probe.initial_delay_seconds | default 15 }}
+          periodSeconds: {{ .Values.server.readiness_probe.period_seconds | default 10 }}
+          failureThreshold: {{ .Values.server.readiness_probe.failure_threshold | default 3 }}
+          {{- else }}
+          initialDelaySeconds: {{ .Values.server.ready_check_timeout_sec | default 15 }}
+          periodSeconds: 10
+          {{- end }}
+        volumeMounts:
+        {{- range .Values.custom_volume_mounts }}
+        - name: {{ .name }}
+          mountPath: {{ .mountPath }}
+          {{- if .readOnly }}
+          readOnly: {{ .readOnly }}
+          {{- end }}
+          {{- if .subPath }}
+          subPath: {{ .subPath }}
+          {{- end }}
+        {{- end }}
+        {{- range .Values.server.pvc_mounts }}
+        - mountPath: {{ .mount_path | quote }}
+          name: {{ .volume_name | quote }}
+          subPath: {{ tpl .sub_path $ | quote }}
+          readOnly: {{ .read_only }}
+        {{- end }}
+        {{- if ne (int .Values.run_mode) 1 }}
+        - mountPath: "/data"
+          name: data-volume
+        {{- end }}
+        - mountPath: /dev/shm
+          name: dshm
+        {{- if eq (int .Values.run_mode) 1 }}
+        - mountPath: /dev/vfio
+          name: host-vfio
+        {{- end }}
+        {{- if .Values.gcsfuse.enabled }}
+        {{- range .Values.gcsfuse.volumes }}
+        - name: {{ .name }}
+          mountPath: {{ .mountPath | quote }}
+          readOnly: {{ .readOnly }}
+        {{- end }}
+        {{- end }}
+      volumes:
+      {{- range .Values.custom_volume_mounts }}
+      - name: {{ .name }}
+        persistentVolumeClaim:
+          claimName: {{ $.Release.Name }}-{{ .pvcName }}
+      {{- end }}
+      {{- range .Values.server.pvc_mounts }}
+      - name: {{ .volume_name | quote }}
+        persistentVolumeClaim:
+          claimName: {{ .pvc_name | quote }}
+      {{- end }}
+      - emptyDir:
+          medium: Memory
+        name: dshm
+      {{- if eq (int .Values.run_mode) 1 }}
+      - name: host-vfio
+        hostPath:
+          path: /dev/vfio
+      {{- end }}
+      {{- if ne (int .Values.run_mode) 1 }}
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: "{{ .Release.Name }}-hd-claim"
+      {{- end }}
+      {{- if .Values.gcsfuse.enabled }}
+      {{- range .Values.gcsfuse.volumes }}
+      - name: {{ .name }}
+        csi:
+          driver: gcsfuse.csi.storage.gke.io
+          readOnly: {{ .readOnly }}
+          volumeAttributes:
+            bucketName: {{ .bucketName }}
+            mountOptions: {{ .mountOptions | quote }}
+            {{- if .volumeAttributes }}
+            {{- range $k, $v := .volumeAttributes }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
+            {{- end }}
+      {{- end }}
+      {{- end }}
+{{- else }}
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: "{{ .Release.Name }}-tpu-server"
+  annotations:
+    leaderworkerset.sigs.k8s.io/exclusive-topology: {{ .Values.server.exclusive_topology | default "cloud.google.com/gke-nodepool" | quote }}
+  labels:
+    {{- if .Values.kueue_local_queue }}
+    kueue.x-k8s.io/queue-name: {{ .Values.kueue_local_queue | quote }}
+    {{- end }}
+spec:
+  replicas: 1
+  rolloutStrategy:
+    type: "RollingUpdate"
+  leaderWorkerTemplate:
+    size: {{ .Values.server.num_nodes }}
+    restartPolicy: RecreateGroupOnPodRestart
+    {{- if not .Values.kueue_local_queue }}
+    leaderTemplate:
+      metadata:
+        {{- if .Values.gcsfuse.enabled }}
+        annotations:
+          gke-gcsfuse/volumes: "true"
+        {{- end }}
+        labels:
+          role: leader
+          app: "{{ .Release.Name }}-tpu-pod"
+          app.kubernetes.io/instance: "{{ .Release.Name }}"
+          app.kubernetes.io/component: server
+      spec:
+        {{- if eq (int .Values.run_mode) 1 }}
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        {{- end }}
+        {{- if .Values.kueue_priority_class }}
+        priorityClassName: {{ .Values.kueue_priority_class | quote }}
+        {{- end }}
+        {{- if .Values.gcp_service_account }}
+        serviceAccountName: {{ .Values.k8s_service_account | quote }}
+        {{- end }}
+        nodeSelector:
+        {{- if eq (int .Values.run_mode) 1 }}
+          tpu.google.com/slice-name: {{ .Values.tpu_slice_name }}
+          tpu.google.com/type: tpu7x
+        {{- else }}
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: {{.Values.server.topology}}
+          {{- if .Values.gke_reservation }}
+          cloud.google.com/reservation-name: {{ .Values.gke_reservation | quote }}
+          {{- end }}
+          {{- if .Values.placement_policy }}
+          cloud.google.com/placement-policy-name: {{ .Values.placement_policy | quote }}
+          {{- end }}
+        {{- end }}
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+        containers:
+        - name: vllm-server
+          image: {{.Values.server.image}}
+          imagePullPolicy: IfNotPresent
+          env:
+          {{- if eq (int .Values.run_mode) 1 }}
+          - name: HF_HUB_OFFLINE
+            value: "1"
+          {{- else }}
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: "{{ .Release.Name }}-hf-secret"
+                key: hf_api_token
+          {{- end }}
+          {{- if ne .Values.server.engine_label "TORCH_TPU" }}
+          - name: TPU_MULTIHOST_BACKEND
+            value: ray
+          - name: JAX_PLATFORMS
+            value: ""
+          {{- end }}
+          {{if .Values.server.profile}}
+          - name: PHASED_PROFILING_DIR
+            value: {{ .Values.server.phased_profiling_dir | default "/tmp/results/profile" | quote }}
+          {{end}}
+          {{if .Values.server.model_impl_type}}
+          - name: MODEL_IMPL_TYPE
+            value: {{.Values.server.model_impl_type}}
+          {{end}}
+          command: ["/bin/bash", "-c"]
+          args:
+          - {{ printf "if [ \"${LWS_WORKER_INDEX:-0}\" = \"0\" ]; then\n%s\nelse\n%s\nfi" .Values.server.bash_command .Values.server.worker_bash_command | quote }}
+          resources:
+            limits:
+              google.com/tpu: "{{.Values.server.num_chips_per_node}}"
+            requests:
+              google.com/tpu: "{{.Values.server.num_chips_per_node}}"
+          ports:
+          - containerPort: 8000
+          readinessProbe:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - {{ "if [ \"${LWS_WORKER_INDEX:-0}\" = \"0\" ]; then (echo > /dev/tcp/localhost/8000) >/dev/null 2>&1; else exit 0; fi" | quote }}
+            {{- if .Values.server.readiness_probe }}
+            initialDelaySeconds: {{ .Values.server.readiness_probe.initial_delay_seconds | default 15 }}
+            periodSeconds: {{ .Values.server.readiness_probe.period_seconds | default 10 }}
+            failureThreshold: {{ .Values.server.readiness_probe.failure_threshold | default 3 }}
+            {{- else }}
+            initialDelaySeconds: {{ .Values.server.ready_check_timeout_sec | default 15 }}
+            periodSeconds: 10
+            {{- end }}
+          volumeMounts:
+          {{- range .Values.custom_volume_mounts }}
+          - name: {{ .name }}
+            mountPath: {{ .mountPath }}
+            {{- if .readOnly }}
+            readOnly: {{ .readOnly }}
+            {{- end }}
+            {{- if .subPath }}
+            subPath: {{ .subPath }}
+            {{- end }}
+          {{- end }}
+          {{- range .Values.server.pvc_mounts }}
+          - mountPath: {{ .mount_path | quote }}
+            name: {{ .volume_name | quote }}
+            subPath: {{ tpl .sub_path $ | quote }}
+            readOnly: {{ .read_only }}
+          {{- end }}
+          {{- if ne (int .Values.run_mode) 1 }}
+          - mountPath: "/data"
+            name: data-volume
+          {{- end }}
+          - mountPath: /dev/shm
+            name: dshm
+          {{- if .Values.gcsfuse.enabled }}
+          {{- range .Values.gcsfuse.volumes }}
+          - name: {{ .name }}
+            mountPath: {{ .mountPath | quote }}
+            readOnly: {{ .readOnly }}
+          {{- end }}
+          {{- end }}
+        volumes:
+        {{- range .Values.custom_volume_mounts }}
+        - name: {{ .name }}
+          persistentVolumeClaim:
+            claimName: {{ $.Release.Name }}-{{ .pvcName }}
+        {{- end }}
+        {{- range .Values.server.pvc_mounts }}
+        - name: {{ .volume_name | quote }}
+          persistentVolumeClaim:
+            claimName: {{ .pvc_name | quote }}
+        {{- end }}
+        - emptyDir:
+            medium: Memory
+          name: dshm
+        {{- if ne (int .Values.run_mode) 1 }}
+        {{- if .Values.server.data_disk_size }}
+        - name: data-volume
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                labels:
+                  app.kubernetes.io/instance: "{{ .Release.Name }}"
+              spec:
+                accessModes: [ "ReadWriteOnce" ]
+                storageClassName: "{{ .Release.Name }}-hyperdisk-balanced-tpu"
+                resources:
+                  requests:
+                    storage: {{ .Values.server.data_disk_size }}
+        {{- else }}
+        - emptyDir:
+            medium: Memory
+          name: data-volume
+        {{- end }}
+        {{- end }}
+        {{- if .Values.gcsfuse.enabled }}
+        {{- range .Values.gcsfuse.volumes }}
+        - name: {{ .name }}
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            readOnly: {{ .readOnly }}
+            volumeAttributes:
+              bucketName: {{ .bucketName }}
+              mountOptions: {{ .mountOptions | quote }}
+              {{- if .volumeAttributes }}
+              {{- range $k, $v := .volumeAttributes }}
+              {{ $k }}: {{ $v | quote }}
+              {{- end }}
+              {{- end }}
+        {{- end }}
+        {{- end }}
+    {{- end }}
+    workerTemplate:
+      metadata:
+        {{- if .Values.gcsfuse.enabled }}
+        annotations:
+          gke-gcsfuse/volumes: "true"
+        {{- end }}
+        labels:
+          role: worker
+          app: "{{ .Release.Name }}-tpu-pod"
+          app.kubernetes.io/instance: "{{ .Release.Name }}"
+          app.kubernetes.io/component: server
+      spec:
+        {{- if eq (int .Values.run_mode) 1 }}
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        {{- end }}
+        {{- if .Values.kueue_priority_class }}
+        priorityClassName: {{ .Values.kueue_priority_class | quote }}
+        {{- end }}
+        {{- if .Values.gcp_service_account }}
+        serviceAccountName: {{ .Values.k8s_service_account | quote }}
+        {{- end }}
+        nodeSelector:
+        {{- if eq (int .Values.run_mode) 1 }}
+          tpu.google.com/slice-name: {{ .Values.tpu_slice_name }}
+          tpu.google.com/type: tpu7x
+        {{- else }}
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: {{.Values.server.topology}}
+          {{- if .Values.gke_reservation }}
+          cloud.google.com/reservation-name: {{ .Values.gke_reservation | quote }}
+          {{- end }}
+          {{- if .Values.placement_policy }}
+          cloud.google.com/placement-policy-name: {{ .Values.placement_policy | quote }}
+          {{- end }}
+        {{- end }}
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+        containers:
+        - name: vllm-server
+          image: {{.Values.server.image}}
+          imagePullPolicy: IfNotPresent
+          env:
+          {{- if eq (int .Values.run_mode) 1 }}
+          - name: HF_HUB_OFFLINE
+            value: "1"
+          {{- else }}
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: "{{ .Release.Name }}-hf-secret"
+                key: hf_api_token
+          {{- end }}
+          {{- if ne .Values.server.engine_label "TORCH_TPU" }}
+          - name: TPU_MULTIHOST_BACKEND
+            value: ray
+          - name: JAX_PLATFORMS
+            value: ""
+          {{- end }}
+          {{if .Values.server.profile}}
+          - name: PHASED_PROFILING_DIR
+            value: {{ .Values.server.phased_profiling_dir | default "/tmp/results/profile" | quote }}
+          {{end}}
+          {{if .Values.server.model_impl_type}}
+          - name: MODEL_IMPL_TYPE
+            value: {{.Values.server.model_impl_type}}
+          {{end}}
+          command: ["/bin/bash", "-c"]
+          args:
+          - {{ printf "if [ \"${LWS_WORKER_INDEX:-0}\" = \"0\" ]; then\n%s\nelse\n%s\nfi" .Values.server.bash_command .Values.server.worker_bash_command | quote }}
+          resources:
+            limits:
+              google.com/tpu: "{{.Values.server.num_chips_per_node}}"
+            requests:
+              google.com/tpu: "{{.Values.server.num_chips_per_node}}"
+          ports:
+          - containerPort: 8000
+          readinessProbe:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - {{ "if [ \"${LWS_WORKER_INDEX:-0}\" = \"0\" ]; then (echo > /dev/tcp/localhost/8000) >/dev/null 2>&1; else exit 0; fi" | quote }}
+            {{- if .Values.server.readiness_probe }}
+            initialDelaySeconds: {{ .Values.server.readiness_probe.initial_delay_seconds | default 15 }}
+            periodSeconds: {{ .Values.server.readiness_probe.period_seconds | default 10 }}
+            failureThreshold: {{ .Values.server.readiness_probe.failure_threshold | default 3 }}
+            {{- else }}
+            initialDelaySeconds: {{ .Values.server.ready_check_timeout_sec | default 15 }}
+            periodSeconds: 10
+            {{- end }}
+          volumeMounts:
+          {{- range .Values.custom_volume_mounts }}
+          - name: {{ .name }}
+            mountPath: {{ .mountPath }}
+            {{- if .readOnly }}
+            readOnly: {{ .readOnly }}
+            {{- end }}
+            {{- if .subPath }}
+            subPath: {{ .subPath }}
+            {{- end }}
+          {{- end }}
+          {{- range .Values.server.pvc_mounts }}
+          - mountPath: {{ .mount_path | quote }}
+            name: {{ .volume_name | quote }}
+            subPath: {{ tpl .sub_path $ | quote }}
+            readOnly: {{ .read_only }}
+          {{- end }}
+          {{- if ne (int .Values.run_mode) 1 }}
+          - mountPath: "/data"
+            name: data-volume
+          {{- end }}
+          - mountPath: /dev/shm
+            name: dshm
+          {{- if .Values.gcsfuse.enabled }}
+          {{- range .Values.gcsfuse.volumes }}
+          - name: {{ .name }}
+            mountPath: {{ .mountPath | quote }}
+            readOnly: {{ .readOnly }}
+          {{- end }}
+          {{- end }}
+        volumes:
+        {{- range .Values.custom_volume_mounts }}
+        - name: {{ .name }}
+          persistentVolumeClaim:
+            claimName: {{ $.Release.Name }}-{{ .pvcName }}
+        {{- end }}
+        {{- range .Values.server.pvc_mounts }}
+        - name: {{ .volume_name | quote }}
+          persistentVolumeClaim:
+            claimName: {{ .pvc_name | quote }}
+        {{- end }}
+        - emptyDir:
+            medium: Memory
+          name: dshm
+        {{- if ne (int .Values.run_mode) 1 }}
+        {{- if .Values.server.data_disk_size }}
+        - name: data-volume
+          ephemeral:
+            volumeClaimTemplate:
+              metadata:
+                labels:
+                  app.kubernetes.io/instance: "{{ .Release.Name }}"
+              spec:
+                accessModes: [ "ReadWriteOnce" ]
+                storageClassName: "{{ .Release.Name }}-hyperdisk-balanced-tpu"
+                resources:
+                  requests:
+                    storage: {{ .Values.server.data_disk_size }}
+        {{- else }}
+        - emptyDir:
+            medium: Memory
+          name: data-volume
+        {{- end }}
+        {{- end }}
+        {{- if .Values.gcsfuse.enabled }}
+        {{- range .Values.gcsfuse.volumes }}
+        - name: {{ .name }}
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            readOnly: {{ .readOnly }}
+            volumeAttributes:
+              bucketName: {{ .bucketName }}
+              mountOptions: {{ .mountOptions | quote }}
+              {{- if .volumeAttributes }}
+              {{- range $k, $v := .volumeAttributes }}
+              {{ $k }}: {{ $v | quote }}
+              {{- end }}
+              {{- end }}
+        {{- end }}
+        {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and (not .Values.client.external_server_host) (ne (default "colocated" .Values.serving_mode) "disaggregated") }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Release.Name }}-vllm-service"
+  {{- if eq (default "ClusterIP" .Values.service_type) "LoadBalancer" }}
+  annotations:
+    cloud.google.com/load-balancer-type: "Internal"
+  {{- end }}
+spec:
+  selector:
+    app: "{{ .Release.Name }}-tpu-pod"
+    {{- if .Values.is_multi_host }}
+    {{- if .Values.kueue_local_queue }}
+    leaderworkerset.sigs.k8s.io/worker-index: "0"
+    {{- else }}
+    role: leader
+    {{- end }}
+    {{- end }}
+  {{- if eq (int .Values.run_mode) 1 }}
+  clusterIP: None
+  {{- else }}
+  type: {{ default "ClusterIP" .Values.service_type }}
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
+  {{- end }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ .Release.Name }}-client"
+  labels:
+    app: "{{ .Release.Name }}-client"
+    app.kubernetes.io/instance: "{{ .Release.Name }}"
+    app.kubernetes.io/component: client
+    {{- if .Values.kueue_local_queue }}
+    kueue.x-k8s.io/queue-name: {{ .Values.kueue_local_queue | quote }}
+    {{- end }}
+spec:
+  backoffLimit: 0
+  {{- if .Values.kueue_local_queue }}
+  suspend: true
+  {{- end }}
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: "vllm-bench"
+        {{- if and .Values.gcsfuse.enabled (not .Values.client.external_server_host) }}
+        gke-gcsfuse/volumes: "true"
+        {{- end }}
+      labels:
+        app: "{{ .Release.Name }}-client"
+        app.kubernetes.io/instance: "{{ .Release.Name }}"
+        app.kubernetes.io/component: client
+        {{- if .Values.kueue_local_queue }}
+        kueue.x-k8s.io/queue-name: {{ .Values.kueue_local_queue | quote }}
+        {{- end }}
+    spec:
+      {{- if eq (int .Values.run_mode) 1 }}
+      hostNetwork: true
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: "{{ .Release.Name }}-tpu-pod"
+            topologyKey: "kubernetes.io/hostname"
+      {{- else if not .Values.client.allow_accelerator_nodes }}
+      # Keep the client off TPU hosts by default so it does not compete
+      # with the engines for host CPU. Opt in with
+      # client.allow_accelerator_nodes for clusters without a CPU pool.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: cloud.google.com/gke-tpu-accelerator
+                operator: DoesNotExist
+      {{- end }}
+      {{- with .Values.client.node_selector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- if .Values.kueue_priority_class }}
+      priorityClassName: {{ .Values.kueue_priority_class | quote }}
+    {{- end }}
+    {{- if .Values.gcp_service_account }}
+      serviceAccountName: {{ .Values.k8s_service_account | quote }}
+    {{- end }}
+      terminationGracePeriodSeconds: 60
+      {{- if or (eq (int .Values.run_mode) 1) .Values.client.allow_accelerator_nodes }}
+      tolerations:
+      - key: "google.com/tpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      {{- end }}
+      containers:
+      - name: vllm-bench
+        image: {{.Values.client.image}}
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: "32Gi"
+            cpu: "16"
+          limits:
+            memory: "64Gi"
+            cpu: "32"
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+{{ .Values.client.bash_command | indent 10 }}
+        {{- if and .Values.kueue_local_queue (not .Values.client.external_server_host) (ne (toString .Values.client.ready_after_server) "false") }}
+        # Report Ready only once the deployed endpoint serves
+        # /v1/models (then latch), so Kueue waitForPodsReady and cluster
+        # time-limit policies keyed on PodsReady do not count the server cold
+        # start against the client. Opt out with client.ready_after_server=false.
+        readinessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              [[ -f /tmp/server-ready ]] && exit 0
+              exec 3<>"/dev/tcp/${SERVER_HOSTNAME}/8000" || exit 1
+              printf 'GET /v1/models HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "${SERVER_HOSTNAME}" >&3
+              IFS= read -r -t 10 status <&3 || exit 1
+              [[ "${status}" == *" 200 "* || "${status}" == *" 200"$'\r' ]] || exit 1
+              touch /tmp/server-ready
+          periodSeconds: 10
+          timeoutSeconds: 15
+          failureThreshold: 1
+        {{- end }}
+        env:
+        {{- if eq (int .Values.run_mode) 1 }}
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        {{- else }}
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: hf_api_token
+              name: "{{ .Release.Name }}-hf-secret"
+        {{- end }}
+        - name: JOB_NAME
+          value: "{{ .Release.Name }}"
+        - name: SERVER_HOSTNAME
+        {{- if .Values.client.external_server_host }}
+          value: {{ .Values.client.external_server_host | quote }}
+        {{- else if eq (int .Values.run_mode) 1 }}
+          value: "127.0.0.1"
+        {{- else if eq (default "colocated" .Values.serving_mode) "disaggregated" }}
+          value: "{{ .Release.Name }}-vllm-proxy.{{ .Release.Namespace }}.svc.cluster.local"
+        {{- else }}
+          value: "{{ .Release.Name }}-vllm-service.{{ .Release.Namespace }}.svc.cluster.local"
+        {{- end }}
+        volumeMounts:
+        {{- range .Values.custom_volume_mounts }}
+        - name: {{ .name }}
+          mountPath: {{ .mountPath }}
+          {{- if .readOnly }}
+          readOnly: {{ .readOnly }}
+          {{- end }}
+          {{- if .subPath }}
+          subPath: {{ .subPath }}
+          {{- end }}
+        {{- end }}
+        - mountPath: /dev/shm
+          name: dshm
+        {{- if not .Values.client.external_server_host }}
+        {{- range .Values.server.pvc_mounts }}
+        - mountPath: {{ .mount_path | quote }}
+          name: {{ .volume_name | quote }}
+          subPath: {{ tpl .sub_path $ | quote }}
+          readOnly: {{ .read_only }}
+        {{- end }}
+        {{- end }}
+        {{- if and .Values.gcsfuse.enabled (not .Values.client.external_server_host) }}
+        {{- range .Values.gcsfuse.volumes }}
+        - name: {{ .name }}
+          mountPath: {{ .mountPath | quote }}
+          readOnly: {{ .readOnly }}
+        {{- end }}
+        {{- end }}
+      volumes:
+      {{- range .Values.custom_volume_mounts }}
+      - name: {{ .name }}
+        persistentVolumeClaim:
+          claimName: {{ $.Release.Name }}-{{ .pvcName }}
+      {{- end }}
+      - emptyDir:
+          medium: Memory
+        name: dshm
+      {{- if not .Values.client.external_server_host }}
+      {{- range .Values.server.pvc_mounts }}
+      - name: {{ .volume_name | quote }}
+        persistentVolumeClaim:
+          claimName: {{ .pvc_name | quote }}
+      {{- end }}
+      {{- end }}
+      {{- if and .Values.gcsfuse.enabled (not .Values.client.external_server_host) }}
+      {{- range .Values.gcsfuse.volumes }}
+      - name: {{ .name }}
+        csi:
+          driver: gcsfuse.csi.storage.gke.io
+          readOnly: {{ .readOnly }}
+          volumeAttributes:
+            bucketName: {{ .bucketName }}
+            mountOptions: {{ .mountOptions | quote }}
+            {{- if .volumeAttributes }}
+            {{- range $k, $v := .volumeAttributes }}
+            {{ $k }}: {{ $v | quote }}
+            {{- end }}
+            {{- end }}
+      {{- end }}
+      {{- end }}
+      restartPolicy: Never
+
+
+{{- range .Values.persistent_volumes }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ $.Release.Name }}-{{ .name }}
+spec:
+  capacity:
+    storage: {{ .capacity }}
+  accessModes:
+    {{ toYaml .accessModes | nindent 4 }}
+  persistentVolumeReclaimPolicy: {{ .reclaimPolicy }}
+  {{- if .storageClassName }}
+  storageClassName: {{ .storageClassName }}
+  {{- else }}
+  storageClassName: ""
+  {{- end }}
+  {{- if .volumeMode }}
+  volumeMode: {{ .volumeMode }}
+  {{- end }}
+  csi:
+    driver: {{ .csi.driver }}
+    volumeHandle: {{ .csi.volumeHandle }}
+    {{- with .csi.volumeAttributes }}
+    volumeAttributes:
+      {{ toYaml . | nindent 6 }}
+    {{- end }}
+  claimRef:
+    name: {{ $.Release.Name }}-{{ .claimRef.name }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- range .Values.persistent_volume_claims }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Release.Name }}-{{ .name }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  accessModes:
+    {{ toYaml .accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .capacity }}
+  {{- if .storageClassName }}
+  storageClassName: {{ .storageClassName }}
+  {{- else }}
+  storageClassName: ""
+  {{- end }}
+  volumeName: {{ $.Release.Name }}-{{ .volumeName }}
+{{- end }}
+{{- if ne (int (default 0 .Values.run_mode)) 1 }}
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: "{{ .Release.Name }}-prometheus-scrape"
+spec:
+  endpoints:
+  - interval: 10s
+    path: /metrics
+    port: 8000
+  selector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values:
+      - "{{ .Release.Name }}-gpu-pod"
+      - "{{ .Release.Name }}-tpu-pod"
+      {{- if eq (default "colocated" .Values.serving_mode) "disaggregated" }}
+      - "{{ .Release.Name }}-vllm-prefill-pod"
+      - "{{ .Release.Name }}-vllm-decode-pod"
+      {{- end }}
+{{- end }}

@@ -1,0 +1,498 @@
+"client":
+  "bash_command": "#!/bin/bash\n# InferenceX AgentX harness (CDK recipe agentx-397b-pd-baseline\
+    \ parity).\nAIPERF_BIN=/root/aiperf-venv/bin/aiperf\nHF_CLI=/root/aiperf-venv/bin/hf\n\
+    AIPERF_PYTHON=/root/aiperf-venv/bin/python\n[ -x \"${HF_CLI}\" ] || HF_CLI=hf\n\
+    [ -x \"${AIPERF_PYTHON}\" ] || AIPERF_PYTHON=python3\nexport VLLM_PLUGINS=\"\"\
+    \nexport VLLM_TARGET_DEVICE=\"empty\"\nexport JAX_PLATFORMS=\"cpu\"\nexport TPU_PJRT_EVENT_TRACE_ENABLE=\"\
+    0\"\nexport AIPERF_DATASET_WEKA_LIVE_ASSISTANT_RESPONSES=0\nexport AIPERF_DATASET_CONFIGURATION_TIMEOUT=1800\n\
+    export AIPERF_SERVICE_PROFILE_CONFIGURE_TIMEOUT=1800\nexport AIPERF_UI_REALTIME_METRICS_ENABLED=true\n\
+    export BENCH_CLIENT_CONCURRENCY=32\nif [ -n \"${HF_TOKEN:-}\" ]; then export HUGGING_FACE_HUB_TOKEN=\"\
+    ${HF_TOKEN}\"; fi\nunset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE\nrm -f /tmp/libtpu_lockfile*\
+    \ /dev/shm/libtpu_lockfile* 2>/dev/null || true\n\"${AIPERF_PYTHON}\" -c 'import\
+    \ importlib.metadata as m; print(\"aiperf\", m.version(\"aiperf\"))' || true\n\
+    \necho \"--- PRE-DOWNLOADING TOKENIZER ---\"\nif [ ! -d Qwen/Qwen3.5-397B-A17B-FP8\
+    \ ]; then\n  \"${HF_CLI}\" download Qwen/Qwen3.5-397B-A17B-FP8 --include \"tokenizer*\"\
+    \ || true\n  \"${HF_CLI}\" download Qwen/Qwen3.5-397B-A17B-FP8 config.json ||\
+    \ true\nfi\n\necho \"--- WAITING FOR OPENAI SERVER TO BE READY ---\"\nwhile !\
+    \ \"${AIPERF_PYTHON}\" -c '\nimport urllib.request, json, sys, os\nhost = os.environ[\"\
+    SERVER_HOSTNAME\"]\nreq = urllib.request.Request(f\"http://{host}:8000/v1/chat/completions\"\
+    , data=json.dumps({\"model\": \"gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\"\
+    , \"messages\": [{\"role\": \"user\", \"content\": \"warmup\"}], \"max_tokens\"\
+    : 1}).encode(\"utf-8\"), headers={\"Content-Type\": \"application/json\"})\ntry:\n\
+    \  with urllib.request.urlopen(req) as response:\n    if \"choices\" in json.loads(response.read().decode()):\
+    \ sys.exit(0)\nexcept Exception: pass\nsys.exit(1)'; do\n  sleep 3\n  echo 'Waiting\
+    \ for OpenAI server at http://'\"${SERVER_HOSTNAME}\"':8000 to respond...'\ndone\n\
+    \necho \"--- SERVING ENGINE 100% READY, SETTLING (10s) ---\"\nsleep 10\n\nPREFIX_CACHE_URLS=(http://${SERVER_HOSTNAME/-vllm-proxy./-vllm-prefill.}:8000)\n\
+    scrape_prefix_cache() {\n  \"${AIPERF_PYTHON}\" - \"$@\" <<'PYEOF' 2>/dev/null\
+    \ || echo \"0 0\"\nimport sys, urllib.request\ntotals = {\"vllm:prefix_cache_hits_total\"\
+    : 0.0,\n          \"vllm:prefix_cache_queries_total\": 0.0}\nfor url in sys.argv[1:]:\n\
+    \  try:\n    with urllib.request.urlopen(url.rstrip(\"/\") + \"/metrics\", timeout=10)\
+    \ as r:\n      text = r.read().decode(\"utf-8\", \"replace\")\n  except Exception:\n\
+    \    continue\n  for line in text.splitlines():\n    fields = line.split()\n \
+    \   if len(fields) < 2 or line.startswith(\"#\"):\n      continue\n    name =\
+    \ fields[0].split(\"{\", 1)[0]\n    if name in totals:\n      try:\n        totals[name]\
+    \ += float(fields[-1])\n      except ValueError:\n        pass\nprint(\"%.0f %.0f\"\
+    \ % (totals[\"vllm:prefix_cache_hits_total\"],\n                     totals[\"\
+    vllm:prefix_cache_queries_total\"]))\nPYEOF\n}\nread -r PREFIX_CACHE_HITS_START\
+    \ PREFIX_CACHE_QUERIES_START < <(scrape_prefix_cache \"${PREFIX_CACHE_URLS[@]}\"\
+    )\necho \"prefix cache counters (start): hits=${PREFIX_CACHE_HITS_START} queries=${PREFIX_CACHE_QUERIES_START}\"\
+    \necho \"--- RUNNING AIPERF BENCHMARK ---\"\n\"${AIPERF_BIN}\" profile \\\n  \
+    \  --scenario inferencex-agentx-mvp \\\n    --url \"http://${SERVER_HOSTNAME}:8000\"\
+    \ \\\n    --endpoint /v1/chat/completions \\\n    --endpoint-type chat \\\n  \
+    \  --streaming \\\n    --model gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ \\\n    --tokenizer Qwen/Qwen3.5-397B-A17B-FP8 \\\n    --concurrency 32 \\\n\
+    \    --benchmark-duration 3600 \\\n    --stats-interval 30 \\\n    --random-seed\
+    \ 42 \\\n    --failed-request-threshold 0.25 \\\n    --trajectory-start-min-ratio\
+    \ 0.25 \\\n    --trajectory-start-max-ratio 0.75 \\\n    --warmup-requests-per-lane\
+    \ 10 \\\n    --trace-idle-gap-cap-seconds 300 \\\n    --warmup-grace-period 1800\
+    \ \\\n    --use-server-token-count \\\n    --no-gpu-telemetry \\\n    --tokenizer-trust-remote-code\
+    \ \\\n    --num-dataset-entries 393 \\\n    --slice-duration 1.0 \\\n    --output-artifact-dir\
+    \ /tmp/aiperf_results \\\n    --public-dataset semianalysis_cc_traces_weka_062126_256k\n\
+    AIPERF_RC=$?\necho \"aiperf exit code: ${AIPERF_RC}\"\nread -r PREFIX_CACHE_HITS_END\
+    \ PREFIX_CACHE_QUERIES_END < <(scrape_prefix_cache \"${PREFIX_CACHE_URLS[@]}\"\
+    )\necho \"prefix cache counters (end): hits=${PREFIX_CACHE_HITS_END} queries=${PREFIX_CACHE_QUERIES_END}\"\
+    \nexport PREFIX_CACHE_SCRAPED=1 PREFIX_CACHE_HITS_START PREFIX_CACHE_QUERIES_START\
+    \ PREFIX_CACHE_HITS_END PREFIX_CACHE_QUERIES_END\n\necho \"--- BENCHMARK COMPLETED\
+    \ ---\"\nmkdir -p /tmp/results\ncp -r /tmp/aiperf_results/* /tmp/results/ 2>/dev/null\
+    \ || true\n# Print raw metrics summary\ncat /tmp/aiperf_results/profile_export_aiperf.json\
+    \ 2>/dev/null || cat /tmp/aiperf_results/*/profile_export_aiperf.json 2>/dev/null\
+    \ || true\necho \"\"\necho \"--- SERVER METRICS ---\"\n\"${AIPERF_PYTHON}\" -\
+    \ <<'PYEOF' 2>/dev/null || true\nimport glob, json, os, re\nhost = os.environ.get(\"\
+    SERVER_HOSTNAME\", \"\")\nkeep = re.compile(r\"prefix_cache|cached_tokens|prompt_tokens\"\
+    )\nout = {}\npaths = sorted(glob.glob(\"/tmp/aiperf_results/server_metrics_export.json\"\
+    )\n               + glob.glob(\"/tmp/aiperf_results/*/server_metrics_export.json\"\
+    ))\ntry:\n  with open(paths[0]) as f:\n    data = json.load(f)\nexcept Exception:\n\
+    \  data = {}\nfor name, metric in (data.get(\"metrics\") or {}).items():\n  if\
+    \ not keep.search(name) or not isinstance(metric, dict):\n    continue\n  series\
+    \ = [\n      {k: v for k, v in s.items() if k != \"timeslices\"}\n      for s\
+    \ in metric.get(\"series\") or []\n      if isinstance(s, dict) and host in (s.get(\"\
+    endpoint_url\") or \"\")\n  ]\n  if series:\n    out[name] = {\"series\": series}\n\
+    result = {\"metrics\": out}\nif os.environ.get(\"PREFIX_CACHE_SCRAPED\") == \"\
+    1\":\n  hits = int(float(os.environ[\"PREFIX_CACHE_HITS_END\"])\n            \
+    \ - float(os.environ[\"PREFIX_CACHE_HITS_START\"]))\n  queries = int(float(os.environ[\"\
+    PREFIX_CACHE_QUERIES_END\"])\n                - float(os.environ[\"PREFIX_CACHE_QUERIES_START\"\
+    ]))\n  result[\"prefix_cache_hits\"] = hits\n  result[\"prefix_cache_queries\"\
+    ] = queries\n  result[\"prefix_cache_hit_rate\"] = (\n      round(hits / queries,\
+    \ 4) if queries > 0 else None)\nprint(json.dumps(result))\nPYEOF\necho \"--- END\
+    \ OF METRICS ---\"\n\"${AIPERF_PYTHON}\" - <<'PYEOF' 2>/dev/null || true\nimport\
+    \ glob, json, os\npaths = sorted(glob.glob(\"/tmp/aiperf_results/profile_export_aiperf.json\"\
+    )\n               + glob.glob(\"/tmp/aiperf_results/*/profile_export_aiperf.json\"\
+    ))\ntry:\n  with open(paths[0]) as f:\n    d = json.load(f)\nexcept Exception:\n\
+    \  d = {}\ndef g(key, stat=\"avg\"):\n  value = d.get(key)\n  return value.get(stat)\
+    \ if isinstance(value, dict) else None\nout = {}\ndur, n = g(\"benchmark_duration\"\
+    ), g(\"request_count\")\nisl, osl = g(\"input_sequence_length\"), g(\"output_sequence_length\"\
+    )\nif dur and n and isl is not None and osl is not None:\n  out[\"total_token_throughput\"\
+    ] = round(n * (isl + osl) / dur, 4)\n  out[\"input_throughput\"] = round(n * isl\
+    \ / dur, 4)\n  out[\"output_throughput\"] = round(n * osl / dur, 4)\n  out[\"\
+    benchmark_duration_s\"] = dur\nitl = g(\"inter_token_latency\", \"p50\")\nif itl:\n\
+    \  out[\"median_tpot_ms\"] = itl\n  out[\"interactivity\"] = round(1000.0 / itl,\
+    \ 4)\nfor key, stat, dst in ((\"time_to_first_token\", \"avg\", \"mean_ttft_ms\"\
+    ),\n                       (\"time_to_first_token\", \"p50\", \"median_ttft_ms\"\
+    ),\n                       (\"request_latency\", \"p50\", \"median_e2el_ms\")):\n\
+    \  if g(key, stat) is not None:\n    out[dst] = g(key, stat)\nout[\"num_requests_successful\"\
+    ] = n\nout[\"aiperf_native_total_token_throughput\"] = g(\"total_token_throughput\"\
+    )\nout[\"effective_concurrency\"] = g(\"effective_concurrency\")\nif os.environ.get(\"\
+    PREFIX_CACHE_SCRAPED\") == \"1\":\n  h = float(os.environ[\"PREFIX_CACHE_HITS_END\"\
+    ]) - float(\n      os.environ[\"PREFIX_CACHE_HITS_START\"])\n  q = float(os.environ[\"\
+    PREFIX_CACHE_QUERIES_END\"]) - float(\n      os.environ[\"PREFIX_CACHE_QUERIES_START\"\
+    ])\n  out[\"prefix_cache_hits\"] = int(h)\n  out[\"prefix_cache_queries\"] = int(q)\n\
+    \  out[\"prefix_cache_hit_rate\"] = round(h / q, 4) if q > 0 else None\nout[\"\
+    concurrency_level\"] = int(os.environ.get(\"BENCH_CLIENT_CONCURRENCY\") or 0)\n\
+    print(\"CDK_STYLE_METRICS=\" + json.dumps(out))\nPYEOF\nsync\necho \"--- SLEEPING\
+    \ 60s FOR LOG HARVESTING ---\"\nsleep 60\n"
+  "client_type": "AIPERF"
+  "external_server_host": !!null "null"
+  "image": "us-central1-docker.pkg.dev/cloud-tpu-inference-test/inferencex/inferencex-agentx@sha256:7cbad0266e9a599e37a00d7ba533acc17732064ab659db5d4084f3bff19361b6"
+"custom_volume_mounts": []
+"decode":
+  "bash_command": "echo 'Prewarming trust_remote_code module cache (single process)\
+    \ to avoid concurrent dynamic-module import race...'; python3 -c 'import sys\n\
+    import transformers\nmodel_id = '\"'\"'gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8'\"\
+    '\"'\ntransformers.AutoConfig.from_pretrained(model_id, trust_remote_code=True)\n\
+    transformers.AutoTokenizer.from_pretrained(\n    model_id, trust_remote_code=True\n\
+    )\ntry:\n  transformers.AutoProcessor.from_pretrained(\n      model_id, trust_remote_code=True\n\
+    \  )\nexcept Exception as e:\n  print(\"prewarm: processor skipped:\", e, file=sys.stderr)\n\
+    print(\"prewarm: remote-code module cache ready\", file=sys.stderr)\n' || echo\
+    \ 'prewarm failed; continuing';\nif [ -d gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ ]; then\n  mnt_point=$(df -P gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ 2>/dev/null | tail -n 1 | awk '{print $NF}')\n  if mount | grep -q \"on ${mnt_point}\
+    \ type lustre\"; then\n    echo \"BENCH_MODEL_WEIGHTS_SIZE: \"$(du -sk gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ 2>/dev/null | awk '{printf \"%.2fGiB\\n\", $1/1024/1024}')\n  else\n    echo\
+    \ \"Model is not on Lustre, skipping du in container logs\"\n  fi\nfi\nVLLM_LOGGING_LEVEL=INFO\
+    \ HF_HOME=/data/huggingface_cache HF_HUB_DISABLE_XET=1 TMPDIR=/data/tmp VLLM_ENGINE_READY_TIMEOUT_S=7200\
+    \ JAX_PLATFORMS=tpu,cpu PJRT_DEVICE=TPU TPU_BACKEND_TYPE=jax VLLM_TARGET_DEVICE=tpu\
+    \ MODEL_IMPL_TYPE=vllm NEW_MODEL_DESIGN=0 SKIP_JAX_PRECOMPILE=1 VLLM_XLA_CHECK_RECOMPILATION=0\
+    \ VLLM_XLA_CACHE_PATH=/dev/shm/xla_cache TORCH_TPU_INTERNAL_TIER2_COMPILATION_CACHE=disabled\
+    \ TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_ROOT=/dev/shm/xla_cache/torch_tpu_tier3\
+    \ TORCHINDUCTOR_MAX_WORKERS=4 TORCHINDUCTOR_AUTOGRAD_CACHE=0 OMP_NUM_THREADS=8\
+    \ XLA_PYTHON_CLIENT_PREALLOCATE=false VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 LIBTPU_INIT_ARGS='\
+    \ --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false\
+    \ --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false\
+    \ --xla_enable_async_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true\
+    \ --xla_tpu_sparse_core_all_gather_offload_min_size_in_bytes=262144' USE_MOE_FUSED_EP_KERNEL=1\
+    \ USE_MOE_COUNTING_SORT=1 USE_MOE_SPARSE_CORE=1 USE_FUSED_MOE_GMM=1 USE_BATCHED_RPA_KERNEL=1\
+    \ TPU_MOE_FUSED_EP_STEP_MIN_TOKENS=33 TPU_MOE_FUSED_EP_ASYNC_ROW_GATHER=1 TPU_MOE_SKIP_PADDED_TOKENS=0\
+    \ MOE_FUSED_EP_KERNEL_MIN_TOKENS=1024 MOE_LOCAL_EXPERT_AFFINITY_EPSILON=0.01 VLLM_MOE_CHUNK_SIZE=256\
+    \ ONEHOT_MOE_PERMUTE_THRESHOLD=2048 RAGGED_GATHER_REDUCE_VERSION=v3 RAGGED_GATED_DELTA_RULE_IMPL=chunked_kernel_v3_pd\
+    \ TPU_ENABLE_GDN_DYNAMIC_TILING=0 TPU_GDN_CONV_QK_PAIR_LAYOUT=1 TPU_GDN_CONV_STATE_TILE_PAD=1\
+    \ TPU_RPA_FOLD_KV_HEAD_DIM=0 TPU_ROPE_CACHE_TRUNCATE=1 TPUMISC_HMA_CHECKSUM_TRACE=0\
+    \ DP_SCHED_BATCH_PREFILL_MAX_ADMIT_PER_FLUSH=0 TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL=1\
+    \ TPU_USE_RAIDEN_KV_CACHE_MANAGER=1 TPU_RAIDEN_QWEN35_ADMISSION=1 TPU_KV_RESHARD_TRANSPORT=raiden\
+    \ TPU_RAIDEN_RESHARD_IMPL=store TPU_RAIDEN_CLIENT_IMPL=cpp TPU_RAIDEN_TRANSFER_PARALLELISM=8\
+    \ TPU_RAIDEN_MAX_TRANSFER_TOKENS=262144 TPU_PREMAPPED_BUFFER_SIZE=17179869184\
+    \ TPU_KV_CACHE_HEADROOM_MIB=6144 TPU_KV_RESHARD_DST_PAGE_TOKENS=4096 TPU_ENABLE_D2H_TRANSFER=1\
+    \ TPU_HMA_D2H_COPY_IMPL=device_put TPU_HMA_MIN_DONE_RECVING_BATCH=1 TPU_HMA_MAX_DONE_RECVING_BATCH=1\
+    \ TPU_HMA_MAX_INFLIGHT_D2H_SENDS=1 TPU_HMA_MAX_INFLIGHT_PULLS=8 TPU_MAX_HOST_KV_BUFFER_SIZE=64\
+    \ TPU_P2P_WAIT_PULL_TIMEOUT=300 TPU_KV_SHM_POOL_GB=8 TPU_KV_TRANSFER_PORT=9100\
+    \ TPU_SIDE_CHANNEL_PORT=9600 TPU_KV_TRANSFER_NAMESPACE=llm_d_pd_decode TPU_RAIDEN_JOB_NAME=decode\
+    \ TPU_RAIDEN_ENGINE_ID=llm-d-pd-decode-engine TPU_RAIDEN_RESHARD_PORT_BASE=28000\
+    \ TPU_RAIDEN_STORE_DISPATCH_PORT_BASE=28100 USE_BATCHED_RPA_LONGCTX=1 ATTN_BUCKETIZED_NUM_REQS=true\
+    \ ATTN_CUSTOM_NUM_REQS_BUCKETS=8,16,32,64 TPU_TOKEN_BUCKET_LINEAR_UNTIL=64 TPU_TOKEN_BUCKET_LINEAR_INTERVAL=16\
+    \ TPU_TOKEN_BUCKET_EXTRA=4,8,48,2048 TPU_TOPOLOGY=2x2x1 TPU_CHIPS_PER_HOST_BOUNDS=2,2,1\
+    \ TPU_HOST_BOUNDS=1,1,1 TPU_LIBRARY_PATH='' MEGASCALE_NUM_SLICES='' MEGASCALE_SLICE_ID=''\
+    \ TPU_PROCESS_ADDRESSES='' TPU_WORKER_HOSTNAMES='' TPU_PROCESS_PORT='' MEGASCALE_COORDINATOR_ADDRESS=''\
+    \ MEGASCALE_PORT='' VLLM_TORCH_COMPILE_CACHE_DIR=/data/torch_compile_cache vllm\
+    \ serve \\\n--host=0.0.0.0 \\\n--port=8000 \\\n--download-dir=/data \\\n--api-server-count=1\
+    \ \\\n--default-chat-template-kwargs='{\"enable_thinking\": false}' \\\n--tool-call-parser=qwen3_coder\
+    \ \\\n--reasoning-parser=qwen3 \\\n--trust-remote-code \\\n--max-model-len=262144\
+    \ \\\n--block-size=8192 \\\n--enable-expert-parallel \\\n--disable-custom-all-reduce\
+    \ \\\n--gpu-memory-utilization=0.85 \\\n--kv-cache-dtype=fp8 \\\n--quantization=fp8\
+    \ \\\n--language-model-only \\\n--limit-mm-per-prompt='{\"image\": 0, \"video\"\
+    : 0}' \\\n--no-disable-hybrid-kv-cache-manager \\\n--attention-backend=CUSTOM\
+    \ \\\n--mamba-cache-mode=align \\\n--enable-prompt-tokens-details \\\n--no-enable-log-requests\
+    \ \\\n--enable-prefix-caching \\\n--async-scheduling \\\n--disable-sliding-window\
+    \ \\\n--tensor-parallel-size=1 \\\n--max-num-batched-tokens=2048 \\\n--max-num-seqs=64\
+    \ \\\n--prefill-context-parallel-size=1 \\\n--cp-kv-cache-interleave-size=1 \\\
+    \n--data-parallel-size=8 \\\n--data-parallel-size-local=8 \\\n--compilation-config='{\"\
+    backend\": \"vllm_torchtpu.compilation.tpu_compiler.TpuCompilerAdaptor\", \"compile_sizes\"\
+    : [8, 16, 32, 64, 2048], \"inductor_compile_config\": {\"enable_auto_functionalized_v2\"\
+    : false, \"size_asserts\": false, \"alignment_asserts\": false, \"scalar_asserts\"\
+    : false}}' \\\n--kv-transfer-config='{\"kv_connector\": \"TPURaidenConnector\"\
+    , \"kv_connector_module_path\": \"vllm_torchtpu.distributed.kv_transfer.tpu_connector\"\
+    , \"kv_port\": 14579, \"kv_role\": \"kv_consumer\"}' \\\n--model=gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ \\\n--tokenizer=gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8 \\\n--load-format=runai_streamer"
+  "data_disk_size": "1500Gi"
+  "engine_label": "TORCH_TPU"
+  "image": "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-dev@sha256:1d0cd7c80b5ff6443815efc4cd05075ebff2a9e94ab4de351ad181637c9a4916"
+  "kv_port": !!null "null"
+  "model_impl_type": !!null "null"
+  "num_chips_per_node": !!int "4"
+  "num_nodes": !!int "1"
+  "phased_profiling_dir": !!null "null"
+  "pod_ip_env_vars":
+  - "TPU_RAIDEN_ADVERTISE_HOST"
+  "profile": !!bool "false"
+  "pvc_mounts": []
+  "readiness_probe":
+    "failure_threshold": !!int "3"
+    "initial_delay_seconds": !!int "15"
+    "period_seconds": !!int "10"
+  "replicas": !!int "1"
+  "server_env_vars": {}
+  "topology": "2x2x1"
+  "worker_bash_command": !!null "null"
+"gcp_service_account": !!null "null"
+"gcsfuse":
+  "enabled": !!bool "true"
+  "volumes":
+  - "bucketName": "<YOUR_LOG_BUCKET>"
+    "mountOptions": "implicit-dirs,metadata-cache:negative-ttl-secs:0"
+    "mountPath": "/job-logs"
+    "name": "gcs-job-logs"
+    "readOnly": !!bool "false"
+"gke_reservation": "<YOUR_RESERVATION>"
+"hf_token": !!null "null"
+"is_multi_host": !!bool "false"
+"k8s_service_account": !!null "null"
+"kueue_local_queue": "default"
+"kueue_priority_class": "medium"
+"persistent_volume_claims": []
+"persistent_volumes": []
+"placement_policy": !!null "null"
+"prefill":
+  "bash_command": "echo 'Prewarming trust_remote_code module cache (single process)\
+    \ to avoid concurrent dynamic-module import race...'; python3 -c 'import sys\n\
+    import transformers\nmodel_id = '\"'\"'gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8'\"\
+    '\"'\ntransformers.AutoConfig.from_pretrained(model_id, trust_remote_code=True)\n\
+    transformers.AutoTokenizer.from_pretrained(\n    model_id, trust_remote_code=True\n\
+    )\ntry:\n  transformers.AutoProcessor.from_pretrained(\n      model_id, trust_remote_code=True\n\
+    \  )\nexcept Exception as e:\n  print(\"prewarm: processor skipped:\", e, file=sys.stderr)\n\
+    print(\"prewarm: remote-code module cache ready\", file=sys.stderr)\n' || echo\
+    \ 'prewarm failed; continuing';\nif [ -d gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ ]; then\n  mnt_point=$(df -P gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ 2>/dev/null | tail -n 1 | awk '{print $NF}')\n  if mount | grep -q \"on ${mnt_point}\
+    \ type lustre\"; then\n    echo \"BENCH_MODEL_WEIGHTS_SIZE: \"$(du -sk gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ 2>/dev/null | awk '{printf \"%.2fGiB\\n\", $1/1024/1024}')\n  else\n    echo\
+    \ \"Model is not on Lustre, skipping du in container logs\"\n  fi\nfi\nVLLM_LOGGING_LEVEL=INFO\
+    \ HF_HOME=/data/huggingface_cache HF_HUB_DISABLE_XET=1 TMPDIR=/data/tmp VLLM_ENGINE_READY_TIMEOUT_S=7200\
+    \ JAX_PLATFORMS=tpu,cpu PJRT_DEVICE=TPU TPU_BACKEND_TYPE=jax VLLM_TARGET_DEVICE=tpu\
+    \ MODEL_IMPL_TYPE=vllm NEW_MODEL_DESIGN=0 SKIP_JAX_PRECOMPILE=1 VLLM_XLA_CHECK_RECOMPILATION=0\
+    \ VLLM_XLA_CACHE_PATH=/dev/shm/xla_cache TORCH_TPU_INTERNAL_TIER2_COMPILATION_CACHE=disabled\
+    \ TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_ROOT=/dev/shm/xla_cache/torch_tpu_tier3\
+    \ TORCHINDUCTOR_MAX_WORKERS=4 TORCHINDUCTOR_AUTOGRAD_CACHE=0 OMP_NUM_THREADS=8\
+    \ XLA_PYTHON_CLIENT_PREALLOCATE=false VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 LIBTPU_INIT_ARGS='\
+    \ --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false\
+    \ --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false\
+    \ --xla_enable_async_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true\
+    \ --xla_tpu_sparse_core_all_gather_offload_min_size_in_bytes=262144' USE_MOE_FUSED_EP_KERNEL=1\
+    \ USE_MOE_COUNTING_SORT=1 USE_MOE_SPARSE_CORE=1 USE_FUSED_MOE_GMM=1 USE_BATCHED_RPA_KERNEL=1\
+    \ TPU_MOE_FUSED_EP_STEP_MIN_TOKENS=33 TPU_MOE_FUSED_EP_ASYNC_ROW_GATHER=1 TPU_MOE_SKIP_PADDED_TOKENS=0\
+    \ MOE_FUSED_EP_KERNEL_MIN_TOKENS=1024 MOE_LOCAL_EXPERT_AFFINITY_EPSILON=0.01 VLLM_MOE_CHUNK_SIZE=256\
+    \ ONEHOT_MOE_PERMUTE_THRESHOLD=2048 RAGGED_GATHER_REDUCE_VERSION=v3 RAGGED_GATED_DELTA_RULE_IMPL=chunked_kernel_v3_pd\
+    \ TPU_ENABLE_GDN_DYNAMIC_TILING=0 TPU_GDN_CONV_QK_PAIR_LAYOUT=1 TPU_GDN_CONV_STATE_TILE_PAD=1\
+    \ TPU_RPA_FOLD_KV_HEAD_DIM=0 TPU_ROPE_CACHE_TRUNCATE=1 TPUMISC_HMA_CHECKSUM_TRACE=0\
+    \ DP_SCHED_BATCH_PREFILL_MAX_ADMIT_PER_FLUSH=0 TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL=1\
+    \ TPU_USE_RAIDEN_KV_CACHE_MANAGER=1 TPU_RAIDEN_QWEN35_ADMISSION=1 TPU_KV_RESHARD_TRANSPORT=raiden\
+    \ TPU_RAIDEN_RESHARD_IMPL=store TPU_RAIDEN_CLIENT_IMPL=cpp TPU_RAIDEN_TRANSFER_PARALLELISM=8\
+    \ TPU_RAIDEN_MAX_TRANSFER_TOKENS=262144 TPU_PREMAPPED_BUFFER_SIZE=17179869184\
+    \ TPU_KV_CACHE_HEADROOM_MIB=6144 TPU_KV_RESHARD_DST_PAGE_TOKENS=4096 TPU_ENABLE_D2H_TRANSFER=1\
+    \ TPU_HMA_D2H_COPY_IMPL=device_put TPU_HMA_MIN_DONE_RECVING_BATCH=1 TPU_HMA_MAX_DONE_RECVING_BATCH=1\
+    \ TPU_HMA_MAX_INFLIGHT_D2H_SENDS=1 TPU_HMA_MAX_INFLIGHT_PULLS=8 TPU_MAX_HOST_KV_BUFFER_SIZE=64\
+    \ TPU_P2P_WAIT_PULL_TIMEOUT=300 TPU_KV_SHM_POOL_GB=8 TPU_KV_TRANSFER_PORT=9100\
+    \ TPU_SIDE_CHANNEL_PORT=9600 TPU_KV_TRANSFER_NAMESPACE=llm_d_pd_prefill TPU_RAIDEN_JOB_NAME=prefill\
+    \ TPU_RAIDEN_ENGINE_ID=llm-d-pd-prefill-engine TPU_RAIDEN_RESHARD_PORT_BASE=27000\
+    \ TPU_RAIDEN_STORE_DISPATCH_PORT_BASE=27100 TPU_VLLM_SKIP_DYNAMIC_SMEM_NEGOTIATION_FLAG=1\
+    \ TPU_PCP_REMAP_PROBE_TIMEOUT_S=600 VLLM_DP_MASTER_IP=127.0.0.1 TPU_TOPOLOGY=2x2x1\
+    \ TPU_CHIPS_PER_HOST_BOUNDS=2,2,1 TPU_HOST_BOUNDS=1,1,1 TPU_LIBRARY_PATH='' MEGASCALE_NUM_SLICES=''\
+    \ MEGASCALE_SLICE_ID='' TPU_PROCESS_ADDRESSES='' TPU_WORKER_HOSTNAMES='' TPU_PROCESS_PORT=''\
+    \ MEGASCALE_COORDINATOR_ADDRESS='' MEGASCALE_PORT='' VLLM_TORCH_COMPILE_CACHE_DIR=/data/torch_compile_cache\
+    \ vllm serve \\\n--host=0.0.0.0 \\\n--port=8000 \\\n--download-dir=/data \\\n\
+    --api-server-count=1 \\\n--default-chat-template-kwargs='{\"enable_thinking\"\
+    : false}' \\\n--tool-call-parser=qwen3_coder \\\n--reasoning-parser=qwen3 \\\n\
+    --trust-remote-code \\\n--max-model-len=262144 \\\n--block-size=8192 \\\n--enable-expert-parallel\
+    \ \\\n--disable-custom-all-reduce \\\n--gpu-memory-utilization=0.85 \\\n--kv-cache-dtype=fp8\
+    \ \\\n--quantization=fp8 \\\n--language-model-only \\\n--limit-mm-per-prompt='{\"\
+    image\": 0, \"video\": 0}' \\\n--no-disable-hybrid-kv-cache-manager \\\n--attention-backend=CUSTOM\
+    \ \\\n--mamba-cache-mode=align \\\n--enable-prompt-tokens-details \\\n--no-enable-log-requests\
+    \ \\\n--enable-prefix-caching \\\n--async-scheduling \\\n--disable-sliding-window\
+    \ \\\n--tensor-parallel-size=1 \\\n--data-parallel-size=1 \\\n--data-parallel-size-local=1\
+    \ \\\n--max-num-batched-tokens=16384 \\\n--long-prefill-token-threshold=262144\
+    \ \\\n--max-num-seqs=16 \\\n--prefill-context-parallel-size=8 \\\n--cp-kv-cache-interleave-size=256\
+    \ \\\n--compilation-config='{\"backend\": \"vllm_torchtpu.compilation.tpu_compiler.TpuCompilerAdaptor\"\
+    , \"compile_sizes\": [4096, 8192, 12288, 16384], \"inductor_compile_config\":\
+    \ {\"enable_auto_functionalized_v2\": false, \"size_asserts\": false, \"alignment_asserts\"\
+    : false, \"scalar_asserts\": false}}' \\\n--kv-transfer-config='{\"kv_connector\"\
+    : \"TPURaidenConnector\", \"kv_connector_module_path\": \"vllm_torchtpu.distributed.kv_transfer.tpu_connector\"\
+    , \"kv_port\": 14579, \"kv_role\": \"kv_producer\"}' \\\n--model=gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8\
+    \ \\\n--tokenizer=gs://<YOUR_MODEL_BUCKET>/Qwen3.5-397B-A17B-FP8 \\\n--load-format=runai_streamer"
+  "data_disk_size": "1500Gi"
+  "engine_label": "TORCH_TPU"
+  "image": "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-dev@sha256:1d0cd7c80b5ff6443815efc4cd05075ebff2a9e94ab4de351ad181637c9a4916"
+  "kv_port": !!null "null"
+  "model_impl_type": !!null "null"
+  "num_chips_per_node": !!int "4"
+  "num_nodes": !!int "1"
+  "phased_profiling_dir": !!null "null"
+  "pod_ip_env_vars":
+  - "TPU_RAIDEN_ADVERTISE_HOST"
+  "profile": !!bool "false"
+  "pvc_mounts": []
+  "readiness_probe":
+    "failure_threshold": !!int "3"
+    "initial_delay_seconds": !!int "15"
+    "period_seconds": !!int "10"
+  "replicas": !!int "1"
+  "server_env_vars": {}
+  "topology": "2x2x1"
+  "worker_bash_command": !!null "null"
+"proxy":
+  "bash_command": "cat > /tmp/disagg_proxy_server.py <<'BENCH_PROXY_EOF'\n# Portions\
+    \ of this file are derived from vLLM\n# (https://github.com/vllm-project/vllm),\
+    \ specifically\n# tests/v1/kv_connector/nixl_integration/toy_proxy_server.py,\
+    \ which is licensed\n# under the Apache License, Version 2.0. The upstream copyright\
+    \ and license are\n# retained by their owners; see\n# https://github.com/vllm-project/vllm/blob/main/LICENSE.\n\
+    \"\"\"Disaggregated-serving HTTP proxy for vLLM prefill/decode (P/D) pools.\n\n\
+    Adapted from vLLM's disaggregated-serving toy proxy\n(tests/v1/kv_connector/nixl_integration/toy_proxy_server.py,\
+    \ Apache-2.0). It is\nconnector-agnostic: it forwards ``kv_transfer_params`` between\
+    \ the prefill and\ndecode pools, so it works with both the TPU (TPUConnector)\
+    \ and GPU\n(NixlConnector) native P/D paths. This recipe ships this file and runs\
+    \ it in the\nproxy pod, so it does not depend on the script being present in the\
+    \ serving\nimage.\n\nRequest flow: send the prompt to a prefill instance with\
+    \ ``max_tokens=1`` to\npopulate the KV cache, capture the returned ``kv_transfer_params``,\
+    \ then stream\nthe full generation from a decode instance. Instances are selected\
+    \ round-robin.\n\"\"\"\n\nimport argparse\nimport asyncio\nimport codecs\nimport\
+    \ collections.abc\nimport contextlib\nimport itertools\nimport logging\nimport\
+    \ os\nimport time\nfrom typing import Any\nimport uuid\n\nimport fastapi\nfrom\
+    \ fastapi import responses\nimport httpx\n\nlogging.basicConfig(level=logging.INFO)\n\
+    logger = logging.getLogger(\"disagg_proxy_server\")\n\n\n# Startup waits up to\
+    \ this long for every prefill/decode backend to report\n# healthy before the proxy\
+    \ begins serving requests.\n_BACKEND_READY_TIMEOUT_S = 90 * 60\n_BACKEND_POLL_INTERVAL_S\
+    \ = 10\n\n\nasync def _backend_healthy(client_info: dict[str, Any]) -> bool:\n\
+    \  \"\"\"Returns True if the backend's /health endpoint returns HTTP 200.\"\"\"\
+    \n  url = f\"http://{client_info['host']}:{client_info['port']}/health\"\n  try:\n\
+    \    response = await client_info[\"client\"].get(url, timeout=5.0)\n    return\
+    \ response.status_code == 200\n  except httpx.HTTPError:\n    return False\n\n\
+    \nasync def _all_backends_healthy(fastapi_app: fastapi.FastAPI) -> bool:\n  \"\
+    \"\"Returns True only if every prefill and decode backend is healthy.\"\"\"\n\
+    \  clients = fastapi_app.state.prefill_clients + fastapi_app.state.decode_clients\n\
+    \  results = await asyncio.gather(*(_backend_healthy(c) for c in clients))\n \
+    \ return all(results)\n\n\nasync def _wait_for_backends_ready(fastapi_app: fastapi.FastAPI)\
+    \ -> None:\n  \"\"\"Blocks startup until all backends are healthy or the timeout\
+    \ elapses.\n\n  The proxy binds its port before the backends finish loading weights,\
+    \ so\n  without this the client would fire requests at cold backends and get zero\n\
+    \  successes. Staying in startup keeps the client's readiness probe waiting.\n\
+    \n  Args:\n    fastapi_app: The FastAPI app whose prefill/decode pools are polled.\n\
+    \  \"\"\"\n  deadline = time.monotonic() + _BACKEND_READY_TIMEOUT_S\n  while True:\n\
+    \    if await _all_backends_healthy(fastapi_app):\n      logger.info(\"All prefill/decode\
+    \ backends are ready.\")\n      return\n    if time.monotonic() >= deadline:\n\
+    \      logger.warning(\n          \"Timed out after %ds waiting for backends;\
+    \ serving anyway.\",\n          _BACKEND_READY_TIMEOUT_S,\n      )\n      return\n\
+    \    logger.info(\"Waiting for prefill/decode backends to become ready...\")\n\
+    \    await asyncio.sleep(_BACKEND_POLL_INTERVAL_S)\n\n\n@contextlib.asynccontextmanager\n\
+    async def lifespan(\n    fastapi_app: fastapi.FastAPI,\n) -> collections.abc.AsyncIterator[None]:\n\
+    \  \"\"\"Initializes and tears down the prefill/decode client pools.\"\"\"\n \
+    \ cli_args = fastapi_app.state.cli_args\n  fastapi_app.state.prefill_clients =\
+    \ []\n  fastapi_app.state.decode_clients = []\n\n  for i, (host, port) in enumerate(cli_args.prefiller_instances):\n\
+    \    fastapi_app.state.prefill_clients.append({\n        \"client\": httpx.AsyncClient(\n\
+    \            timeout=None, base_url=f\"http://{host}:{port}/v1\"\n        ),\n\
+    \        \"host\": host,\n        \"port\": port,\n        \"id\": i,\n    })\n\
+    \n  for i, (host, port) in enumerate(cli_args.decoder_instances):\n    fastapi_app.state.decode_clients.append({\n\
+    \        \"client\": httpx.AsyncClient(\n            timeout=None, base_url=f\"\
+    http://{host}:{port}/v1\"\n        ),\n        \"host\": host,\n        \"port\"\
+    : port,\n        \"id\": i,\n    })\n\n  fastapi_app.state.prefill_iterator =\
+    \ itertools.cycle(\n      range(len(fastapi_app.state.prefill_clients))\n  )\n\
+    \  fastapi_app.state.decode_iterator = itertools.cycle(\n      range(len(fastapi_app.state.decode_clients))\n\
+    \  )\n  logger.info(\n      \"Initialized %d prefill and %d decode clients.\"\
+    ,\n      len(fastapi_app.state.prefill_clients),\n      len(fastapi_app.state.decode_clients),\n\
+    \  )\n\n  await _wait_for_backends_ready(fastapi_app)\n\n  yield\n\n  for client_info\
+    \ in fastapi_app.state.prefill_clients:\n    await client_info[\"client\"].aclose()\n\
+    \  for client_info in fastapi_app.state.decode_clients:\n    await client_info[\"\
+    client\"].aclose()\n\n\napp = fastapi.FastAPI(lifespan=lifespan)\n\n\ndef _response_media_type(req_data:\
+    \ dict[str, Any]) -> str:\n  \"\"\"Returns the Content-Type the client must see\
+    \ for this request.\n\n  vLLM answers ``\"stream\": true`` with Server-Sent Events.\
+    \ Strict OpenAI\n  clients (e.g. the InferenceX AIPerf harness) only run their\
+    \ SSE parser when\n  the response is ``text/event-stream``; advertising ``application/json``\
+    \ makes\n  them fail every streamed request with a JSON decode error on ``data:\
+    \ ...``.\n\n  Args:\n    req_data: The sanitized request body forwarded to decode.\n\
+    \n  Returns:\n    ``text/event-stream`` for streaming requests, else ``application/json``.\n\
+    \  \"\"\"\n  return \"text/event-stream\" if req_data.get(\"stream\") else \"\
+    application/json\"\n\n\ndef _build_headers(request_id: str) -> dict[str, str]:\n\
+    \  \"\"\"Builds forwarding headers, adding auth only when a key is set.\"\"\"\n\
+    \  headers = {\"X-Request-Id\": request_id}\n  api_key = os.environ.get(\"OPENAI_API_KEY\"\
+    )\n  if api_key:\n    headers[\"Authorization\"] = f\"Bearer {api_key}\"\n  return\
+    \ headers\n\n\ndef _sanitize_request_body(req_data: Any) -> dict[str, Any]:\n\
+    \  \"\"\"Requires a JSON object and drops client-supplied ``kv_transfer_params``.\n\
+    \n  ``kv_transfer_params`` sets the ``remote_host``/``remote_port`` the decode\n\
+    \  backend dials, so forwarding a client value would enable SSRF (CWE-918); the\n\
+    \  proxy re-injects only what the prefill backend returns.\n\n  Args:\n    req_data:\
+    \ The parsed JSON request body.\n\n  Returns:\n    ``req_data`` with ``kv_transfer_params``\
+    \ removed.\n\n  Raises:\n    fastapi.HTTPException: If the body is not a JSON\
+    \ object.\n  \"\"\"\n  if not isinstance(req_data, dict):\n    raise fastapi.HTTPException(\n\
+    \        status_code=400, detail=\"Request body must be a JSON object.\"\n   \
+    \ )\n  req_data.pop(\"kv_transfer_params\", None)\n  return req_data\n\n\ndef\
+    \ parse_args() -> argparse.Namespace:\n  \"\"\"Parses proxy CLI args (prefiller/decoder\
+    \ host+port lists).\"\"\"\n  parser = argparse.ArgumentParser()\n  parser.add_argument(\"\
+    --port\", type=int, default=8000)\n  parser.add_argument(\"--host\", type=str,\
+    \ default=\"localhost\")\n  parser.add_argument(\n      \"--prefiller-hosts\"\
+    ,\n      \"--prefiller-host\",\n      type=str,\n      nargs=\"+\",\n      default=[\"\
+    localhost\"],\n  )\n  parser.add_argument(\n      \"--prefiller-ports\",\n   \
+    \   \"--prefiller-port\",\n      type=int,\n      nargs=\"+\",\n      default=[8100],\n\
+    \  )\n  parser.add_argument(\n      \"--decoder-hosts\",\n      \"--decoder-host\"\
+    ,\n      type=str,\n      nargs=\"+\",\n      default=[\"localhost\"],\n  )\n\
+    \  parser.add_argument(\n      \"--decoder-ports\",\n      \"--decoder-port\"\
+    ,\n      type=int,\n      nargs=\"+\",\n      default=[8200],\n  )\n  args = parser.parse_args()\n\
+    \n  if len(args.prefiller_hosts) != len(args.prefiller_ports):\n    raise ValueError(\"\
+    Number of prefiller hosts must match prefiller ports.\")\n  if len(args.decoder_hosts)\
+    \ != len(args.decoder_ports):\n    raise ValueError(\"Number of decoder hosts\
+    \ must match decoder ports.\")\n\n  args.prefiller_instances = list(\n      zip(args.prefiller_hosts,\
+    \ args.prefiller_ports)\n  )\n  args.decoder_instances = list(zip(args.decoder_hosts,\
+    \ args.decoder_ports))\n  return args\n\n\ndef get_next_client(\n    fastapi_app:\
+    \ fastapi.FastAPI, service_type: str\n) -> dict[str, Any]:\n  \"\"\"Returns the\
+    \ next prefill/decode client in round-robin order.\"\"\"\n  if service_type ==\
+    \ \"prefill\":\n    return fastapi_app.state.prefill_clients[\n        next(fastapi_app.state.prefill_iterator)\n\
+    \    ]\n  if service_type == \"decode\":\n    return fastapi_app.state.decode_clients[\n\
+    \        next(fastapi_app.state.decode_iterator)\n    ]\n  raise ValueError(f\"\
+    Unknown service type: {service_type}\")\n\n\nasync def send_request_to_prefill(\n\
+    \    client_info: dict[str, Any],\n    endpoint: str,\n    req_data: dict[str,\
+    \ Any],\n    request_id: str,\n) -> httpx.Response:\n  \"\"\"Runs prefill (max_tokens=1)\
+    \ and returns the response with kv params.\"\"\"\n  req_data = req_data.copy()\n\
+    \  req_data[\"kv_transfer_params\"] = {\n      \"do_remote_decode\": True,\n \
+    \     \"do_remote_prefill\": False,\n      \"remote_engine_id\": None,\n     \
+    \ \"remote_block_ids\": None,\n      \"remote_host\": None,\n      \"remote_port\"\
+    : None,\n  }\n  req_data[\"stream\"] = False\n  req_data[\"max_tokens\"] = 1\n\
+    \  if \"max_completion_tokens\" in req_data:\n    req_data[\"max_completion_tokens\"\
+    ] = 1\n  req_data.pop(\"stream_options\", None)\n  headers = _build_headers(request_id)\n\
+    \  response = await client_info[\"client\"].post(\n      endpoint, json=req_data,\
+    \ headers=headers\n  )\n  response.raise_for_status()\n  return response\n\n\n\
+    def _json_escape_non_ascii(text: str) -> bytes:\n  \"\"\"Encodes text as ASCII\
+    \ bytes while preserving JSON string semantics.\"\"\"\n  if text.isascii():\n\
+    \    return text.encode(\"ascii\")\n\n  parts = []\n  for char in text:\n    codepoint\
+    \ = ord(char)\n    if codepoint < 128:\n      parts.append(char)\n    elif codepoint\
+    \ <= 0xFFFF:\n      parts.append(f\"\\\\u{codepoint:04x}\")\n    else:\n     \
+    \ codepoint -= 0x10000\n      high_surrogate = 0xD800 + (codepoint >> 10)\n  \
+    \    low_surrogate = 0xDC00 + (codepoint & 0x3FF)\n      parts.append(f\"\\\\\
+    u{high_surrogate:04x}\\\\u{low_surrogate:04x}\")\n  return \"\".join(parts).encode(\"\
+    ascii\")\n\n\nclass _AsciiSafeStreamEncoder:\n  \"\"\"Converts UTF-8 stream chunks\
+    \ to ASCII-only JSON-compatible chunks.\"\"\"\n\n  def __init__(self) -> None:\n\
+    \    self._decoder = codecs.getincrementaldecoder(\"utf-8\")()\n\n  def encode(self,\
+    \ chunk: bytes = b\"\", *, final: bool = False) -> bytes:\n    text = self._decoder.decode(chunk,\
+    \ final=final)\n    if not text:\n      return b\"\"\n    return _json_escape_non_ascii(text)\n\
+    \n\nasync def stream_from_decode(\n    client_info: dict[str, Any],\n    endpoint:\
+    \ str,\n    req_data: dict[str, Any],\n    request_id: str,\n) -> collections.abc.AsyncIterator[bytes]:\n\
+    \  \"\"\"Streams the decode response chunks back to the caller.\"\"\"\n  headers\
+    \ = _build_headers(request_id)\n  async with client_info[\"client\"].stream(\n\
+    \      \"POST\", endpoint, json=req_data, headers=headers\n  ) as response:\n\
+    \    response.raise_for_status()\n    encoder = _AsciiSafeStreamEncoder()\n  \
+    \  async for chunk in response.aiter_bytes():\n      encoded = encoder.encode(chunk)\n\
+    \      if encoded:\n        yield encoded\n    tail = encoder.encode(final=True)\n\
+    \    if tail:\n      yield tail\n\n\nasync def _handle_completions(\n    api:\
+    \ str, request: fastapi.Request\n) -> responses.StreamingResponse:\n  \"\"\"Orchestrates\
+    \ a prefill-then-decode round trip for one request.\"\"\"\n  request_id = str(uuid.uuid4())\n\
+    \  try:\n    req_data = _sanitize_request_body(await request.json())\n    prefill_client\
+    \ = get_next_client(request.app, \"prefill\")\n    response = await send_request_to_prefill(\n\
+    \        prefill_client, api, req_data, request_id\n    )\n    kv_transfer_params\
+    \ = response.json().get(\"kv_transfer_params\", {})\n    if kv_transfer_params:\n\
+    \      req_data[\"kv_transfer_params\"] = kv_transfer_params\n\n    decode_client\
+    \ = get_next_client(request.app, \"decode\")\n  except fastapi.HTTPException:\n\
+    \    raise\n  except Exception:\n    logger.exception(\"Error in disagg proxy\
+    \ for %s endpoint\", api)\n    raise\n\n  async def generate_stream() -> collections.abc.AsyncIterator[bytes]:\n\
+    \    async for chunk in stream_from_decode(\n        decode_client, api, req_data,\
+    \ request_id\n    ):\n      yield chunk\n\n  return responses.StreamingResponse(\n\
+    \      generate_stream(), media_type=_response_media_type(req_data)\n  )\n\n\n\
+    @app.post(\"/v1/completions\")\nasync def handle_completions(\n    request: fastapi.Request,\n\
+    ) -> responses.StreamingResponse:\n  return await _handle_completions(\"/completions\"\
+    , request)\n\n\n@app.post(\"/v1/chat/completions\")\nasync def handle_chat_completions(\n\
+    \    request: fastapi.Request,\n) -> responses.StreamingResponse:\n  return await\
+    \ _handle_completions(\"/chat/completions\", request)\n\n\n@app.get(\"/healthcheck\"\
+    )\nasync def healthcheck() -> dict[str, Any]:\n  return {\n      \"status\": \"\
+    ok\",\n      \"prefill_instances\": len(app.state.prefill_clients),\n      \"\
+    decode_instances\": len(app.state.decode_clients),\n  }\n\n\n@app.get(\"/health\"\
+    )\n@app.get(\"/ping\")\nasync def health() -> responses.Response:\n  \"\"\"Readiness\
+    \ endpoint: 200 only once all backends can serve.\n\n  The client polls this before\
+    \ sending load, so returning non-200 until the\n  prefill/decode pools are ready\
+    \ prevents premature, failing requests.\n  \"\"\"\n  if await _all_backends_healthy(app):\n\
+    \    return responses.JSONResponse({\"status\": \"ok\"})\n  return responses.JSONResponse(\n\
+    \      {\"status\": \"backends_not_ready\"}, status_code=503\n  )\n\n\n@app.get(\"\
+    /v1/models\")\nasync def models() -> responses.Response:\n  \"\"\"Proxies the\
+    \ model list from a prefill backend (used by readiness checks).\"\"\"\n  client_info\
+    \ = get_next_client(app, \"prefill\")\n  response = await client_info[\"client\"\
+    ].get(\"/models\")\n  return responses.JSONResponse(\n      response.json(), status_code=response.status_code\n\
+    \  )\n\n\nif __name__ == \"__main__\":\n  app.state.cli_args = parse_args()\n\
+    \  import uvicorn  # pylint: disable=g-import-not-at-top\n\n  uvicorn.run(app,\
+    \ host=app.state.cli_args.host, port=app.state.cli_args.port)\n\nBENCH_PROXY_EOF\n\
+    PREFILL_HOST=\"${PREFILL_ENDPOINT%%:*}\"; PREFILL_PORT=\"${PREFILL_ENDPOINT##*:}\"\
+    ; DECODE_HOST=\"${DECODE_ENDPOINT%%:*}\"; DECODE_PORT=\"${DECODE_ENDPOINT##*:}\"\
+    ; python3 /tmp/disagg_proxy_server.py --host 0.0.0.0 --port \"$PROXY_PORT\" --prefiller-hosts\
+    \ \"$PREFILL_HOST\" --prefiller-ports \"$PREFILL_PORT\" --decoder-hosts \"$DECODE_HOST\"\
+    \ --decoder-ports \"$DECODE_PORT\""
+  "image": "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-dev@sha256:1d0cd7c80b5ff6443815efc4cd05075ebff2a9e94ab4de351ad181637c9a4916"
+  "port": !!int "8000"
+"run_mode": !!int "0"
+"server":
+  "bash_command": "python3 -m vllm.entrypoints.openai.api_server \\\n--host=0.0.0.0\
+    \ \\\n--port=8000 \\\n--tensor-parallel-size=1 \\\n--max-model-len=3000 \\\n--download-dir=/data\
+    \ \\\n--max-num-batched-tokens=2048 \\\n--max-num-seqs=128 \\\n--enable-prefix-caching\
+    \ \\\n--model=meta-llama/Llama-3.1-8B-Instruct\n"
+  "data_disk_size": "100Gi"
+  "engine_label": !!null "null"
+  "image": "vllm/vllm-tpu:nightly-ironwood-20260113-8424c78-df7e127"
+  "model_impl_type": !!null "null"
+  "num_chips_per_node": !!int "1"
+  "num_nodes": !!int "1"
+  "phased_profiling_dir": !!null "null"
+  "profile": !!bool "false"
+  "pvc_mounts": []
+  "topology": "1x1x1"
+  "worker_bash_command": !!null "null"
+"service_type": "ClusterIP"
+"serving_mode": "disaggregated"

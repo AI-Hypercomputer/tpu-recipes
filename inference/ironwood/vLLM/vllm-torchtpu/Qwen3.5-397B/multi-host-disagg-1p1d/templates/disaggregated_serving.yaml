@@ -1,0 +1,166 @@
+# yamllint disable
+{{/*
+Disaggregated (prefill/decode) serving topology for tpu7x. Rendered only when
+serving_mode == "disaggregated"; otherwise this file emits nothing and the
+colocated resources in benchmark.yaml render unchanged.
+
+Layout: independent prefill + decode worker pools (see _serving_pool.tpl), one Service
+per pool, and a parametric proxy/router that clients target. The StorageClass is
+reused from benchmark.yaml (release-scoped, mode-agnostic).
+*/}}
+{{- if eq (default "colocated" .Values.serving_mode) "disaggregated" }}
+{{- if not .Values.client.external_server_host }}
+---
+{{ include "tpu7x.serving.pool" (dict "ctx" $ "pool" .Values.prefill "role" "prefill") }}
+---
+{{ include "tpu7x.serving.pool" (dict "ctx" $ "pool" .Values.decode "role" "decode") }}
+{{- if not (gt (int .Values.prefill.num_nodes) 1) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: "{{ .Release.Name }}-vllm-prefill-data-claim"
+spec:
+  storageClassName: "{{ .Release.Name }}-hyperdisk-balanced-tpu"
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.prefill.data_disk_size }}
+{{- end }}
+{{- if not (gt (int .Values.decode.num_nodes) 1) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: "{{ .Release.Name }}-vllm-decode-data-claim"
+spec:
+  storageClassName: "{{ .Release.Name }}-hyperdisk-balanced-tpu"
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.decode.data_disk_size }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Release.Name }}-vllm-prefill"
+spec:
+  selector:
+    app: "{{ .Release.Name }}-vllm-prefill-pod"
+    {{- if gt (int .Values.prefill.num_nodes) 1 }}
+    role: leader
+    {{- end }}
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
+  {{- if .Values.prefill.kv_port }}
+  - name: kv
+    protocol: TCP
+    port: {{ .Values.prefill.kv_port }}
+    targetPort: {{ .Values.prefill.kv_port }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Release.Name }}-vllm-decode"
+spec:
+  selector:
+    app: "{{ .Release.Name }}-vllm-decode-pod"
+    {{- if gt (int .Values.decode.num_nodes) 1 }}
+    role: leader
+    {{- end }}
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
+  {{- if .Values.decode.kv_port }}
+  - name: kv
+    protocol: TCP
+    port: {{ .Values.decode.kv_port }}
+    targetPort: {{ .Values.decode.kv_port }}
+  {{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{ .Release.Name }}-vllm-proxy"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "{{ .Release.Name }}-vllm-proxy-pod"
+  template:
+    metadata:
+      labels:
+        app: "{{ .Release.Name }}-vllm-proxy-pod"
+        app.kubernetes.io/instance: "{{ .Release.Name }}"
+        app.kubernetes.io/component: proxy
+        {{- if .Values.kueue_local_queue }}
+        kueue.x-k8s.io/queue-name: {{ .Values.kueue_local_queue | quote }}
+        {{- end }}
+    spec:
+      {{- if .Values.kueue_priority_class }}
+      priorityClassName: {{ .Values.kueue_priority_class | quote }}
+      {{- end }}
+      {{- if .Values.gcp_service_account }}
+      serviceAccountName: {{ .Values.k8s_service_account | quote }}
+      {{- end }}
+      containers:
+      - name: vllm-proxy
+        image: {{ .Values.proxy.image }}
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/bash", "-c"]
+        args:
+        - {{ .Values.proxy.bash_command | quote }}
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: "{{ .Release.Name }}-hf-secret"
+              key: hf_api_token
+        # Service-discovery wiring (orchestration concern): the proxy resolves
+        # the pools via these release-scoped DNS names. Routing semantics live in
+        # proxy.bash_command, supplied by the workload.
+        - name: PREFILL_ENDPOINT
+          value: "{{ .Release.Name }}-vllm-prefill.{{ .Release.Namespace }}.svc.cluster.local:8000"
+        - name: DECODE_ENDPOINT
+          value: "{{ .Release.Name }}-vllm-decode.{{ .Release.Namespace }}.svc.cluster.local:8000"
+        - name: PROXY_PORT
+          value: "{{ .Values.proxy.port }}"
+        ports:
+        - containerPort: {{ .Values.proxy.port }}
+        readinessProbe:
+          tcpSocket:
+            port: {{ .Values.proxy.port }}
+          initialDelaySeconds: 15
+          periodSeconds: 10
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "{{ .Release.Name }}-vllm-proxy"
+  {{- if eq (default "ClusterIP" .Values.service_type) "LoadBalancer" }}
+  annotations:
+    cloud.google.com/load-balancer-type: "Internal"
+  {{- end }}
+spec:
+  selector:
+    app: "{{ .Release.Name }}-vllm-proxy-pod"
+  type: {{ default "ClusterIP" .Values.service_type }}
+  ports:
+  - name: http
+    protocol: TCP
+    port: {{ .Values.proxy.port }}
+    targetPort: {{ .Values.proxy.port }}
+{{- end }}
+{{- end }}
