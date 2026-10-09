@@ -1,0 +1,62 @@
+{{- $name := .Release.Name }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-client
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+    app.kubernetes.io/component: client
+    {{- with .Values.kueue.queue_name }}
+    kueue.x-k8s.io/queue-name: {{ . }}
+    {{- end }}
+spec:
+  backoffLimit: 0
+  {{- if .Values.kueue.queue_name }}
+  suspend: true
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ $name }}
+        app.kubernetes.io/component: client
+    spec:
+      {{- with .Values.kueue.priority_class }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: vllm-bench
+          image: {{ .Values.client.image }}
+          resources:
+            requests:
+              cpu: "1"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -eo pipefail
+              while ! curl -sf http://${SERVER_HOSTNAME}:8000/health; do
+                echo 'Waiting for server...'; sleep 30
+              done
+              apt-get update && apt-get install -y git
+              git clone https://github.com/SemiAnalysisAI/InferenceX.git /opt/inferencex
+              cd /opt/inferencex && git checkout {{ .Values.client.inferencex_commit }}
+              python3 utils/bench_serving/benchmark_serving.py \
+                --host=${SERVER_HOSTNAME} \
+                --port=8000 \
+                {{- range .Values.client.args }}
+                {{ . | squote }} \
+                {{- end }}
+                2>&1 | tee /tmp/vllm_bench.txt
+          env:
+            - name: SERVER_HOSTNAME
+              value: {{ $name }}-vllm-service
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-hf-secret
+                  key: hf_api_token
