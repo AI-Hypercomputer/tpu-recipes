@@ -58,7 +58,8 @@ gcloud container clusters create ${CLUSTER_NAME} \
 ### Create the TPU7x node pool
 
 The guide runs 2 vLLM replicas, each on one single-host TPU7x `2x2x1` slice
-(`tpu7x-standard-4t`, 4 chips), so the node pool needs 2 nodes.
+(`tpu7x-standard-4t`, 4 chips), so the node pool needs 2 nodes. If you don't
+use a reservation, drop the `--reservation` and `--reservation-affinity` flags.
 
 ```bash
 gcloud container node-pools create ${NODEPOOL_NAME} \
@@ -98,14 +99,14 @@ git checkout 77f18fe4f179ada1844d95ea1d4cb355a45b55b1
 These are the upstream guide's variables with the TPU v7 values selected.
 
 ```bash
-export REPO_ROOT=$(realpath $(git rev-parse --show-toplevel))
+export REPO_ROOT=$(pwd)
 export GUIDE_NAME=optimized-baseline
 export NAMESPACE=llm-d-optimized-baseline
 export ACCELERATOR_TYPE=tpu/v7
 export MODEL_SERVER=vllm
 export MODEL=Qwen/Qwen3-32B
 export MONITORING_VALUES=
-export CURL_TEST_IMAGE=cfmanteiga/alpine-bash-curl-jq:latest
+export CURL_TEST_IMAGE=curlimages/curl:8.6.0
 export HF_TOKEN=<YOUR_HF_TOKEN>
 
 source ${REPO_ROOT}/guides/env.sh
@@ -168,16 +169,16 @@ kubectl get pods -n ${NAMESPACE} -w
 
 ## Verify
 
-```bash
-export IP=$(kubectl get service ${GUIDE_NAME}-epp -n ${NAMESPACE} \
-  -o jsonpath='{.spec.clusterIP}')
+Send a request from a temporary pod in the same namespace, addressing the
+router's Service by name:
 
+```bash
 kubectl run curl-test --rm -i --restart=Never \
   --image=${CURL_TEST_IMAGE} \
   --namespace="${NAMESPACE}" \
-  --env="IP=${IP}" \
+  --env="ENDPOINT=${GUIDE_NAME}-epp" \
   --env="MODEL=${MODEL}" \
-  -- /bin/sh -c 'curl -sS -X POST "http://${IP}/v1/completions" -H "Content-Type: application/json" -d "{\"model\": \"${MODEL}\", \"prompt\": \"How are you today?\"}"'
+  -- /bin/sh -c 'curl -sS -X POST "http://${ENDPOINT}/v1/completions" -H "Content-Type: application/json" -d "{\"model\": \"${MODEL}\", \"prompt\": \"How are you today?\"}"'
 ```
 
 ## Benchmark
@@ -185,15 +186,18 @@ kubectl run curl-test --rm -i --restart=Never \
 The guide benchmarks with
 [`llmdbenchmark`](https://github.com/llm-d/llm-d-benchmark) and
 [`inference-perf`](https://github.com/kubernetes-sigs/inference-perf), using the
-guide's dedicated workload profile:
+guide's dedicated workload profile. `llmdbenchmark` launches the load generator
+as a pod in `${NAMESPACE}`, so the router's ClusterIP below only needs to be
+reachable from inside the cluster.
 
 ```bash
-export BENCHMARK_REF=main
+export BENCHMARK_REF=v0.8.9
 export HARNESS=inference-perf
 export WORKLOAD=guide_optimized-baseline_1.yaml
 export GATEWAY_CLASS=epponly
 
-curl -sSL https://raw.githubusercontent.com/llm-d/llm-d-benchmark/${BENCHMARK_REF}/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/llm-d/llm-d-benchmark/${BENCHMARK_REF}/install.sh \
+  | LLMDBENCH_BRANCH=${BENCHMARK_REF} bash
 cd llm-d-benchmark && source .venv/bin/activate
 
 export ENDPOINT_URL="http://$(kubectl get service ${GUIDE_NAME}-epp -n ${NAMESPACE} -o jsonpath='{.spec.clusterIP}')"
