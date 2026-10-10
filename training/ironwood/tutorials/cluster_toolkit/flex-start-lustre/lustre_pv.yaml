@@ -1,0 +1,38 @@
+# Pre-provisioned Managed Lustre instance exposed to the cluster as a
+# PersistentVolume / PersistentVolumeClaim pair. Replace the <...> placeholders
+# with values from `gcloud lustre instances describe`.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: lustre-pv
+spec:
+  storageClassName: ""
+  capacity:
+    storage: <INSTANCE CAPACITY>            # e.g. 18000Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  claimRef:
+    namespace: default
+    name: lustre-volume
+  csi:
+    driver: lustre.csi.storage.gke.io
+    volumeHandle: <PROJECT_ID>/<ZONE>/<LUSTRE_INSTANCE_NAME>
+    volumeAttributes:
+      ip: <INSTANCE IP>                     # host part of mountPoint
+      filesystem: <FILESYSTEM NAME>         # e.g. lfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lustre-volume
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  volumeName: lustre-pv
+  resources:
+    requests:
+      storage: <INSTANCE CAPACITY>            # must match the PV capacity
