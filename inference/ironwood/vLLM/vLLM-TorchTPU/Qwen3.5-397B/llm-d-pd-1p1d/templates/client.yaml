@@ -127,7 +127,8 @@ spec:
                 return v.get(s) if isinstance(v, dict) else None
               out = {
                   "request_count": stat("request_count"),
-                  "error_request_count": stat("error_request_count"),
+                  # AIPerf omits the error count when there were no errors.
+                  "error_request_count": stat("error_request_count") or 0,
                   "benchmark_duration_s": stat("benchmark_duration"),
                   "mean_input_tokens": stat("input_sequence_length"),
                   "mean_output_tokens": stat("output_sequence_length"),

@@ -142,11 +142,13 @@ $ kubectl logs -f -c vllm-torchtpu deploy/${RUN_NAME}-prefill
 (APIServer pid=1) INFO:     Application startup complete.
 ```
 
-The prefill engine also logs that its host KV tier is up. If this line is
-missing, KV offload did not start:
+The prefill engine also logs that each of its 8 workers registered with the
+host KV tier. If these lines are missing, KV offload did not start:
 
 ```
-TPURaidenOffloadingConnector: KVCacheStore up: capacity=... all 8 workers registered
+$ kubectl logs deploy/${RUN_NAME}-prefill -c vllm-torchtpu | grep 'registered with offload controller'
+
+TPURaidenOffloadingConnector: rank 0 registered with offload controller at 127.0.0.1:47800 (2184 host kernel blocks)
 ```
 
 > [!IMPORTANT]
@@ -213,19 +215,20 @@ before you trust a benchmark.
 
     Use the direct decode port only for this check; it skips P/D.
 
-5.  Optional: confirm that the prefill host KV tier serves prefix hits. Under
-    a long-context workload such as AgentX, HBM evicts prefix-cache blocks
-    and the host tier serves them back. The prefill engine counts those
-    tokens in `vllm:external_prefix_cache_hits_total`; HBM hits are in
-    `vllm:prefix_cache_hits_total`:
+5.  Optional: check prefix-cache hits on the prefill engine. HBM hits are
+    counted in `vllm:prefix_cache_hits_total`. Hits served from the host KV
+    tier are counted in `vllm:external_prefix_cache_hits_total`:
 
     ```
     kubectl port-forward deploy/${RUN_NAME}-prefill 8001:8000 &
     curl -s localhost:8001/metrics | grep -E '^vllm:(external_)?prefix_cache_hits_total'
     ```
 
-    Prefix hits come in whole 6144-token blocks (`--block-size=768` times
-    PCP8), so prompts shorter than 6144 tokens never hit.
+    The host tier only serves blocks that HBM has evicted. The prefill HBM
+    KV pool holds about 13.8M tokens, so a workload whose shared prefixes fit
+    in HBM, such as AgentX at concurrency 32, can run without any host-tier
+    hits. Prefix hits come in whole 6144-token blocks (`--block-size=768`
+    times PCP8), so prompts shorter than 6144 tokens never hit.
 
 ## Run the benchmark
 
