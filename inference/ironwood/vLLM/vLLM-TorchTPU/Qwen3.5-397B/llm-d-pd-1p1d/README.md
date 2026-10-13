@@ -167,15 +167,23 @@ before you trust a benchmark.
     curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{
       "model": "Qwen/Qwen3.5-397B-A17B-FP8",
       "messages": [{"role": "user", "content": "Name three primary colors."}],
-      "max_tokens": 200
+      "max_tokens": 200,
+      "chat_template_kwargs": {"enable_thinking": false}
     }'
     ```
 
-2.  Confirm that the EPP chose both a prefill and a decode endpoint for the
-    request:
+    With thinking on (the model default), short `max_tokens` budgets can be
+    spent entirely on `reasoning_content`, leaving `content` empty.
+
+2.  Confirm the request path. The Envoy access log shows each request and
+    the endpoint the EPP chose: a `POST` must go to the decode pod IP on port
+    8000 (the routing sidecar). The prefill engine log then shows the prefill
+    pass as a `POST` that comes from the decode pod IP:
 
     ```
-    kubectl logs deploy/${RUN_NAME}-epp -c epp | grep -iE 'prefill|decode' | tail
+    kubectl get pods -o wide -l app.kubernetes.io/instance=${RUN_NAME}
+    kubectl logs deploy/${RUN_NAME}-epp -c envoy | grep POST | tail -3
+    kubectl logs deploy/${RUN_NAME}-prefill -c vllm-torchtpu | grep 'POST /v1/chat/completions' | tail -3
     ```
 
 3.  Confirm that Raiden moved the KV cache. For each request, the prefill
@@ -189,14 +197,21 @@ before you trust a benchmark.
     ```
 
     Do not use `Num successful transfers` from the `KV Transfer metrics:` log
-    line. It does not count Raiden transfers and stays at 0.
+    line, or `usage.prompt_tokens_details.cached_tokens` in the response.
+    Neither counts Raiden transfers.
 
-4.  Confirm that decode used the transferred KV cache. In the response,
-    `usage.prompt_tokens_details.cached_tokens` is close to
-    `usage.prompt_tokens` when the prompt is longer than one KV block. A very
-    short prompt such as the one above fits in no complete block, so nothing
-    is transferred and decode computes the prompt itself. That is expected
-    and is not an error.
+4.  Optional: confirm that P/D output matches local computation. Send the
+    same request at `temperature: 0` through the router and directly to the
+    decode engine (which then computes the prompt itself). The two responses
+    must be identical:
+
+    ```
+    kubectl port-forward deploy/${RUN_NAME}-decode 8200:8200 &
+    # Repeat the request from step 1 against localhost:8200 with "temperature": 0,
+    # and compare it with the same request sent to localhost:8000.
+    ```
+
+    Use the direct decode port only for this check; it skips P/D.
 
 5.  Optional: confirm that the prefill host KV tier serves prefix hits. Under
     a long-context workload such as AgentX, HBM evicts prefix-cache blocks
@@ -247,7 +262,7 @@ thinking text out of `content` into `reasoning_content`.
 
 | Symptom | Cause and fix |
 | --- | --- |
-| HTTP 200 but no `raiden_stage3_*` lines | The prompt is shorter than one KV block, or the request did not go through `${RUN_NAME}-epp`. Use a longer prompt and the router Service. |
+| HTTP 200 but no `raiden_stage3_*` lines | The request did not go through `${RUN_NAME}-epp`, or the EPP found no prefill endpoint. Use the router Service and check the EPP log. |
 | Prefill exits with `Stage-3 PCP page geometry requires page_tokens divisible by cp_kv_cache_interleave_size` | `--block-size` was removed or changed. Keep a multiple of 256 (the default is 768). |
 | Engine `OOMKilled` while loading weights | `engine.memory` is too low. Weight loading peaks near 500 GiB, and prefill adds the 64 GiB host KV tier. |
 | Router pod `1/2`, Envoy restarts with `Couldn't find match for argument` | Envoy rejects `--flag=value`. Keep each flag and value as separate `args` items. |
