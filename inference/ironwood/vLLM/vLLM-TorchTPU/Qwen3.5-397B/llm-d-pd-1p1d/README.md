@@ -284,3 +284,9 @@ chart created, including the data disks and the StorageClass, with:
 ```
 helm uninstall ${RUN_NAME}
 ```
+
+The chart also creates a namespaced Role and RoleBinding that let the EPP
+list and watch pods. Deleting them needs permission to delete Roles and
+RoleBindings in the namespace. If `helm uninstall` fails with `Forbidden` on
+those two objects, ask someone with that permission to remove the Role and
+RoleBinding named `${RUN_NAME}-epp`; everything else is already gone.
