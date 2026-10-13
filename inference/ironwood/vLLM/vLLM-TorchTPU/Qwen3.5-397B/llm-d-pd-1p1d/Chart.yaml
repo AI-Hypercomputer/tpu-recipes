@@ -1,0 +1,9 @@
+apiVersion: v2
+name: qwen3-5-397b-vllm-torchtpu-llm-d-pd-1p1d
+description: >-
+  Qwen3.5-397B-A17B-FP8 with vLLM TorchTPU on tpu7x, served with llm-d
+  prefill/decode disaggregation (1 prefill + 1 decode engine, one 2x2x1 slice
+  each) behind a standalone llm-d Endpoint Picker, plus an InferenceX AgentX
+  benchmark client.
+type: application
+version: 0.1.0

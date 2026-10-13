@@ -1,0 +1,200 @@
+# Qwen3.5-397B-A17B-FP8 with vLLM TorchTPU on tpu7x: llm-d prefill/decode
+# (P/D) disaggregation, 1 prefill + 1 decode engine (1P1D), each on its own
+# single-host 2x2x1 slice (4 chips, 8 TPU devices). An llm-d Endpoint Picker
+# (EPP) with an Envoy sidecar routes requests in standalone mode, so no
+# Gateway API or InferencePool CRDs are needed. The client runs the
+# InferenceX AgentX agentic-coding workload.
+
+# Hugging Face token with read access to Qwen/Qwen3.5-397B-A17B-FP8 and the
+# semianalysisai/cc-traces-weka-062126-256k dataset.
+# Pass it at install time: helm install <name> . --set hf_token=$HF_TOKEN
+hf_token: ""
+
+# Optional: name of a tpu7x GCE reservation. Leave empty to not pin one.
+reservation: ""
+
+# Optional: Kueue settings. Leave empty if your cluster does not use Kueue.
+# When set, every pod in the release (engines, router, client) is submitted to
+# this queue.
+kueue:
+  queue_name: ""
+  priority_class: ""
+
+# Hugging Face model ID. Both engines download it to their own data disk, and
+# serve it under this name.
+model: "Qwen/Qwen3.5-397B-A17B-FP8"
+
+# StorageClass for the two engine data disks (weights and compile caches).
+# Leave empty to let the chart create a hyperdisk-balanced StorageClass named
+# <release>-hyperdisk-balanced, or set the name of an existing class.
+storage_class: ""
+
+# Settings shared by the prefill and decode engines.
+engine:
+  # vLLM TorchTPU image. This is the dated nightly build this recipe was
+  # validated with. Replace it with an official vLLM TorchTPU release image
+  # once one is published, or with any TorchTPU vLLM image your cluster can
+  # pull. Use a build from 2026-10-01 or later; older builds lack the
+  # prefill context parallel, Raiden KV transfer and KV offload support this
+  # recipe needs.
+  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261012"
+  topology: "2x2x1"
+  num_chips: 4
+  # One disk per engine. The FP8 checkpoint is about 400 GB.
+  data_disk_size: "600Gi"
+  # Host memory. Loading the weights peaks at roughly 500 GiB, and the
+  # prefill engine adds a 64 GiB pinned host KV store on top. A tpu7x node
+  # has about 919 GiB allocatable.
+  memory: "850Gi"
+  cpu_request: "24"
+  cpu_limit: "48"
+  # Environment shared by both engines. Role-specific values are under
+  # prefill.env and decode.env and take precedence over these.
+  env:
+    PYTHONNOUSERSITE: "1"
+    PJRT_DEVICE: "TPU"
+    JAX_PLATFORMS: "tpu,cpu"
+    TPU_BACKEND_TYPE: "jax"
+    TPU_ACCELERATOR_TYPE: "tpu7x"
+    VLLM_PLUGINS: "torchtpu"
+    VLLM_TARGET_DEVICE: "tpu"
+    VLLM_XLA_CHECK_RECOMPILATION: "0"
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    VLLM_ENGINE_READY_TIMEOUT_S: "3600"
+    VLLM_NO_USAGE_STATS: "1"
+    VLLM_HTTP_TIMEOUT_KEEP_ALIVE: "120"
+    XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+    TPU_PREMAPPED_BUFFER_SIZE: "17179869184"
+    TPU_VLLM_SKIP_DYNAMIC_SMEM_NEGOTIATION_FLAG: "1"
+    TPU_STDERR_LOG_LEVEL: "3"
+    TPU_MIN_LOG_LEVEL: "3"
+    TF_CPP_MIN_LOG_LEVEL: "3"
+    # Raiden KV cache layout and Qwen3.5 admission, required on both sides.
+    TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL: "1"
+    TPU_USE_RAIDEN_KV_CACHE_MANAGER: "1"
+    TPU_RAIDEN_QWEN35_ADMISSION: "1"
+    TPU_GDN_CONV_QK_PAIR_LAYOUT: "1"
+    # Raiden prefill-to-decode KV transfer.
+    TPU_KV_RESHARD_TRANSPORT: "raiden"
+    TPU_RAIDEN_RESHARD_IMPL: "store"
+    # Number of KV sender ranks. It equals the prefill context parallel size
+    # (8) on BOTH engines: on decode it is the fan-in from prefill, not a
+    # local parallelism. Setting it to 1 on decode silently drops 7/8 of the
+    # KV cache.
+    TPU_RAIDEN_TRANSFER_PARALLELISM: "8"
+    TPU_SIDE_CHANNEL_PORT: "9600"
+    TPU_KV_SHM_POOL_GB: "8"
+    TPU_P2P_WAIT_PULL_TIMEOUT: "600"
+    # Same prefix-cache block hashes on every engine.
+    PYTHONHASHSEED: "0"
+    # Weights, Hugging Face cache and compile caches live on the data disk.
+    HF_HOME: "/data/huggingface_cache"
+    TMPDIR: "/data/tmp"
+    VLLM_CACHE_ROOT: "/data/vllm_cache"
+    TORCHINDUCTOR_CACHE_DIR: "/data/torchinductor_cache"
+    TORCH_TPU_TIER2_COMPILATION_CACHE: "disabled"
+    TORCH_TPU_INTERNAL_TIER2_COMPILATION_CACHE: "disabled"
+  # `vllm serve` arguments shared by both engines. The chart adds the model,
+  # --served-model-name and --download-dir.
+  args:
+    - "--trust-remote-code"
+    - "--seed=42"
+    - "--max-model-len=262144"
+    - "--enable-expert-parallel"
+    - "--disable-custom-all-reduce"
+    - "--gpu-memory-utilization=0.90"
+    - "--kv-cache-dtype=fp8"
+    - "--language-model-only"
+    - "--no-disable-hybrid-kv-cache-manager"
+    - "--attention-backend=CUSTOM"
+    - "--mamba-cache-mode=align"
+    - "--enable-prompt-tokens-details"
+    # Agentic clients send `tools` with tool_choice "auto". Without these
+    # flags both engines reject such requests with HTTP 400.
+    - "--enable-auto-tool-choice"
+    - "--tool-call-parser=qwen3_coder"
+    - "--reasoning-parser=qwen3"
+    - "--no-enable-log-requests"
+    - "--enable-prefix-caching"
+    - "--prefix-cache-retention-interval=0"
+    - "--no-async-scheduling"
+    - "--tensor-parallel-size=1"
+    - "--host=0.0.0.0"
+
+prefill:
+  env:
+    TPU_RAIDEN_JOB_NAME: "prefill"
+    TPU_RAIDEN_ENGINE_ID: "llm-d-pd-prefill-engine"
+    # Must be a C identifier and differ from the decode value.
+    TPU_KV_TRANSFER_NAMESPACE: "llm_d_pd_prefill"
+    TPU_KV_TRANSFER_PORT: "9100"
+    TPU_RAIDEN_RESHARD_PORT_BASE: "27000"
+    TPU_RAIDEN_STORE_DISPATCH_PORT_BASE: "27100"
+  # Prefill context parallel 8 across the 8 devices.
+  args:
+    - "--port=8000"
+    - "--max-num-batched-tokens=32768"
+    - "--long-prefill-token-threshold=32768"
+    - "--max-num-seqs=8"
+    - "--prefill-context-parallel-size=8"
+    - "--cp-kv-cache-interleave-size=256"
+    # With prefix caching on, vLLM picks 640 tokens per rank, which Raiden's
+    # PCP page geometry rejects (it needs a multiple of 256). 768 x PCP8 gives
+    # 6144-token prefix-cache blocks.
+    - "--block-size=768"
+    - "--compilation-config={\"backend\":\"vllm_torchtpu.compilation.tpu_compiler.TpuCompilerAdaptor\",\"compile_sizes\":[4096],\"inductor_compile_config\":{\"enable_auto_functionalized_v2\":false,\"size_asserts\":false,\"alignment_asserts\":false,\"scalar_asserts\":false}}"
+    # TPUMultiConnector runs two connectors: TPURaidenOffloadingConnector
+    # keeps a 64 GiB host DRAM tier for prefix-cache blocks evicted from HBM
+    # (listed first, so it is asked first for cached prefixes), and
+    # TPURaidenConnector sends the KV cache to decode.
+    - "--kv-transfer-config={\"kv_connector\":\"TPUMultiConnector\",\"kv_connector_module_path\":\"vllm_torchtpu.distributed.kv_transfer.tpu_multi_connector\",\"kv_role\":\"kv_producer\",\"kv_connector_extra_config\":{\"connectors\":[{\"kv_connector\":\"TPURaidenOffloadingConnector\",\"kv_connector_module_path\":\"vllm_torchtpu.offload.raiden_connector\",\"kv_role\":\"kv_both\",\"kv_connector_extra_config\":{\"cpu_bytes_to_use\":68719476736,\"raiden_controller_port\":47800}},{\"kv_connector\":\"TPURaidenConnector\",\"kv_connector_module_path\":\"vllm_torchtpu.distributed.kv_transfer.tpu_connector\",\"kv_role\":\"kv_producer\",\"kv_port\":14579}]}}"
+
+decode:
+  env:
+    TPU_RAIDEN_JOB_NAME: "decode"
+    TPU_RAIDEN_ENGINE_ID: "llm-d-pd-decode-engine"
+    TPU_KV_TRANSFER_NAMESPACE: "llm_d_pd_decode"
+    TPU_KV_TRANSFER_PORT: "9200"
+    # Each data-parallel rank binds base + rank.
+    TPU_RAIDEN_RESHARD_PORT_BASE: "28000"
+    TPU_RAIDEN_STORE_DISPATCH_PORT_BASE: "28100"
+    TORCH_TPU_DP_MASTER_PORT: "29520"
+  # Data parallel 8 across the 8 devices. The engine listens on 8200 behind
+  # the llm-d routing sidecar on 8000.
+  args:
+    - "--port=8200"
+    - "--max-num-batched-tokens=4384"
+    - "--max-num-seqs=32"
+    - "--prefill-context-parallel-size=1"
+    - "--data-parallel-size=8"
+    - "--data-parallel-size-local=8"
+    - "--compilation-config={\"backend\":\"vllm_torchtpu.compilation.tpu_compiler.TpuCompilerAdaptor\",\"compile_sizes\":[8,16,32,4352,4384],\"inductor_compile_config\":{\"enable_auto_functionalized_v2\":false,\"size_asserts\":false,\"alignment_asserts\":false,\"scalar_asserts\":false}}"
+    - "--kv-transfer-config={\"kv_connector\":\"TPURaidenConnector\",\"kv_connector_module_path\":\"vllm_torchtpu.distributed.kv_transfer.tpu_connector\",\"kv_role\":\"kv_consumer\",\"kv_port\":14579}"
+  # llm-d routing sidecar. It reads the prefill pick from the EPP, runs the
+  # prefill pass on the prefill engine, then forwards the request to the
+  # local decode engine.
+  sidecar_image: "ghcr.io/llm-d/llm-d-router-disagg-sidecar:v0.11.0"
+
+router:
+  # llm-d Endpoint Picker (EPP).
+  epp_image: "ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.11.0"
+  # Envoy runs next to the EPP and is the data path in standalone mode.
+  envoy_image: "docker.io/envoyproxy/envoy:distroless-v1.33.2"
+  # Optional: node selector for the router pod (it needs no accelerator).
+  node_selector: {}
+
+client:
+  # Set to false to deploy only the serving stack.
+  enabled: true
+  # InferenceX AgentX client image. It must provide the InferenceX AIPerf
+  # build under /root/aiperf-venv. Replace it with a copy your cluster can
+  # pull.
+  image: "us-central1-docker.pkg.dev/cloud-tpu-inference-test/inferencex/inferencex-agentx@sha256:7cbad0266e9a599e37a00d7ba533acc17732064ab659db5d4084f3bff19361b6"
+  # Concurrent agent sessions.
+  concurrency: 32
+  # Measurement window in seconds, after the per-lane warmup.
+  benchmark_duration_s: 3600
+  warmup_requests_per_lane: 10
+  # Optional: node selector for the client pod. By default the client avoids
+  # TPU nodes.
+  node_selector: {}

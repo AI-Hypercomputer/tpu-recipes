@@ -1,0 +1,214 @@
+{{- $name := .Release.Name }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-epp-config
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+data:
+  epp-config.yaml: |
+    {{- .Files.Get "files/epp-config.yaml" | nindent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-envoy
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+data:
+  envoy.yaml: |
+    {{- .Files.Get "files/envoy.yaml" | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}-epp
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+---
+# Namespace-scoped. In standalone mode the EPP only reads pods.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-epp
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "watch", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-epp
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-epp
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}-epp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-epp
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+spec:
+  replicas: 1
+  # One picker at a time; a surge pod would be a second, uncoordinated picker.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "pd.labels" . | nindent 6 }}
+      app.kubernetes.io/component: router
+  template:
+    metadata:
+      labels:
+        {{- include "pd.labels" . | nindent 8 }}
+        app.kubernetes.io/component: router
+        {{- include "pd.kueueLabel" . | nindent 8 }}
+      annotations:
+        # Restart the router when its configuration changes.
+        checksum/config: {{ printf "%s%s" (.Files.Get "files/epp-config.yaml") (.Files.Get "files/envoy.yaml") | sha256sum }}
+    spec:
+      {{- include "pd.priorityClass" . | nindent 6 }}
+      serviceAccountName: {{ $name }}-epp
+      terminationGracePeriodSeconds: 130
+      {{- with .Values.router.node_selector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: epp
+          image: {{ .Values.router.epp_image }}
+          args:
+            # Discover engines by label (no InferencePool). The selector is
+            # scoped to this release so that other P/D stacks in the same
+            # namespace are never picked. Port 8000 is the prefill engine and
+            # the decode routing sidecar; never target decode's 8200, which
+            # skips P/D without an error.
+            - --endpoint-selector
+            - llm-d.ai/guide=pd-disaggregation,app.kubernetes.io/instance={{ $name }}
+            - --endpoint-target-ports
+            - "8000"
+            - --config-file
+            - /config/epp-config.yaml
+            - --grpc-health-port
+            - "9003"
+            - --zap-encoder
+            - json
+            # Logs the prefill and decode pick for every request.
+            - --v=2
+            - --tracing=false
+          ports:
+            - name: grpc
+              containerPort: 9002
+            - name: grpc-health
+              containerPort: 9003
+            - name: metrics
+              containerPort: 9090
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          readinessProbe:
+            grpc:
+              port: 9003
+              service: readiness
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 3
+          livenessProbe:
+            grpc:
+              port: 9003
+              service: liveness
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              memory: 16Gi
+          volumeMounts:
+            - name: epp-config
+              mountPath: /config
+              readOnly: true
+        - name: envoy
+          image: {{ .Values.router.envoy_image }}
+          command: ["envoy"]
+          # Envoy rejects --flag=value; keep each flag and value separate.
+          args:
+            - --service-node
+            - envoy-proxy
+            - --log-level
+            - warn
+            - --cpuset-threads
+            - --drain-strategy
+            - immediate
+            - --drain-time-s
+            - "60"
+            - -c
+            - /etc/envoy/envoy.yaml
+          ports:
+            - name: http
+              containerPort: 8081
+            - name: envoy-admin
+              containerPort: 19001
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 19001
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 1
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              memory: 16Gi
+          volumeMounts:
+            - name: envoy-config
+              mountPath: /etc/envoy
+              readOnly: true
+      volumes:
+        - name: epp-config
+          configMap:
+            name: {{ $name }}-epp-config
+        - name: envoy-config
+          configMap:
+            name: {{ $name }}-envoy
+---
+# The model endpoint: http://<release>-epp:8000 (OpenAI-compatible API).
+# ClusterIP only; reach it from inside the cluster or with kubectl
+# port-forward.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pd.endpoint" . }}
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "pd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: router
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8081

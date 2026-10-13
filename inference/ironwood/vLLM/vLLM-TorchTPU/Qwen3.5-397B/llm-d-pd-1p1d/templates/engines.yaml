@@ -1,0 +1,207 @@
+{{- $name := .Release.Name }}
+{{- $storageClass := .Values.storage_class | default (printf "%s-hyperdisk-balanced" $name) }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}-hf-secret
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  hf_api_token: {{ .Values.hf_token | default "" | quote }}
+{{- if not .Values.storage_class }}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: {{ $storageClass }}
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+{{- end }}
+{{- range $role := list "prefill" "decode" }}
+{{- $roleValues := index $.Values $role }}
+{{- $env := merge (deepCopy $roleValues.env) $.Values.engine.env }}
+---
+# One disk per engine: the engines land on different nodes, and a
+# ReadWriteOnce disk cannot attach to both.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-{{ $role }}-data
+  labels:
+    {{- include "pd.labels" $ | nindent 4 }}
+spec:
+  storageClassName: {{ $storageClass }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ $.Values.engine.data_disk_size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}-{{ $role }}
+  labels:
+    {{- include "pd.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: server
+    llm-d.ai/role: {{ $role }}
+spec:
+  replicas: 1
+  # A fixed TPU pool has no room for a surge pod; RollingUpdate would hang.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "pd.labels" $ | nindent 6 }}
+      llm-d.ai/role: {{ $role }}
+  template:
+    metadata:
+      labels:
+        {{- include "pd.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: server
+        # The EPP discovers engines by these labels, and its prefill-filter
+        # and decode-filter plugins split them on llm-d.ai/role.
+        llm-d.ai/guide: pd-disaggregation
+        llm-d.ai/role: {{ $role }}
+        {{- include "pd.kueueLabel" $ | nindent 8 }}
+    spec:
+      {{- include "pd.priorityClass" $ | nindent 6 }}
+      automountServiceAccountToken: false
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: {{ $.Values.engine.topology }}
+        {{- with $.Values.reservation }}
+        cloud.google.com/reservation-name: {{ . }}
+        {{- end }}
+      tolerations:
+        - key: google.com/tpu
+          operator: Exists
+      {{- if eq $role "decode" }}
+      initContainers:
+        # Native sidecar (restartPolicy: Always). The EPP sends every request
+        # to this port with the chosen prefill endpoint in a header. The
+        # sidecar runs the prefill pass there, then forwards the request,
+        # with the returned KV transfer parameters, to the decode engine.
+        - name: routing-proxy
+          image: {{ $.Values.decode.sidecar_image }}
+          restartPolicy: Always
+          args:
+            - "--port=8000"
+            - "--vllm-port=8200"
+            # Request protocol between the sidecar and vLLM, not the KV
+            # transport. Raiden accepts the nixlv2 kv_transfer_params flow.
+            - "--kv-connector=nixlv2"
+            - "--secure-proxy=false"
+            - "--zap-log-level=1"
+          ports:
+            - name: sidecar
+              containerPort: 8000
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+          resources:
+            requests:
+              cpu: "1"
+              memory: 1Gi
+      {{- end }}
+      containers:
+        - name: vllm-torchtpu
+          image: {{ $.Values.engine.image }}
+          command: ["/bin/bash", "-c", "mkdir -p /data/tmp && exec vllm serve \"$@\"", "--"]
+          args:
+            - {{ $.Values.model | quote }}
+            - {{ printf "--served-model-name=%s" $.Values.model | quote }}
+            - "--download-dir=/data"
+            {{- range $.Values.engine.args }}
+            - {{ . | quote }}
+            {{- end }}
+            {{- range $roleValues.args }}
+            - {{ . | quote }}
+            {{- end }}
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-hf-secret
+                  key: hf_api_token
+            # Raiden advertises this address to its peer. It must be the pod
+            # IP, never a Service address.
+            - name: TPU_RAIDEN_ADVERTISE_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: VLLM_HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- range $k, $v := $env }}
+            - name: {{ $k }}
+              value: {{ $v | toString | quote }}
+            {{- end }}
+          ports:
+            {{- if eq $role "prefill" }}
+            - name: http
+              containerPort: 8000
+            {{- else }}
+            - name: http
+              containerPort: 8200
+            {{- end }}
+            - name: kv-transfer
+              containerPort: {{ $env.TPU_KV_TRANSFER_PORT }}
+            - name: kv-rendezvous
+              containerPort: 14579
+            - name: kv-side-channel
+              containerPort: {{ $env.TPU_SIDE_CHANNEL_PORT }}
+          resources:
+            requests:
+              cpu: {{ $.Values.engine.cpu_request | quote }}
+              memory: {{ $.Values.engine.memory }}
+              google.com/tpu: {{ $.Values.engine.num_chips | quote }}
+            limits:
+              cpu: {{ $.Values.engine.cpu_limit | quote }}
+              memory: {{ $.Values.engine.memory }}
+              google.com/tpu: {{ $.Values.engine.num_chips | quote }}
+          # Allows up to 2 hours for the weight download plus a cold compile.
+          startupProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 240
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 96Gi
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $name }}-{{ $role }}-data
+{{- end }}
