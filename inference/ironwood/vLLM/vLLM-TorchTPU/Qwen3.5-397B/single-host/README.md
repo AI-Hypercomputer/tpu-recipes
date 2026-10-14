@@ -11,7 +11,11 @@ The server image is set in `values.yaml` (`server.image`, default
 ### Server configuration
 
 The server settings follow the InferenceX Qwen3.5-397B TorchTPU single-host
-configuration for concurrency 64:
+submission (August 26, 2026) for ISL/OSL 8192/1024 at concurrency 64. You can
+find the published TPUv7x Ironwood results for this submission on the
+[InferenceX dashboard](https://inferencex.semianalysis.com) and the benchmark
+harness in the [InferenceX repository](https://github.com/SemiAnalysisAI/InferenceX).
+The settings are:
 
 - `--tensor-parallel-size=8 --data-parallel-size=1 --enable-expert-parallel`
   (8 TPU cores across the 4 chips)
