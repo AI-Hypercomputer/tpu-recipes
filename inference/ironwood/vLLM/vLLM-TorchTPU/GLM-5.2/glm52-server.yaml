@@ -1,0 +1,232 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: vllm-glm52
+  namespace: vllm-glm52
+  annotations:
+    leaderworkerset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: 2
+    restartPolicy: RecreateGroupOnPodRestart
+    leaderTemplate:
+      metadata:
+        labels:
+          role: leader
+          app: vllm-glm52
+      spec:
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x2
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          # TODO: Update to the public release image when available.
+          image: us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:latest
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -e
+            mkdir -p "${HF_HOME}" "${TMPDIR}"
+
+            # Start the Ray head node on the leader (LWS_WORKER_INDEX=0).
+            ray start --head --port=6379
+
+            # Wait until both hosts (leader + worker) have joined the Ray cluster.
+            until [ "$(python3 -c 'import ray; ray.init(address="auto", logging_level="ERROR"); print(sum(n["Alive"] for n in ray.nodes()))' 2>/dev/null)" = "2" ]; do
+              echo "Waiting for all TPU hosts to join the Ray cluster..."
+              sleep 10
+            done
+            ray status
+
+            vllm serve zai-org/GLM-5.2-FP8 \
+              --tokenizer=zai-org/GLM-5.2-FP8 \
+              --host=0.0.0.0 \
+              --port=8000 \
+              --download-dir=/data \
+              --data-parallel-size=16 \
+              --tensor-parallel-size=1 \
+              --max-model-len=9216 \
+              --max-num-seqs=64 \
+              --max-num-batched-tokens=1024 \
+              --kv-cache-dtype=fp8 \
+              --gpu-memory-utilization=0.9 \
+              --no-enable-prefix-caching \
+              --enable-expert-parallel \
+              --enable-ep-weight-filter \
+              --safetensors-load-strategy=prefetch \
+              --tool-call-parser=glm47 \
+              --reasoning-parser=glm45 \
+              --enable-auto-tool-choice \
+              --async-scheduling
+          env:
+          - name: HF_HOME
+            value: "/data/huggingface_cache"
+          - name: TMPDIR
+            value: "/data/tmp"
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: hf_api_token
+          - name: TPU_MULTIHOST_BACKEND
+            value: "ray"
+          - name: TPU_PROCESS_ADDRESSES
+            value: ""
+          - name: VLLM_DISABLE_COMPILE_CACHE
+            value: "1"
+          - name: VLLM_WORKER_MULTIPROC_METHOD
+            value: "spawn"
+          - name: TORCHINDUCTOR_AUTOGRAD_CACHE
+            value: "0"
+          - name: VLLM_ENGINE_READY_TIMEOUT_S
+            value: "3600"
+          - name: VLLM_TARGET_DEVICE
+            value: "tpu"
+          - name: PJRT_DEVICE
+            value: "TPU"
+          ports:
+          - containerPort: 8000
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+          - name: data-volume
+            mountPath: /data
+          - name: dshm
+            mountPath: /dev/shm
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: data-volume
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                storageClassName: hyperdisk-balanced-tpu
+                resources:
+                  requests:
+                    storage: 1500Gi
+    workerTemplate:
+      metadata:
+        labels:
+          role: worker
+          app: vllm-glm52
+      spec:
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x2
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          # TODO: Update to the public release image when available.
+          image: us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:latest
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -e
+            mkdir -p "${HF_HOME}" "${TMPDIR}"
+
+            # Wait for the Ray head on the leader to be reachable.
+            until (echo > "/dev/tcp/${LWS_LEADER_ADDRESS}/6379") 2>/dev/null; do
+              echo "Waiting for Ray head at ${LWS_LEADER_ADDRESS}:6379..."
+              sleep 5
+            done
+
+            # Join the Ray cluster as a worker node (LWS_WORKER_INDEX!=0).
+            ray start --address="${LWS_LEADER_ADDRESS}:6379" --block
+          env:
+          - name: HF_HOME
+            value: "/data/huggingface_cache"
+          - name: TMPDIR
+            value: "/data/tmp"
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: hf_api_token
+          - name: TPU_MULTIHOST_BACKEND
+            value: "ray"
+          - name: TPU_PROCESS_ADDRESSES
+            value: ""
+          - name: VLLM_DISABLE_COMPILE_CACHE
+            value: "1"
+          - name: VLLM_WORKER_MULTIPROC_METHOD
+            value: "spawn"
+          - name: TORCHINDUCTOR_AUTOGRAD_CACHE
+            value: "0"
+          - name: VLLM_ENGINE_READY_TIMEOUT_S
+            value: "3600"
+          - name: VLLM_TARGET_DEVICE
+            value: "tpu"
+          - name: PJRT_DEVICE
+            value: "TPU"
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          volumeMounts:
+          - name: data-volume
+            mountPath: /data
+          - name: dshm
+            mountPath: /dev/shm
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: data-volume
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                storageClassName: hyperdisk-balanced-tpu
+                resources:
+                  requests:
+                    storage: 1500Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-glm52-service
+  namespace: vllm-glm52
+spec:
+  selector:
+    app: vllm-glm52
+    role: leader
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
