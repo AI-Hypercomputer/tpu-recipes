@@ -1,0 +1,99 @@
+# Qwen3.5-397B-A17B-FP8 served by one vLLM TorchTPU engine that spans both
+# hosts of a tpu7x 2x2x2 slice (TP16 with expert parallelism over all 16 TPU
+# devices), benchmarked with the InferenceX AgentX workload.
+#
+# This recipe is functional, not performance-optimized.
+
+# Hugging Face token with read access to Qwen/Qwen3.5-397B-A17B-FP8 and the
+# AgentX dataset. Pass it at install time:
+#   helm install <name> . --set hf_token=$HF_TOKEN
+hf_token: ""
+
+# Optional: name of a tpu7x GCE reservation. Leave empty to not pin one.
+reservation: ""
+
+# Optional: Kueue settings. Leave empty if your cluster does not use Kueue.
+kueue:
+  queue_name: ""
+  priority_class: ""
+
+server:
+  # vLLM TorchTPU image. This is a dated nightly build that this recipe was
+  # validated with; replace it with an official vLLM TorchTPU release image
+  # once one is published, or with any TorchTPU vLLM image your cluster can
+  # pull.
+  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261012"
+  # One tpu7x 2x2x2 slice: 2 hosts x 4 chips, 2 TPU devices per chip.
+  topology: "2x2x2"
+  num_hosts: 2
+  chips_per_host: 4
+  # Hugging Face checkpoint, and where each host stores its copy.
+  model: "Qwen/Qwen3.5-397B-A17B-FP8"
+  model_dir: "/data/models/Qwen3.5-397B-A17B-FP8"
+  # Hyperdisk per host for the model weights (about 400 GB) and caches. Every
+  # host downloads its own copy of the checkpoint from Hugging Face.
+  data_disk_size: "600Gi"
+  # Port of the Ray head that joins the two hosts into one cluster.
+  ray_port: 6379
+  env:
+    # Multi-host execution through Ray.
+    TPU_MULTIHOST_BACKEND: "ray"
+    VLLM_USE_RAY_V2_EXECUTOR_BACKEND: "1"
+    RAY_EXPERIMENTAL_NOSET_TPU_VISIBLE_CHIPS: "1"
+    RAY_DEDUP_LOGS: "0"
+    JAX_PLATFORMS: ""
+    PJRT_DEVICE: "TPU"
+    VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+    TPU_ACCELERATOR_TYPE: "tpu7x"
+    MODEL_IMPL_TYPE: "vllm"
+    # Prefix caching on this hybrid model needs the unified block pool.
+    TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL: "1"
+    # Cold start (download plus compilation) can take more than an hour.
+    VLLM_ENGINE_READY_TIMEOUT_S: "7200"
+    VLLM_XLA_CHECK_RECOMPILATION: "0"
+    TF_CPP_MIN_LOG_LEVEL: "3"
+    HF_HOME: "/data/huggingface_cache"
+    VLLM_CACHE_ROOT: "/data/vllm_cache"
+    VLLM_XLA_CACHE_PATH: "/data/xla_cache"
+    # Keep the TPU runtime's per-compilation INFO logs out of the pod log.
+    TPU_STDERR_LOG_LEVEL: "1"
+    TPU_MIN_LOG_LEVEL: "1"
+    LIBTPU_INIT_ARGS: "--xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false"
+  # Arguments to `vllm serve <model_dir>`, run on the first host after the
+  # Ray cluster has formed. One engine uses all 16 TPU devices of the slice:
+  # tensor parallelism 16, with the MoE experts spread over the same 16
+  # devices (expert parallelism).
+  args:
+    - "--host=0.0.0.0"
+    - "--port=8000"
+    - "--served-model-name=Qwen/Qwen3.5-397B-A17B-FP8"
+    - "--tensor-parallel-size=16"
+    - "--enable-expert-parallel"
+    - "--quantization=fp8"
+    - "--kv-cache-dtype=fp8"
+    - "--max-model-len=262144"
+    - "--max-num-seqs=32"
+    - "--max-num-batched-tokens=8192"
+    - "--gpu-memory-utilization=0.92"
+    - "--block-size=256"
+    - "--enable-prefix-caching"
+    - "--mamba-cache-mode=align"
+    - "--async-scheduling"
+    - "--attention-backend=CUSTOM"
+    - "--language-model-only"
+    - "--limit-mm-per-prompt={\"image\": 0, \"video\": 0}"
+    - "--default-chat-template-kwargs={\"enable_thinking\": false}"
+    - "--tool-call-parser=qwen3_coder"
+    - "--reasoning-parser=qwen3"
+    - "--trust-remote-code"
+    - "--enable-prompt-tokens-details"
+
+client:
+  # InferenceX AgentX client image: provides the InferenceX AIPerf build under
+  # /root/aiperf-venv. Replace it with a copy your cluster can pull.
+  image: "us-central1-docker.pkg.dev/cloud-tpu-inference-test/inferencex/inferencex-agentx@sha256:7cbad0266e9a599e37a00d7ba533acc17732064ab659db5d4084f3bff19361b6"
+  # Concurrent agentic sessions; matches --max-num-seqs.
+  concurrency: 32
+  # Measurement window, in seconds, after the warmup.
+  duration_seconds: 3600
+  warmup_requests_per_lane: 10

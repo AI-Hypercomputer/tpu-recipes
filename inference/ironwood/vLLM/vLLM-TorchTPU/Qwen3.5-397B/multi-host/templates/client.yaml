@@ -1,0 +1,126 @@
+{{- $name := .Release.Name }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-client
+  labels:
+    app.kubernetes.io/instance: {{ $name }}
+    app.kubernetes.io/component: client
+    {{- with .Values.kueue.queue_name }}
+    kueue.x-k8s.io/queue-name: {{ . }}
+    {{- end }}
+spec:
+  backoffLimit: 0
+  {{- if .Values.kueue.queue_name }}
+  suspend: true
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ $name }}
+        app.kubernetes.io/component: client
+    spec:
+      {{- with .Values.kueue.priority_class }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: agentx-client
+          image: {{ .Values.client.image }}
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+            limits:
+              cpu: "8"
+              memory: 32Gi
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              AIPERF_BIN=/root/aiperf-venv/bin/aiperf
+              AIPERF_PYTHON=/root/aiperf-venv/bin/python
+              HF_CLI=/root/aiperf-venv/bin/hf
+              [ -x "${HF_CLI}" ] || HF_CLI=hf
+              [ -x "${AIPERF_PYTHON}" ] || AIPERF_PYTHON=python3
+              export AIPERF_DATASET_WEKA_LIVE_ASSISTANT_RESPONSES=0
+              export AIPERF_DATASET_CONFIGURATION_TIMEOUT=1800
+              export AIPERF_SERVICE_PROFILE_CONFIGURE_TIMEOUT=1800
+              export HF_TOKEN="${HUGGING_FACE_HUB_TOKEN}"
+              MODEL="Qwen/Qwen3.5-397B-A17B-FP8"
+              SERVER_URL="http://${SERVER_HOSTNAME}:8000"
+
+              echo "--- Downloading the tokenizer ---"
+              "${HF_CLI}" download "${MODEL}" --include "tokenizer*" || true
+              "${HF_CLI}" download "${MODEL}" config.json || true
+
+              echo "--- Waiting for ${SERVER_URL} to answer a chat completion ---"
+              until "${AIPERF_PYTHON}" - "${SERVER_URL}" "${MODEL}" <<'PYEOF'
+              import json, sys, urllib.request
+              url, model = sys.argv[1], sys.argv[2]
+              body = {"model": model, "max_tokens": 1,
+                      "messages": [{"role": "user", "content": "warmup"}]}
+              req = urllib.request.Request(
+                  url + "/v1/chat/completions", data=json.dumps(body).encode(),
+                  headers={"Content-Type": "application/json"})
+              try:
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                  sys.exit(0 if "choices" in json.loads(resp.read()) else 1)
+              except Exception:
+                sys.exit(1)
+              PYEOF
+              do
+                echo "Server not ready yet; retrying in 30 s"
+                sleep 30
+              done
+
+              echo "--- Running the AgentX benchmark ---"
+              EXTRA_ARGS=()
+              # The scenario rejects windows shorter than 900 s unless overridden.
+              if [ {{ .Values.client.duration_seconds }} -lt 900 ]; then
+                EXTRA_ARGS+=(--unsafe-override)
+              fi
+              "${AIPERF_BIN}" profile \
+                --scenario inferencex-agentx-mvp \
+                --url "${SERVER_URL}" \
+                --endpoint /v1/chat/completions \
+                --endpoint-type chat \
+                --streaming \
+                --model "${MODEL}" \
+                --tokenizer "${MODEL}" \
+                --concurrency {{ .Values.client.concurrency }} \
+                --benchmark-duration {{ .Values.client.duration_seconds }} \
+                --warmup-requests-per-lane {{ .Values.client.warmup_requests_per_lane }} \
+                --stats-interval 30 \
+                --random-seed 42 \
+                --failed-request-threshold 0.25 \
+                --trajectory-start-min-ratio 0.25 \
+                --trajectory-start-max-ratio 0.75 \
+                --trace-idle-gap-cap-seconds 300 \
+                --warmup-grace-period 1800 \
+                --use-server-token-count \
+                --no-gpu-telemetry \
+                --tokenizer-trust-remote-code \
+                --num-dataset-entries 393 \
+                --slice-duration 1.0 \
+                --output-artifact-dir /tmp/aiperf_results \
+                --public-dataset semianalysis_cc_traces_weka_062126_256k \
+                "${EXTRA_ARGS[@]}"
+              AIPERF_RC=$?
+              echo "aiperf exit code: ${AIPERF_RC}"
+
+              echo "--- AIPerf summary ---"
+              for f in /tmp/aiperf_results/profile_export_aiperf.json \
+                       /tmp/aiperf_results/*/profile_export_aiperf.json; do
+                [ -f "$f" ] && cat "$f" && break
+              done
+              echo
+              exit "${AIPERF_RC}"
+          env:
+            - name: SERVER_HOSTNAME
+              value: {{ $name }}-vllm-service
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-hf-secret
+                  key: hf_api_token

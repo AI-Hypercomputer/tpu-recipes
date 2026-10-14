@@ -1,0 +1,5 @@
+apiVersion: v2
+name: qwen3-5-397b-vllm-torchtpu-multi-host
+description: Qwen3.5-397B-A17B-FP8 served by one vLLM TorchTPU engine across a tpu7x 2x2x2 slice (2 hosts), plus an InferenceX AgentX benchmark client.
+type: application
+version: 0.1.0
