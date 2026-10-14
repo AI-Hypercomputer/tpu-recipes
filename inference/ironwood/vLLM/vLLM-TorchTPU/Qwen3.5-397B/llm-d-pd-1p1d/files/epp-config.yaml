@@ -1,0 +1,39 @@
+apiVersion: llm-d.ai/v1alpha1
+kind: EndpointPickerConfig
+plugins:
+# Send every request down the disaggregated path. A threshold decider that
+# only disaggregates long prompts is an option for mixed traffic, but it makes
+# short test prompts skip P/D silently.
+- type: always-disagg-pd-decider
+- type: disagg-profile-handler
+  parameters:
+    deciders:
+      prefill: always-disagg-pd-decider
+# Split the endpoints on the llm-d.ai/role label.
+- type: prefill-filter
+- type: decode-filter
+- type: approx-prefix-cache-producer
+  parameters:
+    maxPrefixTokensToMatch: 131072
+- type: inflight-load-producer
+- type: prefix-cache-affinity-filter
+  parameters:
+    # Prefill tokens/s ceiling the affinity gate compares against. It only
+    # changes placement when there is more than one prefill engine; measure
+    # it on your hardware before you scale out.
+    peakPrefillThroughput: 33821
+- type: token-load-scorer
+- type: active-request-scorer
+- type: max-score-picker
+schedulingProfiles:
+- name: prefill
+  plugins:
+  - pluginRef: prefill-filter
+  - pluginRef: prefix-cache-affinity-filter
+  - pluginRef: token-load-scorer
+  - pluginRef: max-score-picker
+- name: decode
+  plugins:
+  - pluginRef: decode-filter
+  - pluginRef: active-request-scorer
+  - pluginRef: max-score-picker

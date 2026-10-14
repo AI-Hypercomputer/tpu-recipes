@@ -1,0 +1,185 @@
+{{- if .Values.client.enabled }}
+{{- $name := .Release.Name }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}-client
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+    app.kubernetes.io/component: client
+    {{- include "pd.kueueLabel" . | nindent 4 }}
+spec:
+  backoffLimit: 0
+  {{- if .Values.kueue.queue_name }}
+  suspend: true
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "pd.labels" . | nindent 8 }}
+        app.kubernetes.io/component: client
+    spec:
+      {{- include "pd.priorityClass" . | nindent 6 }}
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 60
+      # Keep the client off TPU hosts so it does not compete with the engines
+      # for host CPU.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: cloud.google.com/gke-tpu-accelerator
+                    operator: DoesNotExist
+      {{- with .Values.client.node_selector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agentx
+          image: {{ .Values.client.image }}
+          resources:
+            requests:
+              cpu: "16"
+              memory: 32Gi
+            limits:
+              cpu: "32"
+              memory: 64Gi
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              AIPERF_BIN=/root/aiperf-venv/bin/aiperf
+              HF_CLI=/root/aiperf-venv/bin/hf
+              AIPERF_PYTHON=/root/aiperf-venv/bin/python
+              [ -x "${HF_CLI}" ] || HF_CLI=hf
+              [ -x "${AIPERF_PYTHON}" ] || AIPERF_PYTHON=python3
+              export AIPERF_DATASET_WEKA_LIVE_ASSISTANT_RESPONSES=0
+              export AIPERF_DATASET_CONFIGURATION_TIMEOUT=1800
+              export AIPERF_SERVICE_PROFILE_CONFIGURE_TIMEOUT=1800
+              export AIPERF_UI_REALTIME_METRICS_ENABLED=true
+              export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
+              "${AIPERF_PYTHON}" -c 'import importlib.metadata as m; print("aiperf", m.version("aiperf"))' || true
+
+              echo "--- DOWNLOADING TOKENIZER ---"
+              "${HF_CLI}" download "${MODEL}" --include "tokenizer*" || true
+              "${HF_CLI}" download "${MODEL}" config.json || true
+
+              echo "--- WAITING FOR THE ENDPOINT TO SERVE A CHAT COMPLETION ---"
+              until "${AIPERF_PYTHON}" - <<'PYEOF'
+              import json, os, sys, urllib.request
+              req = urllib.request.Request(
+                  f"http://{os.environ['SERVER_HOSTNAME']}:8000/v1/chat/completions",
+                  data=json.dumps({
+                      "model": os.environ["MODEL"],
+                      "messages": [{"role": "user", "content": "warmup"}],
+                      "max_tokens": 1,
+                  }).encode(),
+                  headers={"Content-Type": "application/json"})
+              try:
+                with urllib.request.urlopen(req, timeout=600) as r:
+                  sys.exit(0 if "choices" in json.loads(r.read()) else 1)
+              except Exception:
+                sys.exit(1)
+              PYEOF
+              do
+                echo "Waiting for http://${SERVER_HOSTNAME}:8000 ..."
+                sleep 30
+              done
+              sleep 10
+
+              echo "--- RUNNING AIPERF (InferenceX AgentX) ---"
+              "${AIPERF_BIN}" profile \
+                  --scenario inferencex-agentx-mvp \
+                  --url "http://${SERVER_HOSTNAME}:8000" \
+                  --endpoint /v1/chat/completions \
+                  --endpoint-type chat \
+                  --streaming \
+                  --model "${MODEL}" \
+                  --tokenizer "${MODEL}" \
+                  --concurrency {{ .Values.client.concurrency }} \
+                  --benchmark-duration {{ .Values.client.benchmark_duration_s }} \
+                  --stats-interval 30 \
+                  --random-seed 42 \
+                  --failed-request-threshold 0.25 \
+                  --trajectory-start-min-ratio 0.25 \
+                  --trajectory-start-max-ratio 0.75 \
+                  --warmup-requests-per-lane {{ .Values.client.warmup_requests_per_lane }} \
+                  --trace-idle-gap-cap-seconds 300 \
+                  --warmup-grace-period 1800 \
+                  --use-server-token-count \
+                  --no-gpu-telemetry \
+                  --tokenizer-trust-remote-code \
+                  --num-dataset-entries 393 \
+                  --slice-duration 1.0 \
+                  --output-artifact-dir /tmp/aiperf_results \
+                  --public-dataset semianalysis_cc_traces_weka_062126_256k
+              AIPERF_RC=$?
+              echo "aiperf exit code: ${AIPERF_RC}"
+
+              echo "--- AIPERF SUMMARY ---"
+              "${AIPERF_PYTHON}" - <<'PYEOF' || true
+              import glob, json
+              paths = sorted(glob.glob("/tmp/aiperf_results/profile_export_aiperf.json")
+                             + glob.glob("/tmp/aiperf_results/*/profile_export_aiperf.json"))
+              d = json.load(open(paths[0])) if paths else {}
+              def stat(key, s="avg"):
+                v = d.get(key)
+                return v.get(s) if isinstance(v, dict) else None
+              out = {
+                  "request_count": stat("request_count"),
+                  # AIPerf omits the error count when there were no errors.
+                  "error_request_count": stat("error_request_count") or 0,
+                  "benchmark_duration_s": stat("benchmark_duration"),
+                  "mean_input_tokens": stat("input_sequence_length"),
+                  "mean_output_tokens": stat("output_sequence_length"),
+                  "total_token_throughput": stat("total_token_throughput"),
+                  "output_token_throughput": stat("output_token_throughput"),
+                  "mean_ttft_ms": stat("time_to_first_token"),
+                  "median_ttft_ms": stat("time_to_first_token", "p50"),
+                  "p99_ttft_ms": stat("time_to_first_token", "p99"),
+                  "median_itl_ms": stat("inter_token_latency", "p50"),
+                  "p99_itl_ms": stat("inter_token_latency", "p99"),
+                  "median_request_latency_ms": stat("request_latency", "p50"),
+                  "effective_concurrency": stat("effective_concurrency"),
+              }
+              print(json.dumps(out, indent=2))
+              PYEOF
+              exit "${AIPERF_RC}"
+          {{- if .Values.kueue.queue_name }}
+          # Report Ready once the endpoint serves /v1/models (then latch), so
+          # Kueue's waitForPodsReady does not count the engines' cold start
+          # against the client.
+          readinessProbe:
+            exec:
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  [[ -f /tmp/server-ready ]] && exit 0
+                  exec 3<>"/dev/tcp/${SERVER_HOSTNAME}/8000" || exit 1
+                  printf 'GET /v1/models HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n' "${SERVER_HOSTNAME}" >&3
+                  IFS= read -r -t 10 status <&3 || exit 1
+                  [[ "${status}" == *" 200 "* || "${status}" == *" 200"$'\r' ]] || exit 1
+                  touch /tmp/server-ready
+            periodSeconds: 10
+            timeoutSeconds: 15
+            failureThreshold: 1
+          {{- end }}
+          env:
+            - name: SERVER_HOSTNAME
+              value: {{ include "pd.endpoint" . }}
+            - name: MODEL
+              value: {{ .Values.model | quote }}
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}-hf-secret
+                  key: hf_api_token
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+{{- end }}
