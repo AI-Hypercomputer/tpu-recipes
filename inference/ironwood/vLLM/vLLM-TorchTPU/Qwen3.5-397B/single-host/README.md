@@ -13,8 +13,9 @@ The server image is set in `values.yaml` (`server.image`, default
 The server settings follow the InferenceX Qwen3.5-397B TorchTPU single-host
 submission (August 26, 2026) for ISL/OSL 8192/1024 at concurrency 64. You can
 find the published TPUv7x Ironwood results for this submission on the
-[InferenceX dashboard](https://inferencex.semianalysis.com) and the benchmark
-harness in the [InferenceX repository](https://github.com/SemiAnalysisAI/InferenceX).
+[InferenceX Qwen3.5 dashboard](https://inferencex.semianalysis.com/inference/qwen-3-5)
+and the benchmark harness in the
+[InferenceX repository](https://github.com/SemiAnalysisAI/InferenceX).
 The settings are:
 
 - `--tensor-parallel-size=8 --data-parallel-size=1 --enable-expert-parallel`
