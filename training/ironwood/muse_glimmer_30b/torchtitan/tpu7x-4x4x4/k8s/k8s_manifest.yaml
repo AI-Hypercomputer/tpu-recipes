@@ -1,0 +1,86 @@
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: ${WORKLOAD_NAME}
+  annotations:
+    alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  ttlSecondsAfterFinished: 3600
+  failurePolicy:
+    maxRestarts: 0
+    rules:
+      - action: FailJobSet
+        onJobFailureReasons:
+          - PodFailurePolicy
+  replicatedJobs:
+    - name: main-job
+      replicas: 1
+      template:
+        spec:
+          parallelism: 16
+          completions: 16
+          backoffLimit: 0
+          template:
+            metadata:
+              annotations:
+                cloud.google.com/gke-tpu-slice-topology: 4x4x4
+                gke-gcsfuse/volumes: "true"
+            spec:
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
+              terminationGracePeriodSeconds: 30
+              restartPolicy: Never
+              containers:
+              - name: workload-container
+                image: ${WORKLOAD_IMAGE}
+                command:
+                - "/bin/bash"
+                - "-c"
+                - "echo \"GCluster Start: $(date 2>/dev/null || true)\" >&2\n\n# Run workload in a separate process group\nset -m\n/bin/bash -c 'trap : TERM; cmd=\"$1\"; shift; eval \"$cmd\"' gcluster \"$1\" &\nchild=$!\n\n# Forward signals to the workload process group\ngot_sigterm=0\n_fwd() {\n  got_sigterm=1\n  echo \"gcluster: SIGTERM received, running cleanup\" >&2\n  kill -TERM -- \"-$child\" 2>/dev/null\n}\ntrap _fwd TERM INT\n\n# Wait for workload to exit\nwhile :; do\n  wait \"$child\"; rc=$?\n  is_job=0\n  for p in $(jobs -p); do\n    [ \"$p\" = \"$child\" ] && is_job=1\n  done\n  [ \"$is_job\" -eq 1 ] || break\ndone\n\n# Interrupted workloads should not exit 0 even if cleanup succeeded\nif [ \"$got_sigterm\" -ne 0 ] && [ \"$rc\" -eq 0 ]; then\n  rc=143\nfi\n\necho \"GCluster End: $(date 2>/dev/null || true)\" >&2\necho \"Exit code: $rc\" >&2\nexit \"$rc\"\n"
+                - "gcluster"
+                - " torchrun --nnodes=16 --nproc_per_node=8 --rdzv_backend=static --rdzv_endpoint=${WORKERS_0_HOSTNAME}:29501 --node_rank=${TPU_WORKER_ID}  -m torchtitan.experiments.tpu.train ${TORCHRUN_WORKLOAD_OVERRIDE}"
+                resources:
+                  limits:
+                    google.com/tpu: "4"
+                env:
+                - name: HF_TOKEN
+                  value: "<YOUR_HF_TOKEN>"
+                - name: JAX_PLATFORMS
+                  value: ""
+                - name: LIBTPU_INIT_ARGS
+                  value: "--xla_tpu_enable_diagnostic_coordinator=false --xla_tpu_scoped_vmem_limit_kib=65472 --xla_tpu_enable_sparse_core_collective_aggregator=true --xla_tpu_enable_latency_hiding_layer_scheduler=true --xla_tpu_use_single_sparse_core_for_reduce_scatter_offload=false --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true --xla_tpu_enable_sparse_core_hierarchical_reduce_scatter=true"
+                - name: TORCHRUN_WORKLOAD_OVERRIDE
+                  value: "--training.steps=30 --dump-folder=/job-logs/${WORKLOAD_NAME} --metrics.save-tb-folder=tb --metrics.enable-tensorboard --debug.save-config-file=torchtitan_config.json --module=torchtitan.experiments.tpu.muse_glimmer --config=muse_glimmer_30b_full_logits --parallelism.enable-tpu-topo-mesh"
+                - name: WORKERS_0_HOSTNAME
+                  value: "${WORKLOAD_NAME}-main-job-0-0.${WORKLOAD_NAME}"
+                volumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm
+                - mountPath: /job-logs
+                  name: vol-0
+              volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+              - csi:
+                  driver: gcsfuse.csi.storage.gke.io
+                  readOnly: false
+                  volumeAttributes:
+                    bucketName: <YOUR_GCS_BUCKET>
+                name: vol-0
+              nodeSelector:
+                cloud.google.com/gke-tpu-accelerator: tpu7x
+                cloud.google.com/gke-tpu-topology: 4x4x4
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: cloud.google.com/gke-nodepool
+                        operator: NotIn
+                        values:
+                        - default-pool
+              tolerations:
+                - effect: NoSchedule
+                  key: google.com/tpu
+                  operator: Exists
