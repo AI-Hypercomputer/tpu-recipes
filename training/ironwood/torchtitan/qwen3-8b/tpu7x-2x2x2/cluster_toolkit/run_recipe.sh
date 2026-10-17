@@ -46,6 +46,7 @@ done
     --topology 2x2x2 \
     --num-slices 1 \
     --image ${WORKLOAD_IMAGE} \
+    --gke-disable-parallel-containers \
     --env=WORKERS_0_HOSTNAME=${WORKLOAD_NAME}-main-job-0-0.${WORKLOAD_NAME} \
     --env=JAX_PLATFORMS= \
     --env='LIBTPU_INIT_ARGS=--xla_tpu_enable_diagnostic_coordinator=false --xla_tpu_scoped_vmem_limit_kib=65472 --xla_tpu_enable_sparse_core_collective_aggregator=true --xla_tpu_enable_latency_hiding_layer_scheduler=true --xla_tpu_use_single_sparse_core_for_reduce_scatter_offload=false' \
