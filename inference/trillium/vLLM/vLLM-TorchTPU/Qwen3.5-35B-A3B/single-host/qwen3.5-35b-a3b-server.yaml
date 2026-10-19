@@ -1,0 +1,186 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache-pvc
+  namespace: vllm-qwen35-35b
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+  storageClassName: hyperdisk-balanced-tpu
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen35-35b
+  namespace: vllm-qwen35-35b
+spec:
+  replicas: 1
+  # TPU node pools are fixed-size: a RollingUpdate needs a spare 8-chip node to
+  # surge onto, so use Recreate to avoid rollout deadlocks.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: vllm-qwen35-35b
+  template:
+    metadata:
+      labels:
+        app: vllm-qwen35-35b
+    spec:
+      terminationGracePeriodSeconds: 75
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+        cloud.google.com/gke-tpu-topology: "2x4"
+      tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: vllm-torchtpu
+          # Set to your TorchTPU vLLM container image.
+          image: REPLACE_TORCH_TPU_VLLM_IMAGE:latest
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p "${HF_HOME}" "${TMPDIR}" "${VLLM_TORCH_COMPILE_CACHE_DIR}" "${VLLM_XLA_CACHE_PATH}"
+              exec vllm serve Qwen/Qwen3.5-35B-A3B \
+                --tokenizer=Qwen/Qwen3.5-35B-A3B \
+                --host=0.0.0.0 \
+                --port=8000 \
+                --download-dir=/data \
+                --tensor-parallel-size=8 \
+                --enable-expert-parallel \
+                --enable-ep-weight-filter \
+                --trust-remote-code \
+                --language-model-only \
+                --limit-mm-per-prompt='{"image": 0, "video": 0}' \
+                --default-chat-template-kwargs='{"enable_thinking": false}' \
+                --attention-backend=CUSTOM \
+                --kv-cache-dtype=fp8 \
+                --gpu-memory-utilization=0.90 \
+                --block-size=256 \
+                --max-model-len=16384 \
+                --max-num-seqs=64 \
+                --max-num-batched-tokens=8192 \
+                --async-scheduling \
+                --no-enable-prefix-caching \
+                --enable-auto-tool-choice \
+                --tool-call-parser=qwen3_coder \
+                --reasoning-parser=qwen3 \
+                --disable-access-log-for-endpoints=/health,/metrics,/v1/models \
+                --shutdown-timeout=45
+          env:
+            - name: HF_HOME
+              value: "/data/huggingface_cache"
+            - name: TMPDIR
+              value: "/data/tmp"
+            - name: VLLM_TORCH_COMPILE_CACHE_DIR
+              value: "/data/torch_compile_cache"
+            - name: VLLM_XLA_CACHE_PATH
+              value: "/data/xla_cache"
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: hf_api_token
+                  optional: true
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: hf_api_token
+                  optional: true
+            - name: VLLM_PLUGINS
+              value: "torchtpu"
+            - name: VLLM_TARGET_DEVICE
+              value: "tpu"
+            - name: PJRT_DEVICE
+              value: "TPU"
+            - name: TPU_PROCESS_ADDRESSES
+              value: ""
+            - name: TPU_EVICT_WEIGHTS_PAGE_CACHE
+              value: "1"
+            - name: TORCH_TPU_INTERNAL_MATERIALIZE_COLLECTIVE_TENSORS
+              value: "false"
+            - name: TORCHINDUCTOR_AUTOGRAD_CACHE
+              value: "0"
+            - name: VLLM_ENGINE_READY_TIMEOUT_S
+              value: "3600"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "64"
+              memory: 256Gi
+              google.com/tpu: "8"
+            requests:
+              cpu: "64"
+              memory: 256Gi
+              google.com/tpu: "8"
+          startupProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 120
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen35-35b-service
+  namespace: vllm-qwen35-35b
+spec:
+  selector:
+    app: vllm-qwen35-35b
+  type: ClusterIP
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
