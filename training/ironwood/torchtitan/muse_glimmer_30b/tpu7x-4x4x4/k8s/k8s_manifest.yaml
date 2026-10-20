@@ -49,7 +49,7 @@ spec:
                 - name: JAX_PLATFORMS
                   value: ""
                 - name: LIBTPU_INIT_ARGS
-                  value: "--xla_tpu_enable_diagnostic_coordinator=false --xla_tpu_scoped_vmem_limit_kib=65472 --xla_tpu_enable_sparse_core_collective_aggregator=true --xla_tpu_enable_latency_hiding_layer_scheduler=true --xla_tpu_use_single_sparse_core_for_reduce_scatter_offload=false --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true --xla_tpu_enable_sparse_core_hierarchical_reduce_scatter=true"
+                  value: "--xla_tpu_enable_diagnostic_coordinator=false --xla_tpu_dvfs_p_state=7 --xla_tpu_scoped_vmem_limit_kib=65472 --xla_tpu_enable_sparse_core_collective_aggregator=true --xla_tpu_enable_latency_hiding_layer_scheduler=true --xla_tpu_use_single_sparse_core_for_reduce_scatter_offload=false --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true --xla_tpu_enable_sparse_core_hierarchical_reduce_scatter=true"
                 - name: TORCHRUN_WORKLOAD_OVERRIDE
                   value: "--training.steps=30 --dump-folder=/job-logs/${WORKLOAD_NAME} --metrics.save-tb-folder=tb --metrics.enable-tensorboard --debug.save-config-file=torchtitan_config.json --module=torchtitan.experiments.tpu.muse_glimmer --config=muse_glimmer_30b_full_logits --parallelism.enable-tpu-topo-mesh"
                 - name: WORKERS_0_HOSTNAME
