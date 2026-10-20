@@ -152,4 +152,4 @@ export ENABLE_PATHWAYS_PERSISTENCE='1' && \
 export LIBTPU_INIT_ARGS='${XLA_FLAGS}' && \
 export JAX_PLATFORMS='tpu,cpu' && \
 export ENABLE_PJRT_COMPATIBILITY='true' && \
-python3 -u -m maxtext.trainers.pre_train.train src/maxtext/configs/base.yml ${MAXTEXT_ARGS}"
+exec python3 -u -m maxtext.trainers.pre_train.train src/maxtext/configs/base.yml ${MAXTEXT_ARGS}"
