@@ -6,7 +6,7 @@ InferenceX serving client: random dataset, ISL/OSL 8192/1024, 640 prompts at
 concurrency 64.
 
 The server image is set in `values.yaml` (`server.image`, default
-`us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261005`). Replace it with a TorchTPU vLLM image your cluster can pull.
+`vllm/vllm-torchtpu:v0.29.0`, the public release on Docker Hub). Override it if you need a different release or a mirror in your own registry.
 
 ### Server configuration
 
@@ -116,9 +116,9 @@ P99 ITL (ms):                            xxx
 
 All server and client settings live in `values.yaml`:
 
-- `server.image` / `client.image`: the TorchTPU vLLM image. The default is a
-  dated nightly build this recipe was validated with; switch to an official
-  vLLM TorchTPU release image once one is published.
+- `server.image` / `client.image`: the TorchTPU vLLM image. The default is
+  the public `vllm/vllm-torchtpu:v0.29.0` release from Docker Hub; override
+  it to use a newer release or a mirror in your own registry.
 - `server.env` and `server.args`: TorchTPU tuning and `vllm serve` flags.
 - `client.args`: InferenceX `benchmark_serving.py` flags (dataset, ISL/OSL,
   number of prompts, concurrency).

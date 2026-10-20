@@ -14,11 +14,10 @@ kueue:
   priority_class: ""
 
 server:
-  # vLLM TorchTPU image. This is a dated nightly build that this recipe was
-  # validated with; replace it with an official vLLM TorchTPU release image
-  # once one is published, or with any TorchTPU vLLM image your cluster can
-  # pull.
-  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261005"
+  # vLLM TorchTPU image: the public v0.29.0 release from Docker Hub
+  # (https://hub.docker.com/r/vllm/vllm-torchtpu). Override with a newer
+  # release or a mirror in your own registry if required.
+  image: "vllm/vllm-torchtpu:v0.29.0"
   topology: "2x2x1"
   num_chips: 4
   # Hyperdisk for model weights and compile caches.
@@ -94,7 +93,7 @@ server:
 client:
   # Any image with python3, curl and apt-get; the benchmark script is cloned
   # from InferenceX at a pinned commit.
-  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261005"
+  image: "vllm/vllm-torchtpu:v0.29.0"
   inferencex_commit: "f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd"
   # Arguments to InferenceX utils/bench_serving/benchmark_serving.py.
   # --host and --port are added by the chart.

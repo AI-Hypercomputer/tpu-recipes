@@ -39,9 +39,9 @@ streaming, at concurrency 32 for 3600 s after a per-lane warmup.
 - Images your cluster can pull. The defaults in `values.yaml` are the images
   this recipe was validated with; replace them if your cluster cannot pull
   them:
-  - `server.image`: a vLLM TorchTPU image. The default is a dated nightly
-    build; switch to an official vLLM TorchTPU release image once one is
-    published.
+  - `server.image`: a vLLM TorchTPU image. The default is the public
+    `vllm/vllm-torchtpu:v0.29.0` release from Docker Hub; override it to use
+    a newer release or a mirror in your own registry.
   - `client.image`: an InferenceX AgentX client image that provides the
     InferenceX AIPerf build under `/root/aiperf-venv`.
 

@@ -54,7 +54,7 @@ This recipe was validated with:
 
 | Component | Image |
 | --- | --- |
-| vLLM TorchTPU (both engines) | `us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261012` |
+| vLLM TorchTPU (both engines) | `vllm/vllm-torchtpu:v0.29.0` |
 | llm-d Endpoint Picker | `ghcr.io/llm-d/llm-d-router-endpoint-picker:v0.11.0` |
 | llm-d routing sidecar | `ghcr.io/llm-d/llm-d-router-disagg-sidecar:v0.11.0` |
 | Envoy | `docker.io/envoyproxy/envoy:distroless-v1.33.2` |
@@ -62,11 +62,11 @@ This recipe was validated with:
 
 Notes on the images:
 
-- The vLLM TorchTPU image is a dated nightly build. Replace `engine.image`
-  with an official vLLM TorchTPU release image once one is published, or with
-  any TorchTPU vLLM image your cluster can pull. Use a build from 2026-10-01
-  or later; older builds lack the prefill context parallel, Raiden KV
-  transfer, and KV offload support this recipe needs.
+- The vLLM TorchTPU image defaults to the public `vllm/vllm-torchtpu:v0.29.0`
+  release from Docker Hub. Override `engine.image` to use a newer release or
+  a mirror in your own registry. Use v0.29.0 or later; older builds lack the
+  prefill context parallel, Raiden KV transfer, and KV offload support this
+  recipe needs.
 - The engines download the weights from Hugging Face to their own data disk.
   The vLLM TorchTPU images do not include the Run:ai model streamer, so
   `--load-format=runai_streamer` from a GCS bucket does not work with them

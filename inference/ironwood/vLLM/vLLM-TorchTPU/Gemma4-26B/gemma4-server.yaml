@@ -46,8 +46,7 @@ spec:
         effect: "NoSchedule"
       containers:
       - name: vllm-torchtpu
-        # TODO: Update to the public release image when available.
-        image: us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:latest
+        image: vllm/vllm-torchtpu:v0.29.0
         imagePullPolicy: Always
         command: ["/bin/bash", "-c"]
         args:

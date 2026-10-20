@@ -31,13 +31,12 @@ storage_class: ""
 
 # Settings shared by the prefill and decode engines.
 engine:
-  # vLLM TorchTPU image. This is the dated nightly build this recipe was
-  # validated with. Replace it with an official vLLM TorchTPU release image
-  # once one is published, or with any TorchTPU vLLM image your cluster can
-  # pull. Use a build from 2026-10-01 or later; older builds lack the
-  # prefill context parallel, Raiden KV transfer and KV offload support this
-  # recipe needs.
-  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261012"
+  # vLLM TorchTPU image: the public v0.29.0 release from Docker Hub
+  # (https://hub.docker.com/r/vllm/vllm-torchtpu). Override with a newer
+  # release or a mirror in your own registry if required. Use v0.29.0 or
+  # later; older builds lack the prefill context parallel, Raiden KV
+  # transfer and KV offload support this recipe needs.
+  image: "vllm/vllm-torchtpu:v0.29.0"
   topology: "2x2x1"
   num_chips: 4
   # One disk per engine. The FP8 checkpoint is about 400 GB.

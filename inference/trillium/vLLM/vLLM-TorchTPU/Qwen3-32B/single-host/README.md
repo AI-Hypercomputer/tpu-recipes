@@ -33,7 +33,6 @@ export CLUSTER_NAME="<YOUR_CLUSTER_NAME>"
 export REGION="<YOUR_REGION>"
 export ZONE="<YOUR_ZONE>"
 export NODEPOOL_NAME="qwen3-32b-v6e-pool"
-export TORCH_TPU_VLLM_IMAGE="<YOUR_TORCH_TPU_VLLM_IMAGE>"
 ```
 
 ---
@@ -82,11 +81,10 @@ kubectl create secret generic hf-secret \
 
 ## Step 4: Apply the vLLM Server Manifest
 
-Set your TorchTPU vLLM container image and apply the server manifest using [qwen3-32b-server.yaml](./qwen3-32b-server.yaml):
+Apply the vLLM server manifest using [qwen3-32b-server.yaml](./qwen3-32b-server.yaml):
 
 ```shell
 cd tpu-recipes/inference/trillium/vLLM/vLLM-TorchTPU/Qwen3-32B/single-host
-sed -i "s|REPLACE_TORCH_TPU_VLLM_IMAGE:latest|${TORCH_TPU_VLLM_IMAGE}|g" qwen3-32b-server.yaml
 kubectl apply -f qwen3-32b-server.yaml
 ```
 
@@ -156,8 +154,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
     - name: vllm-bench
-      # Set to your TorchTPU vLLM container image.
-      image: REPLACE_TORCH_TPU_VLLM_IMAGE:latest
+      image: vllm/vllm-torchtpu:v0.29.0
       command: ["/bin/bash", "-c"]
       args:
         - |
@@ -198,7 +195,6 @@ spec:
 Apply it using `kubectl`:
 
 ```shell
-sed -i "s|REPLACE_TORCH_TPU_VLLM_IMAGE:latest|${TORCH_TPU_VLLM_IMAGE}|g" qwen3-32b-benchmark-1k1k.yaml
 kubectl apply -f qwen3-32b-benchmark-1k1k.yaml
 ```
 
@@ -231,8 +227,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
     - name: vllm-bench
-      # Set to your TorchTPU vLLM container image.
-      image: REPLACE_TORCH_TPU_VLLM_IMAGE:latest
+      image: vllm/vllm-torchtpu:v0.29.0
       command: ["/bin/bash", "-c"]
       args:
         - |
@@ -273,7 +268,6 @@ spec:
 Apply it using `kubectl`:
 
 ```shell
-sed -i "s|REPLACE_TORCH_TPU_VLLM_IMAGE:latest|${TORCH_TPU_VLLM_IMAGE}|g" qwen3-32b-benchmark-1k8k.yaml
 kubectl apply -f qwen3-32b-benchmark-1k8k.yaml
 ```
 
@@ -306,8 +300,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
     - name: vllm-bench
-      # Set to your TorchTPU vLLM container image.
-      image: REPLACE_TORCH_TPU_VLLM_IMAGE:latest
+      image: vllm/vllm-torchtpu:v0.29.0
       command: ["/bin/bash", "-c"]
       args:
         - |
@@ -348,7 +341,6 @@ spec:
 Apply it using `kubectl`:
 
 ```shell
-sed -i "s|REPLACE_TORCH_TPU_VLLM_IMAGE:latest|${TORCH_TPU_VLLM_IMAGE}|g" qwen3-32b-benchmark-8k1k.yaml
 kubectl apply -f qwen3-32b-benchmark-8k1k.yaml
 ```
 
