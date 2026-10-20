@@ -51,7 +51,7 @@ done
     --gke-disable-parallel-containers \
     --env=WORKERS_0_HOSTNAME=${WORKLOAD_NAME}-main-job-0-0.${WORKLOAD_NAME} \
     --env=JAX_PLATFORMS= \
-    --env='LIBTPU_INIT_ARGS=--xla_tpu_enable_sparse_core_collective_aggregator=true --xla_tpu_enable_latency_hiding_layer_scheduler=true --xla_tpu_use_single_sparse_core_for_reduce_scatter_offload=false --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true --xla_tpu_enable_sparse_core_hierarchical_reduce_scatter=true' \
+    --env='LIBTPU_INIT_ARGS=--xla_tpu_enable_sparse_core_collective_aggregator=true --xla_tpu_enable_latency_hiding_layer_scheduler=true --xla_tpu_use_single_sparse_core_for_reduce_scatter_offload=false --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true --xla_tpu_enable_sparse_core_hierarchical_reduce_scatter=true --xla_tpu_dvfs_p_state=7' \
     --env=HF_TOKEN="${HF_TOKEN}" \
     --env="TORCHRUN_WORKLOAD_OVERRIDE=--training.steps=30 --dump-folder=/job-logs/${WORKLOAD_NAME} --metrics.save-tb-folder=tb --metrics.enable-tensorboard --debug.save-config-file=torchtitan_config.json --module=torchtitan.experiments.tpu.qwen3 --config=qwen3_moe_30b_fsdp_only_full_ac_benchmark --hf-assets-path=tests/assets/tokenizer --dataloader.dataset=c4_test --dataloader.dataset-path=tests/assets/c4_test" \
     "${DRY_RUN_ARG[@]}" \
