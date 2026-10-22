@@ -154,8 +154,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
   - name: vllm-bench
-    # TODO: Update to the public release image when available.
-    image: us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:latest
+    image: vllm/vllm-torchtpu:v0.29.0
     command: ["/bin/bash", "-c"]
     args:
     - |
@@ -221,8 +220,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
   - name: vllm-bench
-    # TODO: Update to the public release image when available.
-    image: us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:latest
+    image: vllm/vllm-torchtpu:v0.29.0
     command: ["/bin/bash", "-c"]
     args:
     - |
@@ -288,8 +286,7 @@ spec:
   terminationGracePeriodSeconds: 60
   containers:
   - name: vllm-bench
-    # TODO: Update to the public release image when available.
-    image: us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:latest
+    image: vllm/vllm-torchtpu:v0.29.0
     command: ["/bin/bash", "-c"]
     args:
     - |

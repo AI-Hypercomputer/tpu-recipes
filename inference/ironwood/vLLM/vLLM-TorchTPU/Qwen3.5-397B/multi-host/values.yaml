@@ -18,11 +18,10 @@ kueue:
   priority_class: ""
 
 server:
-  # vLLM TorchTPU image. This is a dated nightly build that this recipe was
-  # validated with; replace it with an official vLLM TorchTPU release image
-  # once one is published, or with any TorchTPU vLLM image your cluster can
-  # pull.
-  image: "us-central1-docker.pkg.dev/cloud-ullm-inference-ci-cd/vllm-torchtpu/torchtpu-vllm-prod:nightly-20261012"
+  # vLLM TorchTPU image: the public v0.29.0 release from Docker Hub
+  # (https://hub.docker.com/r/vllm/vllm-torchtpu). Override with a newer
+  # release or a mirror in your own registry if required.
+  image: "vllm/vllm-torchtpu:v0.29.0"
   # One tpu7x 2x2x2 slice: 2 hosts x 4 chips, 2 TPU devices per chip.
   topology: "2x2x2"
   num_hosts: 2

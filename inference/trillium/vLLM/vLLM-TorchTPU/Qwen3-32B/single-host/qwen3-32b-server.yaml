@@ -51,8 +51,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: vllm-torchtpu
-          # Set to your TorchTPU vLLM container image.
-          image: REPLACE_TORCH_TPU_VLLM_IMAGE:latest
+          image: vllm/vllm-torchtpu:v0.29.0
           imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
           args:
