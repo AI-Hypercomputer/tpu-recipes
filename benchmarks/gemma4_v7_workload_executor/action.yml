@@ -1,0 +1,159 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "Gemma 4 TPU v7 Workload Executor"
+description: "Starts vLLM server on TPU v7x and runs the InferenceX 1k/500 serving benchmark."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Start vLLM server
+      id: start_server
+      shell: bash
+      run: |
+        echo "::group::Start vLLM server"
+        set -euo pipefail
+
+        ARTIFACTS_DIR="${WORKLOAD_ARTIFACTS_DIR:-$GITHUB_WORKSPACE/artifacts}"
+        mkdir -p "$ARTIFACTS_DIR"
+        SERVER_LOG="$ARTIFACTS_DIR/vllm_server.log"
+
+        # Environment variables from inference/ironwood/vLLM/Gemma4/gemma4-server.yaml
+        export VLLM_ENGINE_READY_TIMEOUT_S="1800"
+        export TPU_MULTIPROCESS_DP="1"
+        export USE_BATCHED_RPA_KERNEL="1"
+        export MODEL_IMPL_TYPE="flax_nnx"
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        mkdir -p "$HF_HOME"
+
+        if [[ -n "${HF_TOKEN:-}" ]]; then
+          echo "HF_TOKEN is set (non-empty)."
+          if [[ -z "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
+            export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+          fi
+        else
+          echo "::warning::HF_TOKEN is empty or unset; gated Hugging Face model downloads may fail."
+        fi
+
+        echo "Starting vLLM OpenAI API server for google/gemma-4-31B-it..."
+        # Clear RUNNER_TRACKING_ID and use nohup so GitHub Actions does not kill
+        # the background server process when this step finishes.
+        RUNNER_TRACKING_ID="" nohup python3 -m vllm.entrypoints.openai.api_server \
+          --host=0.0.0.0 \
+          --port=8000 \
+          --seed=42 \
+          --model=google/gemma-4-31B-it \
+          --max-model-len=1524 \
+          --max-num-seqs=256 \
+          --data-parallel-size=4 \
+          --tensor-parallel-size=2 \
+          --max-num-batched-tokens=16384 \
+          --no-enable-prefix-caching \
+          --kv-cache-dtype=fp8 \
+          --gpu-memory-utilization=0.9 \
+          --async-scheduling \
+          --limit-mm-per-prompt='{"image": 0, "video": 0, "audio": 0}' \
+          --block-size=256 \
+          --additional-config='{"quantization": { "qwix": { "rules": [{ "module_path": ".*", "weight_qtype": "float8_e4m3fn", "act_qtype": "float8_e4m3fn"}]}}}' \
+          > "$SERVER_LOG" 2>&1 < /dev/null &
+        SERVER_PID=$!
+        echo "server_pid=$SERVER_PID" >> "$GITHUB_OUTPUT"
+
+        echo "Waiting for vLLM server (PID $SERVER_PID) to become ready on port 8000..."
+        MAX_WAIT_SECONDS=1800
+        ELAPSED=0
+        until curl -sf http://localhost:8000/health > /dev/null 2>&1; do
+          if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "::error::vLLM server exited unexpectedly. Last 100 lines of server log:"
+            tail -n 100 "$SERVER_LOG" || true
+            exit 1
+          fi
+          if (( ELAPSED >= MAX_WAIT_SECONDS )); then
+            echo "::error::Timed out waiting for vLLM server after ${MAX_WAIT_SECONDS}s. Last 100 lines of server log:"
+            tail -n 100 "$SERVER_LOG" || true
+            exit 1
+          fi
+          sleep 5
+          ELAPSED=$((ELAPSED + 5))
+        done
+        echo "vLLM server is ready after ${ELAPSED}s."
+        echo "::endgroup::"
+
+    - name: Run InferenceX 1k/500 benchmark
+      shell: bash
+      run: |
+        echo "::group::Run InferenceX 1k/500 benchmark"
+        set -euo pipefail
+
+        ARTIFACTS_DIR="${WORKLOAD_ARTIFACTS_DIR:-$GITHUB_WORKSPACE/artifacts}"
+        CLIENT_LOG="$ARTIFACTS_DIR/benchmark_client.log"
+        RESULT_JSON="$ARTIFACTS_DIR/benchmark_result_raw.json"
+
+        export HF_HOME="${RUNNER_TEMP:-/tmp}/hf_cache"
+        if [[ -n "${HF_TOKEN:-}" && -z "${HUGGING_FACE_HUB_TOKEN:-}" ]]; then
+          export HUGGING_FACE_HUB_TOKEN="$HF_TOKEN"
+        fi
+
+        # Clone SemiAnalysisAI/InferenceX as specified in inference/ironwood/vLLM/Gemma4/README.md
+        INFERENCEX_DIR="${RUNNER_TEMP:-/tmp}/inferencex"
+        rm -rf "$INFERENCEX_DIR"
+        git clone https://github.com/SemiAnalysisAI/InferenceX.git "$INFERENCEX_DIR"
+        git -C "$INFERENCEX_DIR" checkout 89ce6098ef2bc4576a735c43f39c7d972b091cfc
+
+        echo "Running InferenceX Workload 1k/500 benchmark..."
+        python3 "$INFERENCEX_DIR/utils/bench_serving/benchmark_serving.py" \
+          --backend=vllm \
+          --request-rate=inf \
+          --host=localhost \
+          --port=8000 \
+          --model=google/gemma-4-31B-it \
+          --tokenizer=google/gemma-4-31B-it \
+          --dataset-name=random \
+          --random-input-len=1024 \
+          --random-output-len=500 \
+          --num-prompts=1280 \
+          --ignore-eos \
+          --save-result \
+          --result-filename="$RESULT_JSON" \
+          2>&1 | tee "$CLIENT_LOG"
+
+        echo "::endgroup::"
+
+    - name: Stop vLLM server
+      if: ${{ always() }}
+      shell: bash
+      env:
+        SERVER_PID: ${{ steps.start_server.outputs.server_pid }}
+      run: |
+        echo "::group::Stop vLLM server"
+        if [[ -n "$SERVER_PID" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+          echo "Stopping vLLM server (PID $SERVER_PID)..."
+          kill "$SERVER_PID" 2>/dev/null || true
+        fi
+        echo "::endgroup::"
+
+    - name: Convert results to TensorBoard event files
+      shell: bash
+      run: |
+        echo "::group::Convert results to TensorBoard event files"
+        set -euo pipefail
+
+        ARTIFACTS_DIR="${WORKLOAD_ARTIFACTS_DIR:-$GITHUB_WORKSPACE/artifacts}"
+        python3 -m pip install -q --root-user-action=ignore tensorboard==2.18.0 || true
+
+        python3 "$GITHUB_ACTION_PATH/parse_metrics.py" \
+          --result-json="$ARTIFACTS_DIR/benchmark_result_raw.json" \
+          --client-log="$ARTIFACTS_DIR/benchmark_client.log"
+
+        echo "::endgroup::"

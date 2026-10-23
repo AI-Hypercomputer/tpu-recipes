@@ -1,0 +1,79 @@
+# proto-file: https://github.com/google-ml-infra/bap/blob/main/bap_proto/benchmark_registry.proto
+# proto-message: BenchmarkSuite
+
+benchmarks {
+  name: "gemma4_31b_it_vllm_1k500"
+  description: "Gemma 4 31B IT vLLM serving benchmark (1k input / 500 output) on Ironwood TPU v7x."
+  owner: "tpu-recipes"
+
+  workload {
+    action: "./user_repo/benchmarks/gemma4_v7_workload_executor"
+  }
+
+  environment_configs {
+    id: "tpu_v7x_2x2x1"
+    runner_label: "linux-x86-tpu7x-224-4tpu"
+    container_image: "vllm/vllm-tpu:nightly-20260604-2aaa59e-4f423bd"
+  }
+
+  metrics {
+    name: "request_throughput"
+    unit: "req/s"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "output_token_throughput"
+    unit: "tok/s"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "total_token_throughput"
+    unit: "tok/s"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "mean_ttft_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "median_ttft_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "p99_ttft_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "mean_tpot_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "median_tpot_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "p99_tpot_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "mean_itl_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "median_itl_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+  metrics {
+    name: "p99_itl_ms"
+    unit: "ms"
+    stats { stat: LAST_VALUE }
+  }
+}
