@@ -47,14 +47,14 @@ permissions:
 jobs:
   run_benchmarks:
     name: Run TPU Recipe Benchmarks
-    uses: google-ml-infra/bap/.github/workflows/run-benchmarks.yaml@f6eac487830f64be62d685079917e64d542b9671 # main
+    uses: google-ml-infra/bap/.github/workflows/run-benchmarks.yaml@e7d52af8bf9f9e420c162486bb1d0b36e8405992 # main
     with:
       registry_file: "benchmarks/benchmark_registry.pbtxt"
-      bap_ref: "f6eac487830f64be62d685079917e64d542b9671"
+      bap_ref: "e7d52af8bf9f9e420c162486bb1d0b36e8405992"
       runner: "linux-x86-n4-16"
       publish_metrics: false
       benchmark_filter: ${{ inputs.benchmark_filter || '' }}
       environment_filter: ${{ inputs.environment_filter || '' }}
       custom_metadata: ${{ inputs.custom_metadata || '{}' }}
-      custom_env_vars: |
-        HF_TOKEN=${{ secrets.BAP_HF_TOKEN }}
+    secrets:
+      HF_TOKEN: ${{ secrets.BAP_HF_TOKEN }}
