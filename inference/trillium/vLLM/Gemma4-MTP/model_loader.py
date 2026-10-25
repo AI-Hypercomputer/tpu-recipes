@@ -1,0 +1,846 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from typing import Any, Optional
+
+import jax
+import numpy as np
+import torch
+import vllm.envs as vllm_envs
+from flax import nnx
+from jax.sharding import Mesh, NamedSharding, PartitionSpec
+from transformers import PretrainedConfig
+from vllm.config import VllmConfig
+from vllm.model_executor.model_loader import get_model_loader
+from vllm.model_executor.model_loader.runai_streamer_loader import \
+    RunaiModelStreamerLoader
+from vllm.utils.func_utils import supports_kw
+
+from tpu_inference import envs
+from tpu_inference.layers.common.sharding import ShardingAxisName
+from tpu_inference.layers.jax import JaxModule
+from tpu_inference.layers.jax.quantization import get_tpu_quantization_config
+from tpu_inference.logger import init_logger
+from tpu_inference.models.common.interface import (ModelInterface,
+                                                   MultiModalInterface)
+from tpu_inference.models.jax.utils.multi_modal_utils import \
+    flatten_pad_mm_embeds
+from tpu_inference.models.jax.utils.qwix.qwix_utils import (
+    apply_qwix_on_abstract_model, apply_qwix_quantization,
+    load_random_weights_into_qwix_abstract_model,
+    update_vllm_config_for_qwix_quantization)
+from tpu_inference.models.jax.utils.weight_utils import (BaseWeightLoader,
+                                                         LoadableWithIterator)
+from tpu_inference.utils import to_jax_dtype, to_torch_dtype
+
+logger = init_logger(__name__)
+
+_MODEL_REGISTRY = {}
+
+# List of architectures that are preferred to use "vllm" implementation over
+# "flax_nnx" implementation due to various factors such as performance.
+_VLLM_PREFERRED_ARCHITECTURES: frozenset[str] = frozenset({
+    "GptOssForCausalLM",
+    "Qwen3MoeForCausalLM",
+    "KimiK25ForConditionalGeneration",
+    "Qwen3_5MoeForConditionalGeneration",
+})
+
+# List of architectures that don't have pipeline parallelism support in jax yet.
+_PP_DISABLED_MODELS: frozenset[str] = frozenset(
+    {"DeepseekV3ForCausalLM", "Eagle3LlamaForCausalLM", "GptOssForCausalLM"})
+
+
+class UnsupportedArchitectureError(ValueError):
+    """Raised when a model architecture is not supported in the registry."""
+    pass
+
+
+def _get_model_architecture(config: PretrainedConfig) -> nnx.Module:
+    # NOTE: Use inline imports here, otherwise the normal imports
+    # would cause JAX init failure when using multi hosts with Ray.
+
+    from tpu_inference.models.jax.deepseek_v3 import DeepseekV3ForCausalLM
+    from tpu_inference.models.jax.gemma4_mm import \
+        Gemma4ForConditionalGeneration
+    from tpu_inference.models.jax.gemma4_mtp import Gemma4MTPForCausalLM
+    from tpu_inference.models.jax.gpt_oss import GptOss
+    from tpu_inference.models.jax.llama3 import LlamaForCausalLM
+    from tpu_inference.models.jax.llama4 import Llama4ForCausalLM
+    from tpu_inference.models.jax.llama_eagle3 import EagleLlama3ForCausalLM
+    from tpu_inference.models.jax.llama_guard_4 import LlamaGuard4ForCausalLM
+    from tpu_inference.models.jax.qwen2 import Qwen2ForCausalLM
+    from tpu_inference.models.jax.qwen2_5_vl import \
+        Qwen2_5_VLForConditionalGeneration
+    from tpu_inference.models.jax.qwen3 import Qwen3ForCausalLM
+    from tpu_inference.models.jax.qwen3_moe import Qwen3MoeForCausalLM
+    _MODEL_REGISTRY["Llama4ForCausalLM"] = Llama4ForCausalLM
+    _MODEL_REGISTRY["DeepseekV3ForCausalLM"] = DeepseekV3ForCausalLM
+    _MODEL_REGISTRY["LlamaForCausalLM"] = LlamaForCausalLM
+    _MODEL_REGISTRY["Llama4ForConditionalGeneration"] = LlamaGuard4ForCausalLM
+    _MODEL_REGISTRY["Qwen3ForCausalLM"] = Qwen3ForCausalLM
+    _MODEL_REGISTRY["Qwen3MoeForCausalLM"] = Qwen3MoeForCausalLM
+    _MODEL_REGISTRY[
+        "Qwen2_5_VLForConditionalGeneration"] = Qwen2_5_VLForConditionalGeneration
+    _MODEL_REGISTRY["Eagle3LlamaForCausalLM"] = EagleLlama3ForCausalLM
+    _MODEL_REGISTRY["GptOssForCausalLM"] = GptOss
+    _MODEL_REGISTRY["Qwen2ForCausalLM"] = Qwen2ForCausalLM
+    _MODEL_REGISTRY[
+        "Gemma4ForConditionalGeneration"] = Gemma4ForConditionalGeneration
+    _MODEL_REGISTRY["Gemma4MTPModel"] = Gemma4MTPForCausalLM
+
+    architectures = getattr(config, "architectures", [])
+    for arch in architectures:
+        if arch in _MODEL_REGISTRY:
+            return _MODEL_REGISTRY[arch]
+    raise UnsupportedArchitectureError(
+        f"Model architectures {architectures} not "
+        "registered in tpu-inference. Falling back to vLLM-native "
+        f"Pytorch definition. JAX-native architectures: {list(_MODEL_REGISTRY.keys())}"
+    )
+def make_replicated(obj):
+    import jax
+    from jax.sharding import PartitionSpec, NamedSharding
+    visited = set()
+    def traverse(item):
+        if id(item) in visited:
+            return
+        visited.add(id(item))
+        if type(item).__module__.startswith('jax') or type(item).__module__.startswith('flax.core'):
+            return
+        if hasattr(item, '__dict__'):
+            for k, v in list(item.__dict__.items()):
+                if isinstance(v, PartitionSpec):
+                    try:
+                        setattr(item, k, PartitionSpec())
+                    except (AttributeError, TypeError):
+                        pass
+                elif isinstance(v, NamedSharding):
+                    try:
+                        setattr(item, k, NamedSharding(v.mesh, PartitionSpec()))
+                    except (AttributeError, TypeError):
+                        pass
+                elif isinstance(v, tuple) and all(isinstance(x, (str, type(None))) for x in v):
+                    try:
+                        setattr(item, k, tuple(None for _ in v))
+                    except (AttributeError, TypeError):
+                        pass
+                else:
+                    traverse(v)
+        elif isinstance(item, (list, tuple)):
+            for x in item:
+                traverse(x)
+        elif isinstance(item, dict):
+            for k, v in item.items():
+                traverse(v)
+    traverse(obj)
+
+
+
+def _get_nnx_model(
+    model_class: Any,
+    vllm_config: VllmConfig,
+    rng: jax.Array,
+    mesh: Mesh,
+    pooler: Optional[Any] = None,
+    is_draft_model: bool = False,
+) -> nnx.Module:
+    """Instantiate the nnx JAX model and optionally pass the embedding/pooling layer.
+
+    Args:
+        model_class: The class of the model.
+        vllm_config: The current vLLM config.
+        rng: Array specifying random keys.
+        mesh: JAX device mesh for sharding.
+        pooler: The optional pooler for handling embedding path.
+
+    Returns:
+        nnx.Module: The instantiated JAX module.
+    """
+
+    model_config = (vllm_config.speculative_config.draft_model_config
+                    if is_draft_model else vllm_config.model_config)
+
+    def create_abstract_model() -> nnx.Module:
+        """
+        Helper class to create an abstract model for `nnx.eval_shape`.
+
+        Returns:
+            An abstract model function.
+        """
+        return model_class(vllm_config, rng, mesh)
+
+    @nnx.jit(donate_argnums=(0, ),
+             static_argnames=('use_qwix_on_abstract_model', ))
+    def create_jit_model(
+            model: nnx.Module,
+            use_qwix_on_abstract_model: bool = False) -> nnx.Module:
+        """
+        Create a jit model.
+
+        Args:
+            model: The model to jit.
+            use_qwix_on_abstract_model: Whether to apply Qwix on the abstract model.
+
+        Returns:
+            The jitted model.
+        """
+        state = nnx.state(model)
+        nnx.update(model, state)
+        if not use_qwix_on_abstract_model:
+            # NOTE: if Qwix is not configured, this will be a no-op
+            model = apply_qwix_quantization(vllm_config,
+                                            model,
+                                            rng,
+                                            mesh,
+                                            apply_to_abstract_model=False)
+        return model
+
+    if vllm_config.load_config.load_format == "dummy" and not issubclass(
+            model_class, LoadableWithIterator):
+        # Create a sharded model with random inited weights.
+        # TODO: currently Qwen2ForCausalLM is using legacy model implementation
+        # will merge the random init logic when all model are migrated to new model implementation
+
+        # Handle the case where we want to load in random weights to a Qwix-quantized model.  Here, we
+        # need to run an abstract pass for Qwix first and then load in the random weights.
+        if apply_qwix_on_abstract_model(vllm_config):
+            abstract_model_fn = apply_qwix_quantization(
+                vllm_config,
+                create_abstract_model,
+                rng,
+                mesh,
+                apply_to_abstract_model=True)
+
+            model = nnx.eval_shape(abstract_model_fn)
+            quantization_config = vllm_config.model_config.hf_config.quantization_config if hasattr(
+                vllm_config.model_config.hf_config,
+                "quantization_config") else {}
+            load_random_weights_into_qwix_abstract_model(
+                rng, model, mesh, quantization_config)
+            with mesh:
+                jit_model = create_jit_model(model,
+                                             use_qwix_on_abstract_model=True)
+            return jit_model
+
+        if getattr(model_class, '_self_manages_sharding', False):
+            # `_self_manages_sharding` is a class-level boolean flag set to True
+            # by model classes (e.g. MaxText-backed models) that handle their own
+            # JIT-compiled, sharded weight initialization internally — typically by
+            # wrapping construction in jax.jit with explicit out_shardings. For
+            # these models, the standard path below (which wraps create_abstract_model
+            # + with_sharding_constraint in an outer @jax.jit) must be skipped:
+            # adding a second outer jit causes nested JIT inlining that re-traces
+            # and multiplies compilation time without benefit.
+            with mesh:
+                jit_model = model_class(vllm_config, rng, mesh)
+                jit_model = apply_qwix_quantization(
+                    vllm_config,
+                    jit_model,
+                    rng,
+                    mesh,
+                    apply_to_abstract_model=False)
+                if hasattr(jit_model, 'initialize_cache'):
+                    jit_model.initialize_cache()
+            return jit_model
+
+        @jax.jit
+        def create_sharded_model():
+            model = create_abstract_model()
+            state = nnx.state(model)
+            pspecs = nnx.get_partition_spec(state)
+            sharded_state = jax.lax.with_sharding_constraint(state, pspecs)
+            nnx.update(model, sharded_state)
+            # NOTE: we don't support quantization for the old Qwen2ForCausalLM implementation
+            return model
+
+        with mesh:
+            jit_model = create_sharded_model()
+            # In this case, we are applying Qwix quantization to the true, concrete model
+            jit_model = apply_qwix_quantization(vllm_config,
+                                                jit_model,
+                                                rng,
+                                                mesh,
+                                                apply_to_abstract_model=False)
+            if hasattr(jit_model, 'initialize_cache'):
+                jit_model.initialize_cache()
+    else:
+        # We first create an abstract model without allocating any weights,
+        # then fill in its weigths during load_weights from HF.
+        # This shows 2 advantages than the normal way:
+        # 1. The model weights will only be allocated once. Otherwise the normal way
+        #    will random-init the model weights first, then load the real weights.
+        #    The two pass weights allocation causes model loading slow.
+        # 2. The model loading won't be OOM. Otherwise the normal way will hold
+        #    a full model weights after random-init, then duplicate a layer during
+        #    the load_weights. This would be easy to OOM if the layer is super large.
+        abstract_model_fn = create_abstract_model
+        # NOTE: only one of the abstract (this) or or concrete Qwix quantization paths should
+        # be taken
+        if should_apply_qwix_on_abstract_model := apply_qwix_on_abstract_model(
+                vllm_config):
+            # NOTE: if Qwix is not configured, this will return `create_abstract_model` and
+            # thus be a no-op
+            abstract_model_fn = apply_qwix_quantization(
+                vllm_config,
+                create_abstract_model,
+                rng,
+                mesh,
+                apply_to_abstract_model=True)
+        with jax.set_mesh(mesh):
+            model = nnx.eval_shape(abstract_model_fn)
+        # Although the created model can already work, we still need to jit
+        # the model creation again, otherwise the model forward will have
+        # non-trivial overhead in PjitFunction.
+        with jax.set_mesh(mesh):
+            if vllm_config.load_config.load_format == "dummy":
+                if vllm_envs.VLLM_TPU_USING_PATHWAYS:
+                    vllm_config.load_config.load_format = "pathways_dummy"
+                else:
+                    vllm_config.load_config.load_format = "jax_dummy"
+            vllm_config.pytorch_pooler = pooler
+            loader = get_model_loader(vllm_config.load_config)
+            if isinstance(model, LoadableWithIterator):
+                assert isinstance(model, JaxModule)
+                loader.load_weights(model, model_config)
+            elif isinstance(loader, RunaiModelStreamerLoader):
+                model_weights = model_config.model
+                if hasattr(model_config, "model_weights"):
+                    model_weights = model_config.model_weights
+                weights_iterator = loader._get_weights_iterator(
+                    model_weights, model_config.revision)
+
+                # We set the weights iterator at runtime, to prevent having to change
+                # every model's load_weights signature. This also prevents us from hitting
+                # a TypeError at runtime if you use the RunaiModelStreamerLoader with any
+                # flax_nnx model whose load_weights function does not accept the
+                # weights_iterator keyword argument.
+                model_config.runai_model_weights_iterator = weights_iterator
+                model.load_weights(rng)
+                del model_config.runai_model_weights_iterator
+            else:
+                model.load_weights(rng)
+            if hasattr(vllm_config, "pytorch_pooler"):
+                del vllm_config.pytorch_pooler
+            if is_draft_model:
+                make_replicated(model)
+            jit_model = create_jit_model(
+                model,
+                use_qwix_on_abstract_model=should_apply_qwix_on_abstract_model)
+    return jit_model
+
+
+def _not_support(*args, **kwargs):
+    raise NotImplementedError("The action on this path is not supported yet.")
+
+
+# TODO(pooyam): We need to refactor this. This is returning a bunch of functions that do not work with all models and this is not very easy to see from the code.
+def get_flax_model(
+    vllm_config: VllmConfig,
+    rng: jax.Array,
+    mesh: Mesh,
+    is_draft_model: bool = False,
+) -> ModelInterface:
+    original_dtype = vllm_config.model_config.dtype
+    model_dtype = to_jax_dtype(original_dtype)
+    vllm_config.model_config.dtype = model_dtype
+    vllm_config.quant_config = get_tpu_quantization_config(vllm_config)
+
+    # Only perform qwix quantization if it is jax model.
+    if vllm_config.model_config:
+        update_vllm_config_for_qwix_quantization(vllm_config)
+
+    if is_draft_model:
+        model_class = _get_model_architecture(
+            vllm_config.speculative_config.draft_model_config.hf_config)
+    else:
+        model_class = _get_model_architecture(
+            vllm_config.model_config.hf_config)
+
+    # Instantiate pooler if needed for Hybrid Path
+    is_pooling = vllm_config.model_config.runner_type == "pooling"
+    pooler = None
+    if is_pooling:
+        from vllm.model_executor.layers.pooler import DispatchPooler
+        pooler_config = getattr(vllm_config.model_config, "pooler_config",
+                                None)
+        if pooler_config is not None:
+            pooler = DispatchPooler.for_embedding(pooler_config)
+
+    jit_model = _get_nnx_model(model_class,
+                               vllm_config,
+                               rng,
+                               mesh,
+                               pooler=pooler,
+                               is_draft_model=is_draft_model)
+    vllm_config.model_config.dtype = original_dtype
+    kv_cache_sharding = NamedSharding(
+        mesh,
+        PartitionSpec(ShardingAxisName.ATTN_DATA, None,
+                      ShardingAxisName.ATTN_HEAD))
+    hidden_states_sharding = NamedSharding(mesh,
+                                           PartitionSpec(
+                                               ShardingAxisName.ATTN_DATA,
+                                               None))  # (T, D)
+
+    # For performance consideration, refer to:
+    # https://flax.readthedocs.io/en/latest/guides/performance.html
+    graphdef, state = nnx.split(jit_model)
+
+    # Capture the nnx.State treedef once. `run_model` accepts a flat tuple
+    # of array leaves at dispatch time and reconstructs the state via this
+    # treedef. The runner does the flatten of `state` once at init, which
+    # avoids the per-call `nnx.Variable` pytree traversal that otherwise
+    # costs ~17 ms/step on Gemma-4-31B decode at TP=2.
+    _state_treedef = jax.tree_util.tree_structure(state)
+
+    @jax.jit(
+        out_shardings=(
+            kv_cache_sharding,
+            hidden_states_sharding,
+            hidden_states_sharding,  # aux hidden states
+            None,  # expert ids
+        ),
+        donate_argnums=1,  # 0 is state_leaves, 1 is kv_cache
+        static_argnums=(
+            6, 9, 10
+        ),  # 6 is layer_name_to_kvcache_index, 9 is is_first_rank, 10 is is_last_rank
+    )
+    def run_model(state_leaves, *args):
+        state = jax.tree_util.tree_unflatten(_state_treedef, state_leaves)
+        model = nnx.merge(graphdef, state)
+        return model(*args)
+
+    @jax.jit(
+        out_shardings=(
+            kv_cache_sharding,
+            hidden_states_sharding,
+            hidden_states_sharding,  # residual
+            None,  # expert ids
+        ),
+        donate_argnums=1,  # 0 is state_leaves, 1 is kv_cache
+        static_argnums=(5, ),  # 5 is layer_name_to_kvcache_index
+    )
+    def run_draft_model(state_leaves, *args):
+        state = jax.tree_util.tree_unflatten(_state_treedef, state_leaves)
+        model = nnx.merge(graphdef, state)
+        return model(*args)
+
+    logits_sharding = NamedSharding(
+        mesh,
+        PartitionSpec(ShardingAxisName.MLP_DATA, ShardingAxisName.MLP_TENSOR))
+
+    @jax.jit(out_shardings=(logits_sharding))
+    def run_compute_logits(state_leaves, *args):
+        state = jax.tree_util.tree_unflatten(_state_treedef, state_leaves)
+        model = nnx.merge(graphdef, state)
+        hidden_state, *_ = args
+        return model.compute_logits(hidden_state)
+
+    # Multi-modal support only
+    # This function calculates the image/video token's embeddings by VIT
+    def run_embed_multimodal(state_leaves, **kwargs):
+        state = jax.tree_util.tree_unflatten(_state_treedef, state_leaves)
+        model = nnx.merge(graphdef, state)
+        return model.embed_multimodal(**kwargs)
+
+    embed_sharding = NamedSharding(mesh, PartitionSpec(None))
+
+    @jax.jit(out_shardings=(embed_sharding))
+    def jitted_embed_input_ids(state_leaves,
+                               input_ids,
+                               mm_embeds,
+                               is_multimodal=None):
+        state = jax.tree_util.tree_unflatten(_state_treedef, state_leaves)
+        model = nnx.merge(graphdef, state)
+        return model.embed_input_ids(input_ids,
+                                     mm_embeds,
+                                     is_multimodal=is_multimodal)
+
+    def run_embed_input_ids(state_leaves,
+                            input_ids,
+                            mm_embeds=None,
+                            is_multimodal=None):
+        mm_embeds = flatten_pad_mm_embeds(mm_embeds,
+                                          target_pad_len=input_ids.shape[0])
+        return jitted_embed_input_ids(state_leaves,
+                                      input_ids,
+                                      mm_embeds,
+                                      is_multimodal=is_multimodal)
+
+    # For models that want to work with EAGLE-3 speculative decoding
+    @jax.jit(out_shardings=(logits_sharding))
+    def combine_hidden_states(state_leaves, hidden_states):
+        state = jax.tree_util.tree_unflatten(_state_treedef, state_leaves)
+        model = nnx.merge(graphdef, state)
+        return model.combine_hidden_states(hidden_states)
+
+    model = nnx.merge(graphdef, state)
+    precompile_vision_encoder_fn = getattr(model, "precompile_vision_encoder",
+                                           None)
+    # `graphdef` and the state treedef are captured in each closure; the
+    # runner passes pre-flattened `state_leaves` as the first positional arg.
+    jitted_model_fn = run_draft_model if is_draft_model else run_model
+
+    model_supports_spec_step = supports_kw(model_class.__call__,
+                                           "spec_step_idx")
+
+    def wrapped_model_fn(*args, **kwargs):
+        if not model_supports_spec_step:
+            kwargs.pop("spec_step_idx", None)
+        return jitted_model_fn(*args, **kwargs)
+
+    compute_logits_fn = run_compute_logits
+    embed_multimodal_fn = run_embed_multimodal
+    embed_input_ids_fn = run_embed_input_ids
+    lora_manager, model = None, None
+    combine_hidden_states_fn = combine_hidden_states
+
+    get_mrope_input_positions_fn = None if not hasattr(
+        jit_model,
+        "get_mrope_input_positions") else jit_model.get_mrope_input_positions
+
+    multimodal_fns = MultiModalInterface(
+        precompile_vision_encoder_fn=precompile_vision_encoder_fn,
+        embed_multimodal_fn=embed_multimodal_fn,
+        embed_input_ids_fn=embed_input_ids_fn,
+        get_mrope_input_positions_fn=get_mrope_input_positions_fn,
+    )
+
+    if pooler is not None:
+        import torchax
+        from torchax.interop import torch_view
+        from vllm.v1.pool.metadata import PoolingMetadata
+
+        def compute_pooler_output(
+            hidden_states: jax.Array,
+            pooling_metadata: PoolingMetadata,
+            seq_lens: np.ndarray,
+            num_scheduled_tokens: Optional[np.ndarray] = None,
+        ):
+            # Performance optimization: use torch_view and move to CPU non-blocking
+            torch_states = torch_view(hidden_states)
+            with torchax.default_env():
+                torch_states = torch_states.to('cpu', non_blocking=True)
+
+                if num_scheduled_tokens is None:
+                    num_scheduled_tokens = seq_lens
+
+                # Align with our StepPool logic
+                pooling_metadata.build_pooling_cursor(
+                    num_scheduled_tokens,
+                    torch.tensor(seq_lens),
+                    device=torch_states.device,
+                )
+
+                # Execute pooling on CPU
+                outputs = pooler(torch_states, pooling_metadata)
+                return outputs
+
+        pooler_fn = compute_pooler_output
+    else:
+        pooler_fn = _not_support
+
+    state_leaves = tuple(jax.tree_util.tree_leaves(state))
+
+    return ModelInterface(
+        model_fn=wrapped_model_fn,
+        compute_logits_fn=compute_logits_fn,
+        pooler_fn=pooler_fn,
+        combine_hidden_states_fn=combine_hidden_states_fn,
+        multimodal_fns=multimodal_fns,
+        state=state,
+        state_leaves=state_leaves,
+        lora_manager=lora_manager,
+        model=jit_model,
+    )
+
+
+def get_vllm_model(
+    vllm_config: VllmConfig,
+    rng: jax.Array,
+    mesh: Mesh,
+    is_draft_model: bool = False,
+    shared_params: Optional[dict[str, jax.Array]] = None,
+) -> ModelInterface:
+    model_dtype = to_torch_dtype(vllm_config.model_config.dtype)
+    vllm_config.model_config.dtype = model_dtype
+    from tpu_inference.models.vllm.vllm_model_wrapper import VllmModelWrapper
+
+    model = VllmModelWrapper(
+        vllm_config=vllm_config,
+        rng=rng,
+        mesh=mesh,
+        is_draft_model=is_draft_model,
+    )
+    params, lora_manager = model.load_weights(shared_params=shared_params)
+
+    jit_model = model.jit_step_func()
+    compute_logits_fn = model.jit_compute_logits_func()
+    pooler_fn = model.build_pooler_func()
+    combine_hidden_states_fn = model.jit_combine_hidden_states_func()
+
+    multimodal_fns = MultiModalInterface(
+        precompile_vision_encoder_fn=getattr(
+            model.model.vllm_model,
+            "precompile_vision_encoder",
+            model.wrap_precompile_vision_encoder_fn(params),
+        ),
+        embed_multimodal_fn=model.wrap_embed_multimodal_func(),
+        embed_input_ids_fn=model.wrap_embed_input_ids_func(),
+        get_mrope_input_positions_fn=getattr(
+            model.model.vllm_model,
+            "get_mrope_input_positions",
+            None,
+        ),
+    )
+
+    # the model needs to be returned because lora weights are neither torch.nn.parameter nor torch.nn.buffer. After we load the lora weights and set it to the torch.nn.Module, we can shard it and move it to TPU.
+    # For the vllm-impl path the dispatch-side fns accept the params dict
+    # directly, so `state_leaves` is just the dict.
+    return ModelInterface(
+        model_fn=jit_model,
+        compute_logits_fn=compute_logits_fn,
+        pooler_fn=pooler_fn,
+        combine_hidden_states_fn=combine_hidden_states_fn,
+        multimodal_fns=multimodal_fns,
+        state=params,
+        state_leaves=params,
+        lora_manager=lora_manager,
+        model=model,
+    )
+
+
+def get_model(
+    vllm_config: VllmConfig,
+    rng: jax.Array,
+    mesh: Mesh,
+    is_draft_model: bool = False,
+    shared_params: Optional[dict[str, jax.Array]] = None,
+) -> ModelInterface:
+    if is_draft_model:
+        impl = envs.DRAFT_MODEL_IMPL_TYPE
+    else:
+        impl = envs.MODEL_IMPL_TYPE
+    logger.info(f"Loading model with MODEL_IMPL_TYPE={impl}")
+    if impl == "auto":
+        impl = resolve_model_architecture(vllm_config, is_draft_model)
+        logger.info(f"Resolved MODEL_IMPL_TYPE 'auto' to '{impl}'")
+
+    match impl:
+        case "flax_nnx":
+            with jax.set_mesh(mesh):
+                arch = getattr(vllm_config.model_config.hf_config,
+                               "architectures", [None])[0]
+                if vllm_config.parallel_config.pipeline_parallel_size > 1 and arch in _PP_DISABLED_MODELS:
+                    logger.warning(
+                        "PP is not fully supported on Jax flax_nnx %s models yet, fallback to vllm models.",
+                        arch)
+                    return get_vllm_model(vllm_config, rng, mesh,
+                                          is_draft_model, shared_params)
+                try:
+                    # Try to load the flax model first
+                    return get_flax_model(vllm_config, rng, mesh,
+                                          is_draft_model)
+                except UnsupportedArchitectureError as e:
+                    # Convert the error message to a string to check its contents
+                    error_msg = str(e)
+
+                    logger.warning(error_msg)
+
+                    # Fall back to the vLLM model and updating the dtype accordingly
+                    return get_vllm_model(vllm_config, rng, mesh,
+                                          is_draft_model, shared_params)
+        case "vllm":
+            return get_vllm_model(vllm_config, rng, mesh, is_draft_model,
+                                  shared_params)
+        case _:
+            raise NotImplementedError(f"Unsupported MODEL_IMPL_TYPE: {impl}")
+
+
+def resolve_model_architecture(vllm_config: VllmConfig,
+                               is_draft_model: bool) -> str:
+    """Resolves the model implementation type.
+
+    This function determines which model implementation to use based on the model
+    architecture and whether the RunAI model streamer is active.
+
+    When the RunAI model streamer is used, this function explicitly checks if
+    the JAX model supports the streaming capability. It returns 'vllm' if:
+    1. The JAX model class is found but does not have a `WeightLoader`.
+    2. The JAX model's `WeightLoader` is not a subclass of `BaseWeightLoader`.
+
+    If the architecture is not registered in JAX (UnsupportedArchitectureError),
+    this function returns the default implementation ('flax_nnx'), allowing
+    the caller to attempt loading, catch the error, log a
+    warning, and handle the fallback to 'vllm'.
+
+    Otherwise, it resolves the implementation based on whether the model's
+    architecture is in the `_VLLM_PREFERRED_ARCHITECTURES` list.
+
+    Args:
+        vllm_config: The VllmConfig object containing the model and load
+            configuration.
+
+    Returns:
+        The model implementation type.
+    """
+
+    is_runai_streamer = getattr(getattr(vllm_config, 'load_config', None),
+                                'load_format', None) == 'runai_streamer'
+    hf_config = vllm_config.speculative_config.draft_model_config.hf_config if is_draft_model else vllm_config.model_config.hf_config
+    if is_runai_streamer:
+        try:
+            # Try to get the JAX model class
+            model_class = _get_model_architecture(hf_config)
+
+            # If found, check for WeightLoader capability
+            if not hasattr(model_class, "WeightLoader") or not issubclass(
+                    getattr(model_class, "WeightLoader", object),
+                    BaseWeightLoader):
+                return "vllm"
+
+        except UnsupportedArchitectureError:
+            # Architecture not in JAX.
+            # We pass to let it fall through to the default logic below.
+            # This causes it to return "flax_nnx", which caller will try,
+            # fail, log a warning, and then fallback to "vllm".
+            pass
+
+    # Resolve "auto" based on architecture
+    architectures = getattr(hf_config, "architectures", [])
+    assert len(architectures) == 1, (
+        f"Expected exactly one architecture, got {len(architectures)}: "
+        f"{architectures}")
+    arch = architectures[0]
+    impl = "vllm" if arch in _VLLM_PREFERRED_ARCHITECTURES else "flax_nnx"
+    return impl
+
+
+def _validate_model_interface(model: Any) -> None:
+    """Validates that the model class has the required methods and signatures.
+
+    A valid model must have:
+    - An __init__ method that accepts a 'vllm_config' keyword argument.
+    - A __call__ method that accepts 'kv_caches', 'input_ids', and
+      'attention_metadata' keyword arguments.
+
+    Args:
+        model: The model class to validate.
+
+    Raises:
+        TypeError: If the model does not meet the interface requirements.
+    """
+    # Check for __init__ with vllm_config
+    model_init = getattr(model, "__init__", None)
+    if not callable(model_init):
+        raise TypeError(
+            f"Model {model.__name__} must have an __init__ method.")
+
+    if not supports_kw(model_init, "vllm_config"):
+        raise TypeError(
+            f"Model {model.__name__} __init__ method must accept a "
+            "'vllm_config' keyword argument.")
+
+    # Check for __call__ with required arguments
+    model_call = getattr(model, "__call__", None)
+    # A class object is always callable (it produces an instance).
+    # We need to check if the class _explicitly_ defines a __call__ method for its
+    # instance, which is different from `type.__call__`.
+    has_defined_call = False
+    if isinstance(model, type):
+        if any("__call__" in C.__dict__ for C in model.__mro__):
+            has_defined_call = True
+    elif callable(model_call):
+        # For an instance, a simple callable check is sufficient.
+        has_defined_call = True
+
+    if not has_defined_call:
+        raise TypeError(f"Model {model.__name__} must have a __call__ method.")
+
+    required_call_args = ("kv_caches", "input_ids", "attention_metadata")
+    missing_args = tuple(arg for arg in required_call_args
+                         if not supports_kw(model_call, arg))
+
+    if missing_args:
+        raise TypeError(
+            f"Model {model.__name__} __call__ method is missing required "
+            f"keyword arguments: {missing_args}")
+
+
+def register_model(arch: str, model: Any) -> None:
+    """
+    Registers a model class for a given architecture name.
+
+    This function registers the model with both the tpu_inference registry
+    and the vLLM registry. For vLLM, it creates a compatible wrapper
+    around the JAX model.
+
+    Args:
+        arch: The name of the architecture (e.g., "LlamaForCausalLM").
+        model: The JAX model class to register (e.g., a flax.nnx.Module).
+    """
+    _validate_model_interface(model)
+
+    # Register with tpu_inference registry for the JAX backend
+    _MODEL_REGISTRY[arch] = model
+
+    # Create a vLLM-compatible wrapper for the JAX model class.
+    # This wrapper inherits from the JAX model and torch.nn.Module
+    # to pass vLLM's type checks. It is not meant to be instantiated
+    # or executed by vLLM's PyTorch backend.
+    def unimplemented_forward(
+        self,
+        input_ids: "torch.Tensor",
+        positions: "torch.Tensor",
+        intermediate_tensors: Optional[Any] = None,
+        inputs_embeds: Optional["torch.Tensor"] = None,
+    ) -> None:
+        raise NotImplementedError(
+            "This is a JAX model and does not implement the PyTorch forward method."
+        )
+
+    # Same as `forward`, this is a dummy method to satisfy vLLM's type checks.
+    def unimplemented_embed_input_ids(
+        self,
+        input_ids: "torch.Tensor",
+        positions: "torch.Tensor",
+        inputs_embeds: Optional["torch.Tensor"] = None,
+    ) -> "torch.Tensor":
+        raise NotImplementedError(
+            "This is a JAX model and does not implement the PyTorch embed_input_ids method."
+        )
+
+    # We need a custom __init__ that only calls torch.nn.Module's init,
+    # to avoid triggering JAX logic when vLLM inspects the class.
+    def wrapper_init(self, *args, **kwargs):
+        torch.nn.Module.__init__(self)
+
+    # Dynamically create the wrapper class that is a subclass of both the
+    # JAX model and torch.nn.Module.
+    VllmCompatibleModel = type(
+        f"VllmCompatible{model.__name__}",
+        (model, torch.nn.Module),
+        {
+            "__init__": wrapper_init,
+            "forward": unimplemented_forward,
+            "embed_input_ids": unimplemented_embed_input_ids,
+            # Prevent vLLM from trying to load weights into this dummy class.
+            "load_weights": lambda self, *args, **kwargs: None,
+        })
+
+    # Register the wrapped model with vLLM's registry.
+    from vllm.model_executor.models.registry import ModelRegistry
+    ModelRegistry.register_model(arch, VllmCompatibleModel)
+    logger.info(
+        f"Registered JAX model {arch} with tpu_inference and vLLM registries.")
