@@ -29,7 +29,11 @@ The settings are:
   `ONEHOT_MOE_PERMUTE_THRESHOLD=2048`
 
 ## Create the GKE Cluster
-Create your tpu7x cluster using [XPK](https://github.com/AI-Hypercomputer/xpk).
+Create your tpu7x cluster with [Cluster Toolkit](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-7x#deploy-tpu-7x-cluster), starting from
+the `examples/gke-tpu-7x/gke-tpu-7x.yaml` blueprint. Set these variables in your deployment file:
+
+- `tpu_topology: 2x2x1`, `num_slices: 1`
+
 The next sections assume you have created a cluster with tpu7x
 nodes.
 

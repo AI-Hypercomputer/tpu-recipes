@@ -78,8 +78,9 @@ Notes on the images:
 ## Prerequisites
 
 - A GKE cluster with **two free tpu7x `2x2x1` nodes** and a CPU node pool for
-  the router and the client. You can create the cluster with
-  [XPK](https://github.com/AI-Hypercomputer/xpk).
+  the router and the client. Create it with
+  [Cluster Toolkit](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-7x#deploy-tpu-7x-cluster), starting from the `examples/gke-tpu-7x/gke-tpu-7x.yaml` blueprint, with
+  `tpu_topology: 2x2x1`, `num_slices: 2` in your deployment file.
 - The Compute Engine persistent disk CSI driver (enabled by default on GKE),
   for one 600 GiB Hyperdisk Balanced volume per engine.
 - Egress from the cluster to Hugging Face and `ghcr.io`.

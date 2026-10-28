@@ -53,7 +53,18 @@ Optional settings in `values.yaml`, empty by default:
 
 ## Create the GKE Cluster
 
-Create your tpu7x cluster using [XPK](https://github.com/AI-Hypercomputer/xpk).
+Create your tpu7x cluster with [Cluster Toolkit](https://docs.cloud.google.com/cluster-toolkit/docs/deploy/gke/gke-tpu-7x#deploy-tpu-7x-cluster), starting from
+the `examples/gke-tpu-7x/gke-tpu-7x.yaml` blueprint. Set these variables in your deployment file:
+
+- `tpu_topology: 2x2x2`, `num_slices: 1`
+
+This recipe runs the server as a [LeaderWorkerSet](https://lws.sigs.k8s.io/docs/installation/), which Cluster Toolkit doesn't install. After you create the cluster, install it:
+
+```shell
+gcloud container clusters get-credentials ${CLUSTER_NAME} --location=${LOCATION}
+kubectl apply --server-side -f https://github.com/kubernetes-sigs/lws/releases/download/v1.0.0/manifests.yaml
+```
+
 The next sections assume you have created a cluster with a tpu7x 2x2x2 node
 pool.
 
