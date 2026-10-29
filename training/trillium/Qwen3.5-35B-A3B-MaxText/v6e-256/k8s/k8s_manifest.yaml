@@ -1,0 +1,76 @@
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: ${WORKLOAD_NAME}
+  annotations:
+    alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool # 1:1 job replica to node pool assignment
+spec:
+  # ttlSecondsAfterFinished: 43200
+  failurePolicy:
+    rules:
+      - action: FailJobSet
+        onJobFailureReasons:
+        - PodFailurePolicy
+    maxRestarts: 0
+  replicatedJobs:
+    - name: slice-job
+      replicas: 1
+      template:
+        spec:
+          parallelism: 64    # Equal to the number of VMs per v6e-256 slice
+          completions: 64    # Same as the above
+          backoffLimit: 0    # Fail the job immediately if any pod fails
+          podFailurePolicy:
+            rules:
+            - action: FailJob
+              onPodConditions: []
+              onExitCodes:
+                containerName: jax-tpu
+                operator: NotIn
+                values: [42,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255]
+          template:
+            spec:
+              restartPolicy: Never
+              nodeSelector:
+                cloud.google.com/gke-tpu-accelerator: tpu-v6e-slice
+                cloud.google.com/gke-tpu-topology: 16x16
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
+              terminationGracePeriodSeconds: 30
+              containers:
+              - name: jax-tpu
+                image: ${WORKLOAD_IMAGE}
+                ports:
+                - containerPort: 8471
+                - containerPort: 8080
+                securityContext:
+                  privileged: true
+                command:
+                - bash
+                - -c
+                - |
+                  echo XPK Start: $(date);
+                  _sigterm() { kill -SIGTERM "$PID" 2>/dev/null; }
+                  trap _sigterm SIGTERM;
+                  (export TPU_STDERR_LOG_LEVEL=0 && export TPU_MIN_LOG_LEVEL=0 && export TF_CPP_MIN_LOG_LEVEL=0 && export TPU_VMODULE=real_program_continuator=1 && set -e && set -o pipefail && export ENABLE_PATHWAYS_PERSISTENCE='1' && export LIBTPU_INIT_ARGS=' --xla_tpu_scoped_vmem_limit_kib=49152 --xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_relayout_group_size_threshold_for_reduce_scatter=1 --xla_tpu_assign_all_reduce_scatter_layout=true --xla_tpu_enable_data_parallel_all_reduce_opt=true --xla_tpu_data_parallel_opt_different_sized_ops=true --xla_tpu_enable_async_collective_fusion=true --xla_tpu_enable_async_collective_fusion_fuse_all_gather=false --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_overlap_compute_collective_tc=true --xla_enable_async_all_gather=true --xla_tpu_enable_async_collective_fusion_fuse_all_reduce=false --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_enable_all_reduce_offload_tracing=true --xla_tpu_enable_all_experimental_scheduler_features=true --xla_tpu_enable_scheduler_memory_pressure_tracking=true --xla_tpu_host_transfer_overlap_limit=24 --xla_tpu_aggressive_opt_barrier_removal=ENABLED --xla_lhs_prioritize_async_depth_over_stall=ENABLED --xla_tpu_enable_ag_backward_pipelining=true --xla_should_allow_loop_variant_parameter_in_chain=ENABLED --xla_should_add_loop_invariant_op_in_chain=ENABLED --xla_max_concurrent_host_send_recv=100 --xla_tpu_scheduler_percent_shared_memory_limit=100 --xla_latency_hiding_scheduler_rerun=2 --xla_jf_spmd_threshold_for_windowed_einsum_mib=1000000 ' && export JAX_PLATFORMS='tpu,cpu' && export ENABLE_PJRT_COMPATIBILITY='true' && exec python3 -u -m maxtext.trainers.pre_train.train src/maxtext/configs/base.yml model_name=qwen3.5-35b-a3b dataset_type=synthetic per_device_batch_size=8 gradient_accumulation_steps=1 num_moe_token_chunks=1 moe_use_direct_token_gather=True moe_cache_argsort=True router_topk_matmul_vjp=True qwen3_5_sublayer_remat=True gdn_chunk_impl=fast gdn_recurrence_impl=fused gdn_pallas_batch_map=False gdn_inverse_precision=default gdn_pallas_heads_per_block=32 moe_pallas_row_gather=True moe_pallas_row_gather_sites=route moe_pallas_combine=True max_target_length=8192 ici_fsdp_parallelism=256 ici_expert_parallelism=1 shard_exp_on_fsdp=True num_vocab_tiling=16 dtype=bfloat16 weight_dtype=bfloat16 scan_layers=True remat_policy=full attention=flash megablox=True sparse_matmul=True use_tokamax_gmm=False use_custom_sort_vjp=True use_tokamax_splash=False wi_tile_fwd_batch_seq=512 wi_tile_fwd_embed_dim=2048 wi_tile_fwd_mlp_dim=512 wi_tile_dlhs_batch_seq=512 wi_tile_dlhs_mlp_dim=512 wi_tile_dlhs_embed_dim=2048 wi_tile_drhs_batch_seq=512 wi_tile_drhs_embed_dim=2048 wi_tile_drhs_mlp_dim=512 wo_tile_fwd_batch_seq=512 wo_tile_fwd_mlp_dim=512 wo_tile_fwd_embed_dim=2048 wo_tile_dlhs_batch_seq=512 wo_tile_dlhs_embed_dim=2048 wo_tile_dlhs_mlp_dim=512 wo_tile_drhs_batch_seq=512 wo_tile_drhs_mlp_dim=512 wo_tile_drhs_embed_dim=2048 sa_block_q=1024 sa_block_kv=1024 sa_block_kv_compute=512 sa_block_q_dkv=1024 sa_block_kv_dkv=1024 sa_block_kv_dkv_compute=512 sa_block_q_dq=1024 sa_block_kv_dq=1024 sa_use_fused_bwd_kernel=True reuse_example_batch=1 use_iota_embed=True enable_checkpointing=False opt_type=adamw gcs_metrics=False enable_tensorboard=False save_config_to_gcs=False steps=30 base_output_directory=${BASE_OUTPUT_DIR} run_name=${WORKLOAD_NAME}) & PID=$!;
+                  while kill -0 $PID 2>/dev/null;
+                      do sleep 5;
+                  done;
+                  wait $PID;
+                  EXIT_CODE=$?;
+                  echo XPK End: $(date);
+                  echo EXIT_CODE=$EXIT_CODE;
+                  exit $EXIT_CODE
+                resources:
+                  limits:
+                    google.com/tpu: 4
+                volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm-2
+              tolerations:
+              - operator: "Exists"
+                key: google.com/tpu
+              volumes:
+              - emptyDir:
+                  medium: Memory
+                name: dshm-2
