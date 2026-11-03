@@ -1,85 +1,311 @@
-# Qwen3-Coder-30B-A3B-Instruct-FP8 on Ironwood (TPU v7x) with vLLM-TorchTPU
+Serve Qwen3-Coder-30B-A3B-Instruct-FP8 with vLLM (TorchTPU) on Ironwood TPU (Single-Host)
+========================================================================================
 
-This recipe provides the deployment manifest and benchmarking instructions for serving **Qwen3-Coder-30B-A3B-Instruct-FP8** on a single-host Google Cloud TPU v7x (Ironwood) node (`2x2x1` topology, 4 chips / 8 TensorCores) using the PyTorch-native [vLLM-TorchTPU](https://github.com/vllm-project/vllm-torchtpu) engine.
+In this guide, we show how to serve Qwen3-Coder-30B-A3B-Instruct-FP8 (`Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8`, a Mixture-of-Experts model with 64 routed experts) with vLLM using the **TorchTPU** backend on Ironwood (TPU v7x) using GKE.
+
+We deploy it across a single-host **tpu7x-standard-4t** node pool (`2x2x1` topology, 1 host, 4 TPU v7x chips, 8 TensorCores) using a Kubernetes **Deployment**, with **Tensor Parallelism (TP) size of 8**, **Data Parallelism (DP) size of 1**, and **Expert Parallelism (EP)**.
+
+This recipe is a functional single-host reference configuration.
+
+Verified Models
+---------------
+
+The following Qwen3-Coder-30B model is verified for deployment on TPU with the vLLM TorchTPU backend.
+
+| Model | Parameters | Min TPUs (Chips) | HuggingFace |
+| :--- | :--- | :--- | :--- |
+| Qwen3-Coder-30B-FP8 | 30B MoE (64 experts, top-8) | 4× (`2x2x1`, 1 host) | [Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8) |
+
+Prerequisites
+-------------
+
+1. A GKE cluster with TPU v7x support (GKE version `1.34.0-gke.2201000` or later).
+2. GCloud CLI and Kubectl installed and configured.
+3. A Hugging Face account and access token with access to `Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8`.
 
 ---
 
-## Model & Hardware Overview
+Step 1: Define Parameters
+-------------------------
 
-* **Model**: [Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8](https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8)
-* **Architecture**: Mixture-of-Experts (MoE) with 64 routed experts
-* **Hardware**: Google Cloud TPU v7x (`2x2x1`, 4 chips / 8 TensorCores)
-* **Parallelism**: Tensor Parallelism (`tp=8`), Data Parallelism (`dp=1`), Expert Parallelism (`--enable-expert-parallel`)
-* **Attention Backend**: Pallas Custom Ragged Paged Attention (`--attention-backend=CUSTOM`)
-* **Precision**: FP8 Weights and KV Cache (`--kv-cache-dtype=fp8`)
+Export the necessary environment variables for your Google Cloud project and GKE cluster:
 
----
-
-## Verified Benchmark Performance (TPU v7x 2x2x1)
-
-The following benchmark metrics were verified using InferenceX (`benchmark_serving.py`) on a single-host TPU v7x node with 100% request completion:
-
-| Context Window | Input Length (ISL) | Output Length (OSL) | Request Rate (req/s) | Output Tok/s (Aggregate) | Output Tok/s per Chip | TTFT Mean (ms) | TTFT P50 (ms) | TPOT Mean (ms) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Standard (1K / 1K)** | 1024 | 1024 | 9.29 | 8,581.64 | 2,145.41 | 8,157.79 | 6,448.04 | 17.81 |
-| **Extended (1K / 2K)** | 1024 | 2048 | 6.77 | 12,496.00 | 3,124.01 | 6,996.25 | 2,145.70 | 14.60 |
+```bash
+export PROJECT_ID="<YOUR_PROJECT_ID>"
+export CLUSTER_NAME="<YOUR_CLUSTER_NAME>"
+export REGION="<YOUR_REGION>"
+export ZONE="<YOUR_ZONE>"
+export NODEPOOL_NAME="qwen3-coder-30b-pool"
+```
 
 ---
 
-## Deployment Instructions
+Step 2: Create the Single-Host TPU Node Pool
+--------------------------------------------
 
-### 1. Create Kubernetes Namespace and Secret
+Create a single-host TPU v7x (Ironwood) nodepool with the `tpu7x-standard-4t` machine type and a `2x2x1` topology. This creates 1 node (host) with 4 chips (8 TensorCores).
+
+```bash
+gcloud container node-pools create ${NODEPOOL_NAME} \
+    --project=${PROJECT_ID} \
+    --location=${REGION} \
+    --node-locations=${ZONE} \
+    --num-nodes=1 \
+    --machine-type=tpu7x-standard-4t \
+    --tpu-topology=2x2x1 \
+    --cluster=${CLUSTER_NAME}
+```
+
+---
+
+Step 3: Setup Kubernetes Configurations
+---------------------------------------
+1. Configure `kubectl` to communicate with your cluster:
+
+```bash
+gcloud container clusters get-credentials ${CLUSTER_NAME} --location=${REGION} --project=${PROJECT_ID}
+```
+2. Create the Namespace `vllm-qwen3-coder-30b` if you want to run it in an isolated namespace (recommended):
 
 ```bash
 kubectl create namespace vllm-qwen3-coder-30b
-
-# Create secret with your Hugging Face API token
-kubectl create secret generic hf-secret \
-  --namespace=vllm-qwen3-coder-30b \
-  --from-literal=hf_api_token=INSERT_YOUR_TOKEN
 ```
-
-### 2. Deploy vLLM Server
-
-Deploy the server using the companion manifest:
+3. Create a Kubernetes secret for your Hugging Face token in the namespace:
 
 ```bash
-kubectl apply -f qwen3-coder-30b-server.yaml
+export HF_TOKEN="YOUR_HUGGING_FACE_API_TOKEN"
+kubectl create secret generic hf-secret \
+    --namespace=vllm-qwen3-coder-30b \
+    --from-literal=hf_api_token=${HF_TOKEN}
 ```
 
-Wait until the pod enters `Running` state and the vLLM server is initialized:
+---
+
+Step 4: Apply the vLLM Server Manifest
+--------------------------------------
+
+Apply the vLLM server manifest using the provided [qwen3-coder-30b-server.yaml](qwen3-coder-30b-server.yaml) file in this directory:
+
+```bash
+cd inference/ironwood/vLMM/vLLM-TorchTPU/Qwen3-Coder-30B
+kubectl apply -f qwen3-coder-30b-server.yaml
+```
+Monitor the progress of the server deployment:
 
 ```bash
 kubectl get pods -n vllm-qwen3-coder-30b -w
-kubectl logs -f -n vllm-qwen3-coder-30b deployment/vllm-qwen3-coder-30b
-```
-
----
-
-## Benchmarking with InferenceX
-
-Run the benchmark client against the deployed server:
+```You can check the server logs on the pod using:
 
 ```bash
-python3 benchmark_serving.py \
-  --host=vllm-qwen3-coder-30b-service.vllm-qwen3-coder-30b \
-  --port=8000 \
-  --dataset-name=random \
-  --tokenizer=Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 \
-  --random-input-len=1024 \
-  --random-output-len=1024 \
-  --num-prompts=320 \
-  --max-concurrency=320 \
-  --random-range-ratio=0.8 \
-  --ignore-eos \
-  --skip-chat-template
+kubectl logs -n vllm-qwen3-coder-30b deployment/vllm-qwen3-coder-30b -c vllm-torchtpu -f
+```Once the server has successfully loaded the model, you should see logs like:
+
+```text
+(APIServer pid=1) INFO:     Started server process [1]
+(APIServer pid=1) INFO:     Waiting for application startup.
+(APIServer pid=1) INFO:     Application startup complete.
 ```
 
 ---
 
-## Cleanup
+Step 5: Interact with the Model (Optional)
+------------------------------------------
+You can test the server using a port forward and curl:
+1. Port forward the vLLM service to port `000` on your local machine:
+
+```bash
+kubectl port-forward -n vllm-qwen3-coder-30b service/vllm-qwen3-coder-30b-service 8000:8000
+```2. Run a curl request:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+ "model": "Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8",
+ "messages": [
+ {"role": "user", "content": "Hello! Write a Python quicksort function."}
+ ],
+ "max_tokens": 100,
+ "temperature": 0.7
+ }'
+```
+
+---
+
+Step 6: Run Serving Benchmarks
+--------------------------------
+We use the `InferenceX` client from SemiAnalysisAI to perform serving benchmarks against our running vLLM server. We test two workloads: **1K Input / 1K Output** and **1K Input / 2K Output**.
+
+### Workload A: 1K Input / 1O Output (1k/1k)
+Save the following manifest as `qwen3-coder-30b-benchmark-1k1k.yaml`:
+
+```yaml
+apiVersion: v1
+lind: Pod
+metadata:
+  name: qwen3-coder-30b-bench-1k1k
+  namespace: vllm-qwen3-coder-30b
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 60
+  containers:
+  - name: vllm-bench
+    image: vllm/vllm-torchtpu:v0.29.0
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      while ! curl -sf http://vllm-qwen3-coder-30b-service:8000/health; do sleep 30 && echo 'Waiting for server...'; done
+      apt-get update && apt-get install -y git && \
+      git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex && \
+      cd /workspace/inferencex && \
+      git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd && \
+      python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py \
+        --backend=vllm \
+        --request-rate=inf \
+        --percentile-metrics='ttft,tpot,itl,e2el' \
+        --host=vllm-qwen3-coder-30b-service \
+        --port=8000 \
+        --model=Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 \
+        --tokenizer=Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 \
+        --dataset-name=random \
+        --random-input-len=1024 \
+        --random-output-len=1024 \
+        --random-range-ratio=0.8 \
+        --num-prompts=320 \
+        --max-concurrency=320 \
+        --ignore-eos
+    env:
+    - name: HUGGING_FACE_HUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: hf_api_token
+          name: hf-secret
+```Apply it using `kubectl`:
+
+```bash
+kubectl apply -f qwen3-coder-30b-benchmark-1k1k.yaml
+``gCheck the logs of the benchmark run:
+
+```bash
+kubectl logs -n vllm-qwen3-coder-30b qwen3-coder-30b-bench-1k2k -f
+```When complete, clean up the benchmark pod:
+
+```bash
+kubectl delete -f qwen3-coder-30b-benchmark-1k1k.yaml
+``g
+
+---
+
+### Workload B: 1K Input / 2O Output (1k/2k )
+Save the following manifest as `qwen3-coder-30b-benchmark-1k2k.yaml`:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qwen3-coder-30b-bench-1k2k
+  namespace: vllm-qwen3-coder-30b
+spec:
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 60
+  containers:
+  - name: vllm-bench
+    image: vllm/vllm-torchtpu:v0.29.0
+    command: ["/bin/bash", "-c"]
+    args: 
+    - |
+      while ! curl -sf http://vllm-qwen3-coder-30b-service:8000/health; do sleep 30 && echo 'Waiting for server...'; done
+      apt-get update && apt-get install-y git && \
+      git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex && \
+      cd /workspace/inferencex && \
+      git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd && \
+      python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py \
+        --backend=vllm \
+        --request-rate=inf \
+        --percentile-metrics='ttft,tpot,e2el' \
+        --host=vllm-qwen3-coder-30b-service \
+        --port=8000 \
+        --model=Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 \
+        --tokenizer=Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 \
+        --dataset-name=random \
+        --random-input-len=1024 \
+        --random-output-len=2048 \
+        --random-range-ratio=0.8 \
+        --num-prompts=320 \
+        --max-concurrency=320 \
+        --ignore-eos
+    env:
+    - name: HUGGING_FACE_HUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: hf_api_token
+          name: hf-secret
+```Apply it using `kubectl`:
+
+```bash
+kubectl apply -f qwen3-coder-30b-benchmark-1k2k.yaml
+``gCheck the logs of the benchmark run:
+
+```bash
+kubectl logs -n vllm-qwen3-coder-30b qwen3-coder-30b-bench-1k2k -f
+```When complete, clean up the benchmark pod:
+
+```bash
+kubectl delete -f qwen3-coder-30b-benchmark-1k2k.yaml
+``g
+
+---
+
+### Example Benchmark Output
+
+The benchmark client will print a table resembling the following:
+
+```text
+=========== Serving Benchmark Result ============
+Successful requests:                     320
+Failed requests:                         0
+Benchmark duration (s):                  38.18
+Total input tokens:                      327680
+Total generated tokens:                  327680
+Request throughput (req/s):              9.29
+Output token throughput (tok/s):         8581.64
+Peak output token throughput (tok/s):    9214.30
+Peak concurrent requests:                320
+Total Token throughput (tok/s):          17163.28
+---------------Time to First Token----------------
+Mean TTFT (ms):                          8157.79
+Median TTFT (ms):                        6448.04
+P99 TTFT (ms):                           21159.00
+-----Time per Output Token (excl. 1st token)------
+Mean TPOT (ms):                          17.81
+Median TPOT (ms):                        17.64
+P99 TPOT (ms):                           23.15
+---------------Inter-token Latency----------------
+Mean ITL (ms):                           17.80
+Median ITL (ms):                         17.60
+P99 ITL (ms):                            23.00
+----------------End-to-end Latency----------------
+Mean E2EL (ms):                          26372.45
+Median E2EL (ms):                        24501.12
+P99 E2EL (ms):                           44802.30
+==================================================
+```
+
+---
+
+Step 7: Cleanup
+---------------
+When you are finished with the benchmark and no longer need the server, you can tear down the resources:
+1. Delete the vLLM server:
 
 ```bash
 kubectl delete -f qwen3-coder-30b-server.yaml
-kubectl delete namespace vllm-qwen3-coder-30b
+```
+2. (Optional) Delete the GKE TPU node pool:
+
+```bash
+gcloud container node-pools delete ${NODEPOOL_NAME} \
+    --cluster=${CLUSTER_NAME} \
+    --location=${REGION} \
+    --project=${PROJECT_ID}
 ```
