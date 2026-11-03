@@ -1,7 +1,7 @@
 Serve Qwen3.5-35B-A3B-FP8 with vLLM (TorchTPU) on Ironwood (TPU v7x) (Single-Host)
 =============================================================================
 
-In this guide, we show how to serve Qwen3.5-35B-A3B-FP8 (`Qwen/Qwen3.5-35B-A3B-FP8`, a Mixture-of-Experts model with 256 routed experts) with vLLM using the **TorchTPU\** backend on Ironwood (TPU v7x) using GKE.
+In this guide, we show how to serve Qwen3.5-35B-A3B-FP8 (`Qwen/Qwen3.5-35B-A3B-FP8`, a Mixture-of-Experts model with 256 routed experts) with vLLM using the **TorchTPU** backend on Ironwood (TPU v7x) using GKE.
 
 We deploy it across a single-host **tpu7x-standard-4t** node pool (`2x2x1` topology, 1 host, 4 TPU v7x chips, 8 TensorCores) using a Kubernetes **Deployment**, with **Tensor Parallelism (TP) size of 4**, **Data Parallelism (DP) size of 1**, and **Expert Parallelism (EP)**.
 
@@ -14,7 +14,7 @@ The following Qwen3.5-35B model is verified for deployment on TPU with the vLLM 
 
 | Model | Parameters | Min TPUs (Chips) | HuggingFace |
 | :--- | :--- | :--- | :--- |
-| Qwen3.5-35B-FP8 | 35B D¯E (256 experts, top-8) | 4Â— (`2x2x1`, 1 host) | [Qwen/Qwen3.5-35B-A3B-FP8](https://huggingface.co/Qwen/Qwen3.5-35B-A3B-FP8) |
+| Qwen3.5-35B-FP8 | 35B MoE (256 experts, top-8) | 4x (`2x2x1`, 1 host) | [Qwen/Qwen3.5-35B-A3B-FP8](https://huggingface.co/Qwen/Qwen3.5-35B-A3B-FP8) |
 
 Prerequisites
 -------------
@@ -27,6 +27,7 @@ Prerequisites
 
 Step 1: Define Parameters
 -------------------------
+
 Export the necessary environment variables for your Google Cloud project and GKE cluster:
 
 ```bash
@@ -59,6 +60,7 @@ gcloud container node-pools create ${NODEPOOL_NAME} \
 
 Step 3: Setup Kubernetes Configurations
 ---------------------------------------
+
 1. Configure `kubectl` to communicate with your cluster:
 
 ```bash
