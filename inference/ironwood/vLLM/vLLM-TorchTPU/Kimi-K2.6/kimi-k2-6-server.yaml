@@ -105,7 +105,7 @@ spec:
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
-          failureThreshold: 120
+          failureThreshold: 240
         livenessProbe:
           httpGet:
             path: /health

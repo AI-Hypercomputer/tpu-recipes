@@ -156,7 +156,25 @@ spec:
     args:
     - |
       while ! curl -sf http://vllm-kimi-k2-6-service:8000/health; do sleep 30 && echo 'Waiting for server...'; done
-      apt-get update && apt-get install -y git &&       git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex &&       cd /workspace/inferencex &&       git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd &&       python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py         --backend=vllm         --request-rate=inf         --percentile-metrics='ttft,tpot,itl,e2el'         --host=vllm-kimi-k2-6-service         --port=8000         --model=moonshotai/Kimi-K2.6         --tokenizer=moonshotai/Kimi-K2.6         --dataset-name=random         --random-input-len=8192         --random-output-len=1024         --random-range-ratio=1.0         --num-prompts=200         --max-concurrency=64         --ignore-eos
+      apt-get update && apt-get install -y git && \
+      git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex && \
+      cd /workspace/inferencex && \
+      git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd && \
+      python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py \
+        --backend=vllm \
+        --request-rate=inf \
+        --percentile-metrics='ttft,tpot,itl,e2el' \
+        --host=vllm-kimi-k2-6-service \
+        --port=8000 \
+        --model=moonshotai/Kimi-K2.6 \
+        --tokenizer=moonshotai/Kimi-K2.6 \
+        --dataset-name=random \
+        --random-input-len=8192 \
+        --random-output-len=1024 \
+        --random-range-ratio=1.0 \
+        --num-prompts=200 \
+        --max-concurrency=64 \
+        --ignore-eos
     env:
     - name: HUGGING_FACE_HUB_TOKEN
       valueFrom:
