@@ -262,32 +262,32 @@ The benchmark client will print a table resembling the following:
 
 ```text
 =========== Serving Benchmark Result ============
-Successful requests:                     320
-Failed requests:                         0
-Benchmark duration (s):                  38.18
-Total input tokens:                      327680
-Total generated tokens:                  327680
-Request throughput (req/s):              9.29
-Output token throughput (tok/s):         8581.64
-Peak output token throughput (tok/s):    9214.30
-Peak concurrent requests:                320
-Total Token throughput (tok/s):          17163.28
+Successful requests:                     xxx
+Failed requests:                         xxx
+Benchmark duration (s):                  xxx
+Total input tokens:                      xxx
+Total generated tokens:                  xxx
+Request throughput (req/s):              xx
+Output token throughput (tok/s):         xxx
+Peak output token throughput (tok/s):    xxx
+Peak concurrent requests:                xxx
+Total Token throughput (tok/s):          xxx
 ---------------Time to First Token----------------
-Mean TTFT (ms):                          8157.79
-Median TTFT (ms):                        6448.04
-P99 TTFT (ms):                           21159.00
+Mean TTFT (ms):                          xxx
+Median TTFT (ms):                        xxx
+P99 TTFT (ms):                           xxx
 -----Time per Output Token (excl. 1st token)------
-Mean TPOT (ms):                          17.81
-Median TPOT (ms):                        17.64
-P99 TPOT (ms):                           23.15
+Mean TPOT (ms):                          xxx
+Median TPOT (ms):                        xxx
+P99 TPOT (ms):                           xxx
 ---------------Inter-token Latency----------------
-Mean ITL (ms):                           17.80
-Median ITL (ms):                         17.60
-P99 ITL (ms):                            23.00
+Mean ITL (ms):                           xxx
+Median ITL (ms):                        xxx
+P99 ITL (ms):                            xxx
 ----------------End-to-end Latency----------------
-Mean E2EL (ms):                          26372.45
-Median E2EL (ms):                        24501.12
-P99 E2EL (ms):                           44802.30
+Mean E2EL (ms):                          xxx
+Median E2EL (ms):                        xxx
+P99 E2EL (ms):                           xxx
 ==================================================
 ```
 
