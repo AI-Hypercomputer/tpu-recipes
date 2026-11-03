@@ -80,23 +80,43 @@ spec:
           value: "tpu"
         - name: PJRT_DEVICE
           value: "TPU"
-        ports:
-        - containerPort: 8000
-        resources:
-          limits:
-            google.com/tpu: "4"
-          requests:
-            google.com/tpu: "4"
-        readinessProbe:
-          tcpSocket:
-            port: 8000
-          initialDelaySeconds: 15
-          periodSeconds: 10
-        volumeMounts:
-        - name: data-volume
-          mountPath: /data
-        - name: dshm
-          mountPath: /dev/shm
+        - name: VLLM_PLUGINS
+          value: "torchtpu"
+      ports:
+      - name: http
+        containerPort: 8000
+      resources:
+        limits:
+          google.com/tpu: "4"
+        requests:
+          google.com/tpu: "4"
+      startupProbe:
+        httpGet:
+          path: /v1/models
+          port: http
+        initialDelaySeconds: 15
+        periodSeconds: 30
+        timeoutSeconds: 5
+        failureThreshold: 120
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: http
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /v1/models
+          port: http
+        periodSeconds: 5
+        timeoutSeconds: 2
+        failureThreshold: 3
+      volumeMounts:
+      - name: data-volume
+        mountPath: /data
+      - name: dshm
+        mountPath: /dev/shm
       volumes:
       - name: dshm
         emptyDir:
