@@ -154,16 +154,7 @@ spec:
     command: ["/bin/bash", "-c"]
     args:
     - |
-      while ! curl -sf http://vllm-qwen3-coder-30b-service:8000/health; do sleep 30 && echo 'Waiting for server...'; done
-      apt-get update && apt-get install -y git && \
-      git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex && \
-      cd /workspace/inferencex && \
-      git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd && \
-      python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py \
-        --backend=vllm \
-        --request-rate=inf \
-        --percentile-metrics='ttft,tpot,itl,e2el' \
-        --host=vllm-qwen3-coder-30b-service \
+      while ! curl -sf http://vllm-qwen3-coder-30b-service \
         --port=8000 \
         --model=Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 \
         --tokenizer=Qwen/Qwen3-Coder-30B-A3B-Instruct-FP8 \
