@@ -1,7 +1,7 @@
-Serve Qwen3-Coder-480B-A3B-Instruct-FP8 with vLLM (TorchTPU) on Ironwood TPU (Single-Host)
+Serve Qwen3-Coder-480B-A35B-Instruct-FP8 with vLLM (TorchTPU) on Ironwood TPU (Single-Host)
 ==========================================================================================
 
-In this guide, we show how to serve Qwen3-Coder-480B-A3B-Instruct-FP8 (`Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8`, a Mixture-of-Experts model with 384 routed experts) with vLLM using the **TorchTPU** backend on Ironwood (TPU v7x) using GKE.
+In this guide, we show how to serve Qwen3-Coder-480B-A35B-Instruct-FP8 (`Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8`, a Mixture-of-Experts model with 384 routed experts) with vLLM using the **TorchTPU** backend on Ironwood (TPU v7x) using GKE.
 
 We deploy it across a single-host **tpu7x-standard-4t** node pool (`2x2x1` topology, 1 host, 4 TPU v7x chips, 8 TensorCores) using a Kubernetes **Deployment**, with **Tensor Parallelism (TP) size of 8**, **Data Parallelism (DP) size of 1**, and **Expert Parallelism (EP)**.
 
@@ -14,14 +14,14 @@ The following Qwen3-Coder-480B model is verified for deployment on TPU with the 
 
 | Model | Parameters | Min TPUs (Chips) | HuggingFace |
 | :--- | :--- | :--- | :--- |
-| Qwen3-Coder-480B-FP8 | 480B MoE (384 experts, top-8) | 4x (`2x2x1`, 1 host) | [Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8](https://huggingface.co/Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8) |
+| Qwen3-Coder-480B-FP8 | 480B MoE (384 experts, top-8) | 4x (`2x2x1`, 1 host) | [Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8](https://huggingface.co/Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8) |
 
 Prerequisites
 -------------
 
 1. A GKE cluster with TPU v7x support (GKE version `1.34.0-gke.2201000` or later).
 2. GCloud CLI and Kubectl installed and configured.
-3. A Hugging Face account and access token with access to `Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8`.
+3. A Hugging Face account and access token with access to `Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8`.
 
 ---
 
@@ -122,7 +122,7 @@ kubectl port-forward -n vllm-qwen3-coder-480b service/vllm-qwen3-coder-480b-serv
 
 ```bash
 curl http://localhost:8000/v1/chat/completions     -H "Content-Type: application/json"     -d '{
- "model": "Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8",
+ "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
  "messages": [
  {"role": "user", "content": "Hello! Write a Python quicksort function."}
  ],
@@ -158,7 +158,7 @@ spec:
     args:
     - |
       while ! curl -sf http://vllm-qwen3-coder-480b-service:8000/health; do sleep 30 && echo 'Waiting for server...'; done
-      apt-get update && apt-get install -y git &&       git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex &&       cd /workspace/inferencex &&       git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd &&       python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py         --backend=vllm         --request-rate=inf         --percentile-metrics='ttft,tpot,itl,e2el'         --host=vllm-qwen3-coder-480b-service         --port=8000         --model=Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8         --tokenizer=Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8         --dataset-name=random         --random-input-len=1024         --random-output-len=1024         --random-range-ratio=0.8         --num-prompts=256         --max-concurrency=256         --ignore-eos
+      apt-get update && apt-get install -y git &&       git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex &&       cd /workspace/inferencex &&       git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd &&       python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py         --backend=vllm         --request-rate=inf         --percentile-metrics='ttft,tpot,itl,e2el'         --host=vllm-qwen3-coder-480b-service         --port=8000         --model=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8         --tokenizer=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8         --dataset-name=random         --random-input-len=1024         --random-output-len=1024         --random-range-ratio=0.8         --num-prompts=256         --max-concurrency=256         --ignore-eos
     env:
     - name: HUGGING_FACE_HUB_TOKEN
       valueFrom:
@@ -207,7 +207,7 @@ spec:
     args:
     - |
       while ! curl -sf http://vllm-qwen3-coder-480b-service:8000/health; do sleep 30 && echo 'Waiting for server...'; done
-      apt-get update && apt-get install -y git &&       git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex &&       cd /workspace/inferencex &&       git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd &&       python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py         --backend=vllm         --request-rate=inf         --percentile-metrics='ttft,tpot,itl,e2el'         --host=vllm-qwen3-coder-480b-service         --port=8000         --model=Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8         --tokenizer=Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8         --dataset-name=random         --random-input-len=1024         --random-output-len=8192         --random-range-ratio=0.8         --num-prompts=128         --max-concurrency=128         --ignore-eos
+      apt-get update && apt-get install -y git &&       git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex &&       cd /workspace/inferencex &&       git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd &&       python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py         --backend=vllm         --request-rate=inf         --percentile-metrics='ttft,tpot,itl,e2el'         --host=vllm-qwen3-coder-480b-service         --port=8000         --model=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8         --tokenizer=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8         --dataset-name=random         --random-input-len=1024         --random-output-len=8192         --random-range-ratio=0.8         --num-prompts=128         --max-concurrency=128         --ignore-eos
     env:
     - name: HUGGING_FACE_HUB_TOKEN
       valueFrom:
@@ -256,7 +256,7 @@ spec:
     args:
     - |
       while ! curl -sf http://vllm-qwen3-coder-480b-service:8000/health; do sleep 30 && echo 'Waiting for server...'; done
-      apt-get update && apt-get install -y git &&       git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex &&       cd /workspace/inferencex &&       git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd &&       python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py         --backend=vllm         --request-rate=inf         --percentile-metrics='ttft,tpot,itl,e2el'         --host=vllm-qwen3-coder-480b-service         --port=8000         --model=Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8         --tokenizer=Qwen/Qwen3-Coder-480B-A3B-Instruct-FP8         --dataset-name=random         --random-input-len=8192         --random-output-len=1024         --random-range-ratio=0.8         --num-prompts=128         --max-concurrency=128         --ignore-eos
+      apt-get update && apt-get install -y git &&       git clone https://github.com/SemiAnalysisAI/InferenceX.git /workspace/inferencex &&       cd /workspace/inferencex &&       git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd &&       python3 /workspace/inferencex/utils/bench_serving/benchmark_serving.py         --backend=vllm         --request-rate=inf         --percentile-metrics='ttft,tpot,itl,e2el'         --host=vllm-qwen3-coder-480b-service         --port=8000         --model=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8         --tokenizer=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8         --dataset-name=random         --random-input-len=8192         --random-output-len=1024         --random-range-ratio=0.8         --num-prompts=128         --max-concurrency=128         --ignore-eos
     env:
     - name: HUGGING_FACE_HUB_TOKEN
       valueFrom:
