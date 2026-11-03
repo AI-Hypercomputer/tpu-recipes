@@ -1,0 +1,148 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen3-coder-480b
+  namespace: vllm-qwen3-coder-480b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-qwen3-coder-480b
+  template:
+    metadata:
+      labels:
+        app: vllm-qwen3-coder-480b
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: 2x2x1
+      tolerations:
+      - key: "google.com/tpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: vllm-torchtpu
+        image: vllm/vllm-torchtpu:v0.29.0
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-c"]
+        args: 
+        - |
+          set -e
+          mkdir -p "${HF_HOME}" "${TMPDIR}"
+
+          vllm serve Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+            --tokenizer=Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+            --host=0.0.0.0 \
+            --port=8000 \
+            --download-dir=/data \
+            --tensor-parallel-size=8 \
+            --data-parallel-size=1 \
+            --max-model-len=10240 \
+            --max-num-seqs=512 \
+            --max-num-batched-tokens=8192 \
+            --kv-cache-dtype=fp8 \
+            --quantization=fp8 \
+            --gpu-memory-utilization=0.95 \
+            --no-enable-prefix-caching \
+            --enable-expert-parallel \
+            --attention-backend=CUSTOM \
+            --async-scheduling
+        env:
+        - name: HF_HOME
+          value: "/data/huggingface_cache"
+        - name: TMPDIR
+          value: "/data/tmp"
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_api_token
+        - name: VLLM_DISABLE_COMPILE_CACHE
+          value: "1"
+        - name: VLLM_WORKER_MULTIPROC_METHOD
+          value: "spawn"
+        - name: TORCHINDUCTOR_AUTOGRAD_CACHE
+          value: "0"
+        - name: VLLM_ENGINE_READY_TIMEOUT_S
+          value: "7200"
+        - name: VLLM_TARGET_DEVICE
+          value: "tpu"
+        - name: PJRT_DEVICE
+          value: "TPU"
+        - name: VLLM_PLUGINS
+          value: "torchtpu"
+      ports:
+      - name: http
+        containerPort: 8000
+      resources:
+        limits:
+          google.com/tpu: "4"
+        requests:
+          google.com/tpu: "4"
+      startupProbe:
+        httpGet:
+          path: /v1/models
+          port: http
+        initialDelaySeconds: 30
+        periodSeconds: 30
+        timeoutSeconds: 5
+        failureThreshold: 120
+      livenessProbe:
+        httpGet:
+          path: /health
+          port: http
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /v1/models
+          port: http
+        periodSeconds: 5
+        timeoutSeconds: 2
+        failureThreshold: 3
+      volumeMounts:
+      - name: data-volume
+        mountPath: /data
+      - name: dshm
+        mountPath: /dev/shm
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: data-volume
+        ephemeral:
+          volumeClaimTemplate:
+            spec:
+              accessModes:
+              - ReadWriteOnce
+              storageClassName: hyperdisk-balanced-tpu
+              resources:
+                requests:
+                  storage: 1000Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-qwen3-coder-480b-service
+  namespace: vllm-qwen3-coder-480b
+spec:
+  selector:
+    app: vllm-qwen3-coder-480b
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
