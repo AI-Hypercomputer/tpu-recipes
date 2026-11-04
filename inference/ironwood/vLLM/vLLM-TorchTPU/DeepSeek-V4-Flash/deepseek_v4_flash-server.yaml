@@ -1,0 +1,146 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache-pvc
+  namespace: vllm-deepseek-v4-flash
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Gi
+  storageClassName: hyperdisk-balanced-tpu
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-deepseek-v4-flash
+  namespace: vllm-deepseek-v4-flash
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-deepseek-v4-flash
+  template:
+    metadata:
+      labels:
+        app: vllm-deepseek-v4-flash
+    spec:
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: 2x2x1
+      tolerations:
+      - key: "google.com/tpu"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: vllm-torchtpu
+        image: vllm/vllm-torchtpu:v0.29.0
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          mkdir -p "${HF_HOME}" "${TMPDIR}" "${VLLM_CACHE_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}"
+
+          vllm serve deepseek-ai/DeepSeek-V4-Flash \
+            --served-model-name=deepseek-ai/DeepSeek-V4-Flash \
+            --host=0.0.0.0 \
+            --port=8000 \
+            --download-dir=/data \
+            --tensor-parallel-size=1 \
+            --data-parallel-size=8 \
+            --enable-expert-parallel \
+            --quantization=deepseek_v4_fp8 \
+            --kv-cache-dtype=fp8_e4m3 \
+            --trust-remote-code \
+            --max-model-len=9216 \
+            --max-num-batched-tokens=1024 \
+            --max-num-seqs=256 \
+            --no-enable-prefix-caching \
+            --gpu-memory-utilization=0.9 \
+            --async-scheduling \
+            --generation-config="vllm" \
+            --override-generation-config='{"do_sample": false, "temperature": 0.0, "model": "deepseek-ai/DeepSeek-V4-Flash"}'
+        env:
+        - name: HF_HOME
+          value: "/data/huggingface_cache"
+        - name: TMPDIR
+          value: "/data/tmp"
+        - name: VLLM_CACHE_ROOT
+          value: "/data/vllm_cache"
+        - name: TORCHINDUCTOR_CACHE_DIR
+          value: "/data/torchinductor_cache"
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-secret
+              key: hf_api_token
+        - name: MOE_REQUANTIZE_WEIGHT_DTYPE
+          value: "fp4"
+        - name: MOE_REQUANTIZE_BLOCK_SIZE
+          value: "512"
+        - name: TPU_ROPE_CACHE_ROW_MAJOR
+          value: "1"
+        - name: TPU_MOE_HASH_TABLE_ROW_MAJOR
+          value: "1"
+        - name: TORCH_DIST_TIMEOUT
+          value: "1200"
+        - name: VLLM_RPC_TIMEOUT
+          value: "1200000"
+        - name: VLLM_SHM_BROADCAST_TIMEOUT_S
+          value: "1200"
+        - name: VLLM_ENGINE_ITERATION_TIMEOUT_S
+          value: "1200"
+        - name: VLLM_ENGINE_READY_TIMEOUT_S
+          value: "3600"
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            google.com/tpu: "4"
+          requests:
+            google.com/tpu: "4"
+        readinessProbe:
+          tcpSocket:
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /data
+        - name: dshm
+          mountPath: /dev/shm
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+      - name: hf-cache
+        persistentVolumeClaim:
+          claimName: hf-cache-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-deepseek-v4-flash-service
+  namespace: vllm-deepseek-v4-flash
+spec:
+  selector:
+    app: vllm-deepseek-v4-flash
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000

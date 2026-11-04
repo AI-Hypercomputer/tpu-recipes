@@ -1,0 +1,297 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: vllm-deepseek-v4-pro
+  namespace: vllm-deepseek-v4-pro
+  annotations:
+    leaderworkerset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: 2
+    restartPolicy: RecreateGroupOnPodRestart
+    leaderTemplate:
+      metadata:
+        labels:
+          role: leader
+          app: vllm-deepseek-v4-pro
+      spec:
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x2
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          image: vllm/vllm-torchtpu:v0.29.0
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -e
+            mkdir -p "${HF_HOME}" "${TMPDIR}" "${VLLM_CACHE_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}"
+
+            # Start the Ray head node on the leader (LWS_WORKER_INDEX=0).
+            ray start --head --port=6379
+
+            # Wait until both hosts (leader + worker, 16 TPU devices total) have joined the Ray cluster.
+            until ray status 2>/dev/null | grep -q "16.0 TPU"; do
+              echo "Waiting for all TPU hosts to join the Ray cluster..."
+              sleep 5
+            done
+            ray status
+
+            vllm serve deepseek-ai/DeepSeek-V4-Pro-0813 \
+              --served-model-name=deepseek-ai/DeepSeek-V4-Pro-0813 \
+              --host=0.0.0.0 \
+              --port=8000 \
+              --download-dir=/data \
+              --tensor-parallel-size=1 \
+              --data-parallel-size=16 \
+              --enable-expert-parallel \
+              --enable-ep-weight-filter \
+              --safetensors-load-strategy=prefetch \
+              --quantization=deepseek_v4_fp8 \
+              --kv-cache-dtype=fp8_e4m3 \
+              --trust-remote-code \
+              --max-model-len=9216 \
+              --max-num-batched-tokens=1024 \
+              --max-num-seqs=256 \
+              --no-enable-prefix-caching \
+              --gpu-memory-utilization=0.90 \
+              --async-scheduling
+          env:
+          - name: HF_HOME
+            value: "/data/huggingface_cache"
+          - name: TMPDIR
+            value: "/data/tmp"
+          - name: VLLM_CACHE_ROOT
+            value: "/data/vllm_cache"
+          - name: TORCHINDUCTOR_CACHE_DIR
+            value: "/data/torchinductor_cache"
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: hf_api_token
+          - name: TPU_MULTIHOST_BACKEND
+            value: "ray"
+          - name: RAY_ADDRESS
+            value: "127.0.0.1:6379"
+          - name: TPU_PROCESS_ADDRESSES
+            value: ""
+          - name: VLLM_DISABLE_COMPILE_CACHE
+            value: "1"
+          - name: VLLM_WORKER_MULTIPROC_METHOD
+            value: "spawn"
+          - name: TORCHINDUCTOR_AUTOGRAD_CACHE
+            value: "0"
+          - name: VLLM_ENGINE_READY_TIMEOUT_S
+            value: "10800"
+          - name: VLLM_TARGET_DEVICE
+            value: "tpu"
+          - name: PJRT_DEVICE
+            value: "TPU"
+          - name: MOE_REQUANTIZE_WEIGHT_DTYPE
+            value: "fp4"
+          - name: MOE_REQUANTIZE_BLOCK_SIZE
+            value: "512"
+          - name: TORCH_DIST_TIMEOUT
+            value: "1200"
+          - name: VLLM_RPC_TIMEOUT
+            value: "1200000"
+          - name: VLLM_SHM_BROADCAST_TIMEOUT_S
+            value: "1200"
+          - name: VLLM_ENGINE_ITERATION_TIMEOUT_S
+            value: "1200"
+          - name: TPU_ROPE_CACHE_ROW_MAJOR
+            value: "1"
+          - name: TPU_MOE_HASH_TABLE_ROW_MAJOR
+            value: "1"
+          - name: USE_MOE_FUSED_EP_KERNEL
+            value: "1"
+          - name: MOE_FUSED_EP_ENABLE_W4A8
+            value: "1"
+          - name: MOE_FUSED_EP_V2_HEIGHT_RUNGS_OVERRIDE
+            value: "2"
+          - name: TPU_MOE_SKIP_PADDED_TOKENS
+            value: "1"
+          - name: RAGGED_GATHER_REDUCE_VERSION
+            value: "v3"
+          - name: LIBTPU_INIT_ARGS
+            value: "--xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_enable_async_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true --xla_tpu_sparse_core_all_gather_offload_min_size_in_bytes=262144"
+          - name: VLLM_RAY_EXTRA_ENV_VARS_TO_COPY
+            value: "MOE_REQUANTIZE_WEIGHT_DTYPE,MOE_REQUANTIZE_BLOCK_SIZE,TPU_ROPE_CACHE_ROW_MAJOR,TPU_MOE_HASH_TABLE_ROW_MAJOR,TORCH_DIST_TIMEOUT,USE_MOE_FUSED_EP_KERNEL,MOE_FUSED_EP_ENABLE_W4A8,MOE_FUSED_EP_V2_HEIGHT_RUNGS_OVERRIDE,TPU_MOE_SKIP_PADDED_TOKENS,RAGGED_GATHER_REDUCE_VERSION,LIBTPU_INIT_ARGS"
+          ports:
+          - containerPort: 8000
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+          - name: data-volume
+            mountPath: /data
+          - name: dshm
+            mountPath: /dev/shm
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: data-volume
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                storageClassName: hyperdisk-balanced-tpu
+                resources:
+                  requests:
+                    storage: 1500Gi
+    workerTemplate:
+      metadata:
+        labels:
+          role: worker
+          app: vllm-deepseek-v4-pro
+      spec:
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x2
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          image: vllm/vllm-torchtpu:v0.29.0
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -e
+            mkdir -p "${HF_HOME}" "${TMPDIR}" "${VLLM_CACHE_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}"
+
+            # Wait for the Ray head on the leader to be reachable.
+            until (echo > "/dev/tcp/${LWS_LEADER_ADDRESS}/6379") 2>/dev/null; do
+              echo "Waiting for Ray head at ${LWS_LEADER_ADDRESS}:6379..."
+              sleep 5
+            done
+
+            # Join the Ray cluster as a worker node (LWS_WORKER_INDEX!=0).
+            ray start --address="${LWS_LEADER_ADDRESS}:6379" --block
+          env:
+          - name: HF_HOME
+            value: "/data/huggingface_cache"
+          - name: TMPDIR
+            value: "/data/tmp"
+          - name: VLLM_CACHE_ROOT
+            value: "/data/vllm_cache"
+          - name: TORCHINDUCTOR_CACHE_DIR
+            value: "/data/torchinductor_cache"
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: hf_api_token
+          - name: TPU_MULTIHOST_BACKEND
+            value: "ray"
+          - name: TPU_PROCESS_ADDRESSES
+            value: ""
+          - name: VLLM_DISABLE_COMPILE_CACHE
+            value: "1"
+          - name: VLLM_WORKER_MULTIPROC_METHOD
+            value: "spawn"
+          - name: TORCHINDUCTOR_AUTOGRAD_CACHE
+            value: "0"
+          - name: VLLM_ENGINE_READY_TIMEOUT_S
+            value: "10800"
+          - name: VLLM_TARGET_DEVICE
+            value: "tpu"
+          - name: PJRT_DEVICE
+            value: "TPU"
+          - name: MOE_REQUANTIZE_WEIGHT_DTYPE
+            value: "fp4"
+          - name: MOE_REQUANTIZE_BLOCK_SIZE
+            value: "512"
+          - name: TORCH_DIST_TIMEOUT
+            value: "1200"
+          - name: VLLM_RPC_TIMEOUT
+            value: "1200000"
+          - name: VLLM_SHM_BROADCAST_TIMEOUT_S
+            value: "1200"
+          - name: VLLM_ENGINE_ITERATION_TIMEOUT_S
+            value: "1200"
+          - name: TPU_ROPE_CACHE_ROW_MAJOR
+            value: "1"
+          - name: TPU_MOE_HASH_TABLE_ROW_MAJOR
+            value: "1"
+          - name: USE_MOE_FUSED_EP_KERNEL
+            value: "1"
+          - name: MOE_FUSED_EP_ENABLE_W4A8
+            value: "1"
+          - name: MOE_FUSED_EP_V2_HEIGHT_RUNGS_OVERRIDE
+            value: "2"
+          - name: TPU_MOE_SKIP_PADDED_TOKENS
+            value: "1"
+          - name: RAGGED_GATHER_REDUCE_VERSION
+            value: "v3"
+          - name: LIBTPU_INIT_ARGS
+            value: "--xla_tpu_use_minor_sharding_for_major_trivial_input=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false --xla_tpu_ars_combiner_threshold_in_bytes=0 --xla_tpu_enable_async_collective_merger=false --xla_enable_async_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true --xla_tpu_sparse_core_all_gather_offload_min_size_in_bytes=262144"
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          volumeMounts:
+          - name: data-volume
+            mountPath: /data
+          - name: dshm
+            mountPath: /dev/shm
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: data-volume
+          ephemeral:
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                - ReadWriteOnce
+                storageClassName: hyperdisk-balanced-tpu
+                resources:
+                  requests:
+                    storage: 1500Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-deepseek-v4-pro-service
+  namespace: vllm-deepseek-v4-pro
+spec:
+  selector:
+    app: vllm-deepseek-v4-pro
+    role: leader
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
