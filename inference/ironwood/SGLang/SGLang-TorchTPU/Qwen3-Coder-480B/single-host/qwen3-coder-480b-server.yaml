@@ -1,0 +1,215 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache-pvc
+  namespace: sglang-qwen3-coder-480b
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1000Gi
+  storageClassName: hyperdisk-balanced-tpu
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sglang-qwen3-coder-480b
+  namespace: sglang-qwen3-coder-480b
+spec:
+  replicas: 1
+  # TPU node pools are fixed-size: a RollingUpdate needs a spare node to surge
+  # onto, so use Recreate to avoid rollout deadlocks.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sglang-qwen3-coder-480b
+  template:
+    metadata:
+      labels:
+        app: sglang-qwen3-coder-480b
+    spec:
+      terminationGracePeriodSeconds: 75
+      nodeSelector:
+        cloud.google.com/gke-tpu-accelerator: tpu7x
+        cloud.google.com/gke-tpu-topology: 2x2x1
+      tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+      containers:
+        - name: sglang-torchtpu
+          image: lmsysorg/sglang:v0.1.0-tpu
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -euo pipefail
+              mkdir -p "${HF_HOME}" "${TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_ROOT}"
+              # Flags follow the upstream sglang-torchtpu recipe for this model on one
+              # tpu7x host (benchmark/tpu/recipe/qwen3_coder_480b/server.sh): 4 chips x
+              # 2 TensorCores = TP 8, the 160 experts split EP 8, FP8 weights + fp8_e4m3 KV
+              # cache. Sized for 8k-input / 1k-output requests at 64 concurrent sequences
+              # (context 9216, KV pool 64 x 9216 tokens); raise --context-length and
+              # --max-total-tokens together for longer prompts.
+              exec python3 -m sglang.launch_server \
+                --model-path Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8 \
+                --host 0.0.0.0 \
+                --port 8000 \
+                --device tpu \
+                --dtype bfloat16 \
+                --tp-size 8 \
+                --ep-size 8 \
+                --attention-backend pallas_tpu_rpa_batched \
+                --grammar-backend none \
+                --quantization fp8 \
+                --kv-cache-dtype fp8_e4m3 \
+                --tpu-fp8-runtime channelwise \
+                --page-size 256 \
+                --mem-fraction-static 0.8 \
+                --max-running-requests 64 \
+                --torch-compile-max-bs 64 \
+                --context-length 9216 \
+                --chunked-prefill-size 8192 \
+                --max-prefill-tokens 8192 \
+                --max-total-tokens 589824 \
+                --enable-torch-compile \
+                --tpu-compile-tracer direct \
+                --sampling-defaults openai \
+                --enable-fused-qk-norm-rope \
+                --disable-radix-cache \
+                --watchdog-timeout 3600
+          env:
+            - name: HF_HOME
+              value: /data/huggingface
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: hf_api_token
+                  optional: true
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: hf_api_token
+                  optional: true
+            # Static TPU serving environment from sglang-torchtpu benchmark/tpu/common_env.sh.
+            - name: SGLANG_PLATFORM
+              value: "tpu"
+            - name: SGLANG_ENABLE_HEALTH_ENDPOINT_GENERATION
+              value: "0"
+            - name: SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN
+              value: "1"
+            - name: SGLANG_TPU_OVERLAP_PROFILE
+              value: "1"
+            # MoE: dense matmul for small permute / combine (upstream recipe value).
+            - name: SGLANG_TPU_FUSED_MOE_PERMUTE_DENSE_THRESHOLD
+              value: "2048"
+            - name: TORCH_TPU_INTERNAL_MATERIALIZE_COLLECTIVE_TENSORS
+              value: "false"
+            # The batched RPA kernel needs dynamic SMEM negotiation.
+            - name: TORCH_TPU_INTERNAL_XLA_OPTIONS
+              value: "xla_tpu_use_dynamic_smem_negotiation=true"
+            # Persist compiled TPU programs on the data disk across restarts.
+            - name: TORCH_TPU_INTERNAL_TIER2_COMPILATION_CACHE
+              value: "torchtpu_qwen3_coder_480b"
+            - name: TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_ROOT
+              value: /data/torch_tpu_compile_cache
+            - name: TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_LOCAL_BACKUP_TASK
+              value: "1"
+            - name: TORCH_LOGS
+              value: "+recompiles"
+            - name: TPU_ENABLE_DIAGNOSTIC_COORDINATOR
+              value: "0"
+            - name: TPU_DISABLE_DIAGNOSTIC_COORDINATOR
+              value: "1"
+            - name: TPU_ENABLE_TELEMETRY_HARVESTING
+              value: "0"
+            - name: TPU_ENABLE_TELEMETRY
+              value: "0"
+            - name: ENABLE_TPU_TELEMETRY
+              value: "0"
+            - name: TPU_TELEMETRY_INTERVAL_SECONDS
+              value: "86400"
+            - name: TPU_TELEMETRY_INTERVAL_SEC
+              value: "86400"
+            - name: TPU_DIAGNOSTIC_HARVESTER_INTERVAL_SEC
+              value: "86400"
+            - name: LIBTPU_INIT_ARGS
+              value: "--xla_tpu_enable_async_collective_fusion=true --xla_tpu_overlap_compute_collective_tc=true --xla_tpu_enable_async_collective_fusion_multiple_steps=true --xla_tpu_enable_latency_hiding_scheduler=true --xla_latency_hiding_scheduler_rerun=10 --xla_tpu_all_gather_collective_matmul_mode=post_spmd_conservative --xla_tpu_reduce_scatter_collective_matmul_mode=post_spmd_conservative --xla_tpu_enable_sparse_core_collective_offload_all_reduce=false --xla_tpu_offload_gather_to_sparsecore=false --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=false"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            limits:
+              memory: 800Gi
+              google.com/tpu: "4"
+            requests:
+              cpu: "64"
+              memory: 600Gi
+              google.com/tpu: "4"
+          # Downloading ~480 GB of weights and compiling the TPU programs takes a while
+          # on first start; allow up to 4 hours before the pod is considered failed.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 480
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /data
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 100Gi
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sglang-qwen3-coder-480b-service
+  namespace: sglang-qwen3-coder-480b
+spec:
+  selector:
+    app: sglang-qwen3-coder-480b
+  type: ClusterIP
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
