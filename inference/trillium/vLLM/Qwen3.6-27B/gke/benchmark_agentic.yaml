@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vllm-benchmark-agentic
+  namespace: qwen-serving
+spec:
+  restartPolicy: Never
+  containers:
+    - name: benchmark-client
+      image: vllm/vllm-tpu:latest
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          echo "Installing dependencies..." && \
+          pip install datasets pandas && \
+          echo "Preparing dataset..." && \
+          # To run Medium Context (~6.4K tokens), use prepare_medium.py and set concurrency to 20
+          # To run Long Context (~27K tokens), use prepare_long.py and set concurrency to 10
+          python3 /app/scripts/prepare_medium.py && \
+          echo "Running benchmark..." && \
+          vllm bench serve \
+              --host vllm-qwen-service \
+              --port 8000 \
+              --backend vllm \
+              --model Qwen/Qwen3.6-27B-FP8 \
+              --dataset-name custom \
+              --dataset-path /tmp/agentic_coding.jsonl \
+              --num-prompts 50 \
+              --max-concurrency 120 \
+              --custom-output-len 256 \
+              --seed 100
+      volumeMounts:
+        - mountPath: /app/scripts
+          name: script-volume
+  volumes:
+    - name: script-volume
+      configMap:
+        name: benchmark-prep-script
