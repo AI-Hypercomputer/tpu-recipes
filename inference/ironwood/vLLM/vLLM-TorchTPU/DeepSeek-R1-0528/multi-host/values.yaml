@@ -1,0 +1,846 @@
+"client":
+  "bash_command": |-
+    while ! curl -sf http://${SERVER_HOSTNAME}:8000/health; do sleep 30 && echo 'Waiting for server...'; done
+
+    apt-get update && apt-get install -y git && git clone https://github.com/SemiAnalysisAI/InferenceX.git /ubench/inferencex && cd /ubench/inferencex && git checkout f6c1f5b5d122bc4a62b93c9bd2919dfef68ccbcd && \
+    set -o pipefail && mkdir -p /tmp/results && python3 /ubench/inferencex/utils/bench_serving/benchmark_serving.py \
+    --backend=vllm \
+    --request-rate=inf \
+    --percentile-metrics='ttft,tpot,itl,e2el' \
+    --dataset-name=random \
+    --random-input-len=6144 \
+    --random-output-len=2048 \
+    --random-range-ratio=0.3 \
+    --host=${SERVER_HOSTNAME} \
+    --port=8000 \
+    --model=deepseek-ai/DeepSeek-R1-0528 \
+    --tokenizer=deepseek-ai/DeepSeek-R1-0528 \
+    --trust-remote-code \
+    --ignore-eos \
+    --num-warmups=0 \
+    --num-prompts=512 \
+    --max-concurrency=64 2>&1 | tee /tmp/results/vllm_bench.txt
+  "client_type": |-
+    INFERENCEX
+  "external_server_host": !!null |-
+    null
+  "image": |-
+    vllm/vllm-torchtpu:v0.29.0
+"custom_volume_mounts": []
+"decode":
+  "bash_command": !!null |-
+    null
+  "data_disk_size": |-
+    100Gi
+  "engine_label": !!null |-
+    null
+  "image": !!null |-
+    null
+  "kv_port": !!null |-
+    null
+  "model_impl_type": !!null |-
+    null
+  "num_chips_per_node": !!int |-
+    1
+  "num_nodes": !!int |-
+    1
+  "phased_profiling_dir": !!null |-
+    null
+  "pod_ip_env_vars": []
+  "profile": !!bool |-
+    false
+  "pvc_mounts": []
+  "readiness_probe": !!null |-
+    null
+  "replicas": !!int |-
+    1
+  "server_env_vars": {}
+  "topology": |-
+    1x1x1
+  "worker_bash_command": !!null |-
+    null
+"gcp_service_account": !!null |-
+  null
+"gcsfuse":
+  "enabled": !!bool |-
+    true
+  "volumes":
+  - "bucketName": |-
+      <YOUR_BUCKET_NAME>
+    "mountOptions": |-
+      implicit-dirs,metadata-cache:negative-ttl-secs:0
+    "mountPath": |-
+      /job-logs
+    "name": |-
+      gcs-job-logs
+    "readOnly": !!bool |-
+      false
+"gke_reservation": !!null |-
+  null
+"hf_token": !!null |-
+  null
+"is_multi_host": !!bool |-
+  true
+"k8s_service_account": !!null |-
+  null
+"kueue_local_queue": |-
+  default
+"kueue_priority_class": |-
+  medium
+"kueue_required_topology": !!null |-
+  null
+"persistent_volume_claims": []
+"persistent_volumes": []
+"placement_policy": |-
+  tpu7x-16-2x2x2-placement-policy
+"prefill":
+  "bash_command": !!null |-
+    null
+  "data_disk_size": |-
+    100Gi
+  "engine_label": !!null |-
+    null
+  "image": !!null |-
+    null
+  "kv_port": !!null |-
+    null
+  "model_impl_type": !!null |-
+    null
+  "num_chips_per_node": !!int |-
+    1
+  "num_nodes": !!int |-
+    1
+  "phased_profiling_dir": !!null |-
+    null
+  "pod_ip_env_vars": []
+  "profile": !!bool |-
+    false
+  "pvc_mounts": []
+  "readiness_probe": !!null |-
+    null
+  "replicas": !!int |-
+    1
+  "server_env_vars": {}
+  "topology": |-
+    1x1x1
+  "worker_bash_command": !!null |-
+    null
+"proxy":
+  "bash_command": !!null |-
+    null
+  "image": !!null |-
+    null
+  "port": !!int |-
+    10000
+"run_mode": !!int |-
+  0
+"server":
+  "bash_command": |-
+    cat > /tmp/ubench_ensure_tokenizer_deps.sh <<'UBENCH_BUNDLED_SCRIPT_EOF'
+    #!/bin/bash
+    # Ensures fast-tokenizer deps (sentencepiece, tiktoken) exist on a vLLM pod.
+    #
+    # Some vLLM images ship without sentencepiece or tiktoken. When a fast
+    # tokenizer.json is unavailable (e.g. a flaky or incomplete HF download),
+    # transformers converts a slow tokenizer to a fast one, which needs one of
+    # them; otherwise EngineCore dies with "Couldn't instantiate the backend
+    # tokenizer" in a RecreateGroup crash-loop. Installing them once, only when
+    # absent, makes tokenizer instantiation robust on every server pod (leader
+    # driver and Ray worker actors alike).
+    #
+    # Copied into the pod and run by vllm_inference._generate_server_setup_command().
+    # Best-effort: install failures are logged but never fail the launch script.
+
+    echo 'Ensuring fast-tokenizer deps (sentencepiece, tiktoken)...'
+    for py in python3 /usr/local/bin/python3 /usr/local/bin/python3.12 /usr/bin/python3; do
+      command -v "${py}" >/dev/null 2>&1 || continue
+      if "${py}" -c 'import sentencepiece, tiktoken' >/dev/null 2>&1; then
+        continue
+      fi
+      "${py}" -m pip install --no-cache-dir sentencepiece tiktoken 2>&1 | tail -2
+    done
+    echo 'tokenizer-deps done'
+    exit 0
+    UBENCH_BUNDLED_SCRIPT_EOF
+    bash /tmp/ubench_ensure_tokenizer_deps.sh || echo 'ensure_tokenizer_deps.sh failed; continuing'
+    cat > /tmp/ubench_tpu_connector_pd_notify.py <<'UBENCH_BUNDLED_SCRIPT_EOF'
+    """Prefill KV-release helpers that the ``pd_notify`` patch adds to tpu_inference.
+
+    ``tpu_inference_patches.py`` copies this file next to tpu_inference's
+    ``distributed/tpu_connector.py`` as ``ubench_pd_notify.py`` and patches
+    ``TPUConnectorWorker`` to call these functions with ``self`` as ``worker``.
+
+    In P/D disaggregation, prefill registers each finished request's KV copy with
+    the JAX transfer server (``await_pull``), which holds its own reference until
+    decode pulls it. These helpers make prefill drop that reference when decode
+    reports the pull done (or skipped it) and when the pull times out.
+
+    Two threads touch a request's state:
+
+    * the notification listener thread, which receives decode's "pull done"
+      messages (``drop_pull_entry`` on a known request, ``on_unknown_pull_done``
+      otherwise); and
+    * the worker thread, which registers the request, calls ``await_pull`` and
+      then ``release_if_pull_done``, and later expires it
+      (``release_timed_out_pull``).
+
+    A notification can arrive before the worker thread registers the request, so
+    the listener remembers it and the worker thread releases the request right
+    after ``await_pull``. A per-worker lock makes that hand-off atomic, so a
+    notification is never remembered after the worker thread has already checked
+    for it.
+
+    This module runs inside the vLLM server: it must stay standard-library only
+    and must not import tpu_inference.
+    """
+
+    import dataclasses
+    import datetime
+    import logging
+    import threading
+    from typing import Any
+
+    # Attribute on the TPUConnectorWorker that holds this module's per-worker state.
+    _STATE_ATTR = "_ubench_pd_notify_state"
+    _STATE_INIT_LOCK = threading.Lock()
+
+
+    @dataclasses.dataclass
+    class _State:
+      """Per-worker state shared by the listener and worker threads.
+
+      Attributes:
+        lock: Guards ``early_pull_done`` and the release hand-off.
+        early_pull_done: UUIDs whose "pull done" notification arrived before the
+          worker thread registered the request.
+      """
+
+      lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+      early_pull_done: set[int] = dataclasses.field(default_factory=set)
+
+
+    def _get_state(worker: Any) -> _State:
+      """Returns the worker's state, creating it on first use."""
+      state = worker.__dict__.get(_STATE_ATTR)
+      if state is None:
+        with _STATE_INIT_LOCK:
+          state = worker.__dict__.setdefault(_STATE_ATTR, _State())
+      return state
+
+
+    def drop_pull_entry(worker: Any, uuid: int, logger: logging.Logger) -> None:
+      """Frees the transfer server's reference to the KV copy registered as uuid.
+
+      The transfer server keeps a registered copy until decode pulls it. This
+      replaces the entry with an empty one that expires at once, so the copy is
+      freed even if it is never pulled. Never raises.
+
+      Args:
+        worker: The TPUConnectorWorker.
+        uuid: Transfer UUID of the request.
+        logger: Logger for failures.
+      """
+      try:
+        try:
+          worker.kv_transfer_server.await_pull(
+              uuid, [], timeout=datetime.datetime.now()
+          )
+        except TypeError:  # jaxlib without await_pull timeouts.
+          worker.kv_transfer_server.await_pull(uuid, [])
+      except Exception as e:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "TPUConnector Worker %s --> drop pull entry failed | uuid=%s | %s",
+            worker.node_id,
+            uuid,
+            e,
+        )
+
+
+    def _mark_pull_done(worker: Any, req_id: str, uuid: int) -> None:
+      """Marks req_id done as the listener does: frees its buffer, expires it."""
+      worker.kv_pull_uuid_to_req_id_map.pop(uuid, None)
+      entry = worker.reqs_wait_pull.get(req_id)
+      if entry is None:
+        return
+      buffer, _, buffer_index = entry
+      if buffer_index != -1 and worker.host_kv_pool is not None:
+        worker.host_kv_pool.return_buffer(buffer_index, buffer)
+      entry[1] = -1
+      entry[2] = -1
+
+
+    def on_unknown_pull_done(
+        worker: Any, uuid: int, logger: logging.Logger
+    ) -> None:
+      """Handles a notification for a uuid the listener did not find registered.
+
+      Called on the listener thread. If the worker thread registered the request
+      after the listener's lookup, releases it now; otherwise remembers the uuid
+      for ``release_if_pull_done``.
+
+      Args:
+        worker: The TPUConnectorWorker.
+        uuid: Transfer UUID from the notification.
+        logger: Logger for failures.
+      """
+      state = _get_state(worker)
+      with state.lock:
+        req_id = worker.kv_pull_uuid_to_req_id_map.get(uuid)
+        if req_id is None:
+          state.early_pull_done.add(uuid)
+          return
+        _mark_pull_done(worker, req_id, uuid)
+      drop_pull_entry(worker, uuid, logger)
+
+
+    def release_if_pull_done(
+        worker: Any, req_id: str, uuid: int, logger: logging.Logger
+    ) -> None:
+      """Releases req_id if it was reported done; call right after await_pull.
+
+      Called on the worker thread. Covers notifications that arrived before the
+      request was registered (remembered by ``on_unknown_pull_done``) and those
+      handled by the listener while ``await_pull`` was still registering the copy,
+      whose ``drop_pull_entry`` the new registration then replaced.
+
+      Args:
+        worker: The TPUConnectorWorker.
+        req_id: Request ID.
+        uuid: Transfer UUID of the request.
+        logger: Logger for failures.
+      """
+      state = _get_state(worker)
+      with state.lock:
+        if uuid in state.early_pull_done:
+          state.early_pull_done.discard(uuid)
+          _mark_pull_done(worker, req_id, uuid)
+        else:
+          entry = worker.reqs_wait_pull.get(req_id)
+          if entry is not None and entry[1] != -1:
+            return  # Not reported done yet; the listener or timeout releases it.
+      drop_pull_entry(worker, uuid, logger)
+
+
+    def release_timed_out_pull(
+        worker: Any, req_id: str, logger: logging.Logger
+    ) -> None:
+      """Frees the transfer server's copy of a request whose pull timed out.
+
+      Args:
+        worker: The TPUConnectorWorker.
+        req_id: Request ID.
+        logger: Logger for failures.
+      """
+      timed_out = [
+          uuid
+          for uuid, rid in list(worker.kv_pull_uuid_to_req_id_map.items())
+          if rid == req_id
+      ]
+      for uuid in timed_out:
+        worker.kv_pull_uuid_to_req_id_map.pop(uuid, None)
+        drop_pull_entry(worker, uuid, logger)
+    UBENCH_BUNDLED_SCRIPT_EOF
+    cat > /tmp/ubench_tpu_inference_patches.py <<'UBENCH_BUNDLED_SCRIPT_EOF'
+    r"""Applies temporary in-place patches to the installed tpu_inference package.
+
+    uBench copies this file into every TPU vLLM server pod and runs it with the
+    pod's ``python3`` before vLLM starts (see
+    ``vllm_inference._generate_server_setup_command``). Each entry in ``PATCHES``
+    is a literal ``old -> new`` source replacement that prefill/decode
+    disaggregation (single-host, or multi-host such as tpu7x 2x2x2) needs on the
+    current ``vllm/vllm-tpu`` images, with the observed failure it fixes.
+
+    The script is best-effort and idempotent: it never fails the launch, and it
+    prints one line per target file so pod logs show exactly what happened::
+
+        tpu_inference <name> patched: <path>
+        tpu_inference <name> no-op: <path>
+        tpu_inference <name> error: <path> <exception>
+
+    ``no-op`` means the anchor text is absent, typically because the image already
+    carries the upstream fix.
+
+    It must stay standard-library only and must not import tpu_inference (that
+    would initialize JAX on the TPU before vLLM does). A patch can also install
+    helper modules (``Patch.files``) shipped next to this script with the same file
+    name prefix, e.g. ``/tmp/ubench_tpu_connector_pd_notify.py`` next to
+    ``/tmp/ubench_tpu_inference_patches.py``.
+    """
+
+    from collections.abc import Sequence
+    import dataclasses
+    import importlib.util
+    import os
+
+    # TODO(b/562150806): Upstream these fixes to vllm-project/tpu-inference and
+    # delete each entry once every pinned vllm/vllm-tpu image contains it.
+
+    # Editable-install location of tpu_inference in the vllm/vllm-tpu images.
+    _EDITABLE_INSTALL_ROOT = "/workspace/tpu_inference/tpu_inference"
+
+    PATCHED = "patched"
+    NO_OP = "no-op"
+
+
+    @dataclasses.dataclass(frozen=True)
+    class Patch:
+      """An in-place source patch for one tpu_inference module.
+
+      Attributes:
+        name: Short identifier used in log lines.
+        rel_path: Target file, relative to the tpu_inference package directory.
+        replacements: ``(old, new)`` pairs. The patch applies only if every ``old``
+          is present; each is replaced once.
+        applied_marker: If this text is already in the file, the patch is skipped.
+          Required when an ``old`` survives inside its ``new``, which would
+          otherwise re-apply the patch on every pod restart.
+        files: ``(dest_name, source_name)`` pairs. Each bundled helper module
+          ``source_name`` (see ``bundled_file_path``) is copied next to the target
+          file as ``dest_name`` when the patch applies.
+      """
+
+      name: str
+      rel_path: str
+      replacements: tuple[tuple[str, str], ...]
+      applied_marker: str | None = None
+      files: tuple[tuple[str, str], ...] = ()
+
+
+    @dataclasses.dataclass(frozen=True)
+    class PatchResult:
+      """Outcome of applying one patch to one file."""
+
+      name: str
+      path: str
+      status: str  # PATCHED, NO_OP, or "error: <exception>".
+
+      def __str__(self) -> str:
+        return f"tpu_inference {self.name} {self.status}: {self.path}"
+
+
+    PATCHES: tuple[Patch, ...] = (
+        # Multi-host weight loading. A host that owns no shard of a weight never
+        # calls the callback, so jax.make_array_from_callback cannot infer the
+        # dtype and raises ValueError unless it is passed explicitly.
+        Patch(
+            name="dtype",
+            rel_path=os.path.join("layers", "common", "utils.py"),
+            replacements=(
+                (
+                    "lambda index: t[index])",
+                    "lambda index: t[index], dtype=t.dtype)",
+                ),
+            ),
+        ),
+        # Multi-host HBM profiling. self.devices spans every host in the slice;
+        # memory stats are only available for this host's addressable devices.
+        # Keep only the worker's devices on this host (not jax.local_devices()):
+        # a single-host worker may use a subset of the host's chips (e.g. TP=4 on
+        # an 8-device tpu7x 2x2x1 host), and counting the rest over-sizes the KV
+        # cache until allocation fails with RESOURCE_EXHAUSTED.
+        Patch(
+            name="hbm",
+            rel_path=os.path.join("worker", "tpu_worker.py"),
+            replacements=(
+                (
+                    "hbm_usage = utils.hbm_usage_bytes(self.devices)",
+                    (
+                        "hbm_usage = utils.hbm_usage_bytes([d for d in self.devices"
+                        " if d.process_index == jax.process_index()])"
+                    ),
+                ),
+            ),
+        ),
+        # Multi-host HBM profiling. On Ray worker hosts memory_stats is
+        # unsupported, so the limit reads as 0 and EngineCore dies with
+        # "total_hbm_used_gb=0.0GiB exceeds total_hbm_limit_cap_gb=0.0GiB".
+        # Fall back to a large budget when the limit is unknown.
+        Patch(
+            name="hbm2",
+            rel_path=os.path.join("worker", "tpu_worker.py"),
+            replacements=(
+                (
+                    "total_hbm_avail = int(total_hbm_limit_cap - total_hbm_used)",
+                    (
+                        "total_hbm_avail = int(total_hbm_limit_cap -"
+                        " total_hbm_used) if total_hbm_limit > 0 else int(1024 *"
+                        " utils.GBYTES)"
+                    ),
+                ),
+            ),
+            applied_marker="else int(1024 * utils.GBYTES)",
+        ),
+        # Multi-host precompilation. A host that finishes its precompile loop
+        # early enters the multi-host warmup collective while its peer is still
+        # enqueueing compile work, deadlocking the PJRT stream. Barrier after each
+        # compile and before warmup to keep hosts in lockstep.
+        Patch(
+            name="csync",
+            rel_path=os.path.join("runner", "compilation_manager.py"),
+            replacements=(
+                (
+                    (
+                        "        if self._compile_executor is None:\n"
+                        "            _compile(lowered, log_name, self.runner.mesh)"
+                    ),
+                    (
+                        "        if self._compile_executor is None:\n"
+                        "            _compile(lowered, log_name,"
+                        " self.runner.mesh)\n"
+                        "            if jax.process_count() > 1:\n"
+                        "                from jax.experimental import"
+                        " multihost_utils\n"
+                        "                multihost_utils.sync_global_devices("
+                        '"compile_step")'
+                    ),
+                ),
+                (
+                    "        warmup_start = time.perf_counter()",
+                    (
+                        "        if jax.process_count() > 1:\n"
+                        "            from jax.experimental import multihost_utils\n"
+                        "            multihost_utils.sync_global_devices("
+                        '"flush_pre_warmup")\n'
+                        "        warmup_start = time.perf_counter()"
+                    ),
+                ),
+            ),
+            applied_marker='sync_global_devices("flush_pre_warmup")',
+        ),
+        # P/D KV release when decode never pulls. Prefill copies each finished
+        # request's KV and registers the copy with the JAX transfer server
+        # (await_pull, no timeout), which keeps its own reference until decode
+        # pulls it. When decode already has the whole prompt cached (common in
+        # multi-turn sessions), it skips the pull and never notifies prefill, so
+        # the copy stays in prefill HBM for good: the 180 s
+        # TPU_P2P_WAIT_PULL_TIMEOUT only drops tpu_connector's own reference. Under
+        # load this exhausts prefill HBM (RESOURCE_EXHAUSTED). Fixes:
+        # - decode notifies prefill on a full prefix-cache hit too;
+        # - on a notification or a timeout, prefill also replaces the transfer
+        #   server entry with an empty one that expires at once, freeing the copy;
+        # - a notification can arrive before prefill registers the request, so
+        #   prefill remembers unknown notifications and releases the request right
+        #   after await_pull.
+        # The logic lives in tpu_connector_pd_notify.py (installed as
+        # distributed/ubench_pd_notify.py); the replacements below only call it.
+        # TODO(b/559697842): Temporary workaround. Delete once the formal fix,
+        # https://github.com/vllm-project/tpu-inference/pull/3751, is in every
+        # pinned vllm/vllm-tpu image (the patch then logs no-op).
+        Patch(
+            name="pd_notify",
+            rel_path=os.path.join("distributed", "tpu_connector.py"),
+            replacements=(
+                # Decode: notify on a full local prefix-cache hit.
+                (
+                    (
+                        "                    logger.info(\n"
+                        '                        f"TPUConnector Worker'
+                        " {self.node_id} --> req_id={req_id}, skip"
+                        ' insert_kv_chunks."\n'
+                        "                    )\n"
+                    ),
+                    (
+                        "                    logger.info(\n"
+                        '                        f"TPUConnector Worker'
+                        " {self.node_id} --> req_id={req_id}, skip"
+                        ' insert_kv_chunks."\n'
+                        "                    )\n"
+                        "                    # Full local prefix-cache hit: nothing"
+                        " was pulled, but P\n"
+                        "                    # still holds the KV until notified.\n"
+                        "                    self._notify_pull_done(\n"
+                        "                        self._maybe_build_notif_socket("
+                        "req_meta), req_id,\n"
+                        "                        req_meta.uuid)\n"
+                    ),
+                ),
+                # Prefill listener: free the transfer server's copy on notify.
+                (
+                    (
+                        "                    self.reqs_wait_pull[req_id][2] = -1\n"
+                        "                    self.kv_pull_uuid_to_req_id_map"
+                        ".pop(uuid)\n"
+                    ),
+                    (
+                        "                    self.reqs_wait_pull[req_id][2] = -1\n"
+                        "                    self.kv_pull_uuid_to_req_id_map"
+                        ".pop(uuid)\n"
+                        "                    ubench_pd_notify.drop_pull_entry(self,"
+                        " uuid, logger)\n"
+                    ),
+                ),
+                # Prefill listener: remember notifications for unknown requests.
+                (
+                    (
+                        "            else:\n"
+                        "                logger.warning(\n"
+                        '                    f"TPUConnector Worker {self.node_id}'
+                        # Verbatim upstream log text, typos included.
+                        " --> Disagg producer"
+                        " recives"  # go/LEGACY_TYPO: upstream text
+                        " a non-exist pulling"  # go/LEGACY_TYPO: upstream text
+                        ' finished notification uuid {uuid}"\n'
+                    ),
+                    (
+                        "            else:\n"
+                        "                ubench_pd_notify.on_unknown_pull_done("
+                        "self, uuid, logger)\n"
+                        "                logger.warning(\n"
+                        '                    f"TPUConnector Worker {self.node_id}'
+                        # Verbatim upstream log text, typos included.
+                        " --> Disagg producer"
+                        " recives"  # go/LEGACY_TYPO: upstream text
+                        " a non-exist pulling"  # go/LEGACY_TYPO: upstream text
+                        ' finished notification uuid {uuid}"\n'
+                    ),
+                ),
+                # Prefill, HBM path: release right after await_pull if notified.
+                (
+                    (
+                        "                self.kv_transfer_server.await_pull("
+                        "req_meta.uuid, kv)\n"
+                        "\n"
+                        "    def _async_d2h_and_transfer("
+                    ),
+                    (
+                        "                self.kv_transfer_server.await_pull("
+                        "req_meta.uuid, kv)\n"
+                        "            ubench_pd_notify.release_if_pull_done(self,"
+                        " req_id, req_meta.uuid, logger)\n"
+                        "\n"
+                        "    def _async_d2h_and_transfer("
+                    ),
+                ),
+                # Prefill, host-DRAM (D2H) path: same.
+                (
+                    (
+                        "            self.kv_transfer_server.await_pull("
+                        "req_meta.uuid,\n"
+                        "                                              "
+                        " updated_dest_buffer)\n"
+                        "\n"
+                        "    def _maybe_build_kv_connection("
+                    ),
+                    (
+                        "            self.kv_transfer_server.await_pull("
+                        "req_meta.uuid,\n"
+                        "                                              "
+                        " updated_dest_buffer)\n"
+                        "        ubench_pd_notify.release_if_pull_done(self,"
+                        " req_id, req_meta.uuid, logger)\n"
+                        "\n"
+                        "    def _maybe_build_kv_connection("
+                    ),
+                ),
+                # Prefill: free the transfer server's copy on pull timeout.
+                (
+                    (
+                        'KV transfer timeout. Force recycle the memory buffer."\n'
+                        "                    )\n"
+                    ),
+                    (
+                        'KV transfer timeout. Force recycle the memory buffer."\n'
+                        "                    )\n"
+                        "                    ubench_pd_notify"
+                        ".release_timed_out_pull(self, req_id, logger)\n"
+                    ),
+                ),
+                # Import the helpers that ``files`` installs next to this module.
+                (
+                    "logger = init_logger(__name__)\n",
+                    (
+                        "logger = init_logger(__name__)\n"
+                        "from tpu_inference.distributed import ubench_pd_notify\n"
+                    ),
+                ),
+            ),
+            applied_marker="nothing was pulled, but P",
+            files=(("ubench_pd_notify.py", "tpu_connector_pd_notify.py"),),
+        ),
+    )
+
+
+    def find_package_dirs() -> list[str]:
+      """Returns candidate tpu_inference package directories without importing it."""
+      dirs = [_EDITABLE_INSTALL_ROOT]
+      try:
+        spec = importlib.util.find_spec("tpu_inference")
+      except (ImportError, ValueError):
+        spec = None
+      if spec is not None and spec.submodule_search_locations:
+        dirs.extend(spec.submodule_search_locations)
+      return list(dict.fromkeys(dirs))
+
+
+    def bundled_file_path(name: str) -> str:
+      """Returns the path of a helper module shipped next to this script.
+
+      uBench writes this script and its helpers to the pod with a common prefix
+      (``ubench_``), so a helper's path is this file's path with
+      ``tpu_inference_patches.py`` replaced by ``name``.
+
+      Args:
+        name: File name of the helper module in this package.
+      """
+      directory, base = os.path.split(os.path.abspath(__file__))
+      prefix = base.removesuffix("tpu_inference_patches.py")
+      return os.path.join(directory, prefix + name)
+
+
+    def apply_patch(patch: Patch, path: str) -> str:
+      """Applies ``patch`` to the file at ``path`` in place.
+
+      Args:
+        patch: The patch to apply.
+        path: Path of the file to patch.
+
+      Returns:
+        PATCHED, NO_OP, or "error: <exception>". Never raises, so one bad file
+        cannot block the remaining patches or the pod launch.
+      """
+      try:
+        with open(path, encoding="utf-8") as f:
+          content = f.read()
+        if patch.applied_marker and patch.applied_marker in content:
+          return NO_OP
+        if not all(old in content for old, _ in patch.replacements):
+          return NO_OP
+        helpers = []
+        for dest_name, source_name in patch.files:
+          with open(bundled_file_path(source_name), encoding="utf-8") as f:
+            helper_path = os.path.join(os.path.dirname(path), dest_name)
+            helpers.append((helper_path, f.read()))
+        for helper_path, helper in helpers:
+          with open(helper_path, "w", encoding="utf-8") as f:
+            f.write(helper)
+        for old, new in patch.replacements:
+          content = content.replace(old, new, 1)
+        with open(path, "w", encoding="utf-8") as f:
+          f.write(content)
+        return PATCHED
+      except Exception as e:  # pylint: disable=broad-exception-caught
+        return f"error: {e}"
+
+
+    def apply_patches(
+        package_dirs: Sequence[str], patches: Sequence[Patch] = PATCHES
+    ) -> list[PatchResult]:
+      """Applies each patch to its target file under every package directory.
+
+      Args:
+        package_dirs: Candidate tpu_inference package directories. Directories that
+          do not contain a patch's target file are skipped.
+        patches: The patches to apply.
+
+      Returns:
+        One result per (patch, existing target file) pair.
+      """
+      results = []
+      for patch in patches:
+        for package_dir in package_dirs:
+          path = os.path.join(package_dir, patch.rel_path)
+          if os.path.exists(path):
+            results.append(PatchResult(patch.name, path, apply_patch(patch, path)))
+      return results
+
+
+    def main() -> None:
+      results = apply_patches(find_package_dirs())
+      for result in results:
+        print(result)
+      if not results:
+        print("tpu_inference patches: package not found; nothing to patch")
+
+
+    if __name__ == "__main__":
+      main()
+    UBENCH_BUNDLED_SCRIPT_EOF
+    python3 /tmp/ubench_tpu_inference_patches.py || echo 'tpu_inference_patches.py failed; continuing'
+    echo 'Prewarming trust_remote_code module cache (single process) to avoid concurrent dynamic-module import race...'; python3 -c 'import sys
+    import transformers
+    model_id = '"'"'deepseek-ai/DeepSeek-R1-0528'"'"'
+    transformers.AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+    transformers.AutoTokenizer.from_pretrained(
+        model_id, trust_remote_code=True
+    )
+    try:
+      transformers.AutoProcessor.from_pretrained(
+          model_id, trust_remote_code=True
+      )
+    except Exception as e:
+      print("prewarm: processor skipped:", e, file=sys.stderr)
+    print("prewarm: remote-code module cache ready", file=sys.stderr)
+    ' || echo 'prewarm failed; continuing';
+    if [ -d deepseek-ai/DeepSeek-R1-0528 ]; then
+      mnt_point=$(df -P deepseek-ai/DeepSeek-R1-0528 2>/dev/null | tail -n 1 | awk '{print $NF}')
+      if mount | grep -q "on ${mnt_point} type lustre"; then
+        echo "UBENCH_MODEL_WEIGHTS_SIZE: "$(du -sk deepseek-ai/DeepSeek-R1-0528 2>/dev/null | awk '{printf "%.2fGiB\n", $1/1024/1024}')
+      else
+        echo "Model is not on Lustre, skipping du in container logs"
+      fi
+    fi
+    TPU_PROCESS_ADDRESSES='' VLLM_ENGINE_READY_TIMEOUT_S=7200 VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=3600 VLLM_TARGET_DEVICE=tpu PJRT_DEVICE=TPU HF_HOME=/data/huggingface_cache TMPDIR=/data/tmp VLLM_TORCH_COMPILE_CACHE_DIR=/data/torch_compile_cache VLLM_XLA_CACHE_PATH=gs://<YOUR_BUCKET_NAME>/JAX_XLA_CACHE/vllm/ts_repro_deepseek_r1_0528_tp16_c64_v029 vllm serve \
+    --host=0.0.0.0 \
+    --port=8000 \
+    --download-dir=/data \
+    --nnodes=$(LWS_GROUP_SIZE) \
+    --node-rank=0 \
+    --master-addr=$(LWS_LEADER_ADDRESS) \
+    --master-port=29501 \
+    --distributed-executor-backend=mp \
+    --tensor-parallel-size=16 \
+    --data-parallel-size=1 \
+    --trust-remote-code \
+    --max-model-len=16384 \
+    --max-num-seqs=64 \
+    --max-num-batched-tokens=2048 \
+    --kv-cache-dtype=fp8 \
+    --gpu-memory-utilization=0.85 \
+    --model=deepseek-ai/DeepSeek-R1-0528 \
+    --tokenizer=deepseek-ai/DeepSeek-R1-0528
+  "data_disk_size": |-
+    1500Gi
+  "engine_label": |-
+    TORCH_TPU
+  "image": |-
+    vllm/vllm-torchtpu:v0.29.0
+  "model_impl_type": !!null |-
+    null
+  "num_chips_per_node": !!int |-
+    4
+  "num_nodes": !!int |-
+    2
+  "phased_profiling_dir": !!null |-
+    null
+  "profile": !!bool |-
+    false
+  "pvc_mounts": []
+  "ready_check_timeout_sec": !!int |-
+    15
+  "topology": |-
+    2x2x2
+  "worker_bash_command": |-
+    TPU_PROCESS_ADDRESSES='' VLLM_ENGINE_READY_TIMEOUT_S=7200 VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=3600 VLLM_TARGET_DEVICE=tpu PJRT_DEVICE=TPU HF_HOME=/data/huggingface_cache TMPDIR=/data/tmp VLLM_TORCH_COMPILE_CACHE_DIR=/data/torch_compile_cache VLLM_XLA_CACHE_PATH=gs://<YOUR_BUCKET_NAME>/JAX_XLA_CACHE/vllm/ts_repro_deepseek_r1_0528_tp16_c64_v029 vllm serve \
+    --host=0.0.0.0 \
+    --port=8000 \
+    --download-dir=/data \
+    --headless \
+    --nnodes=$(LWS_GROUP_SIZE) \
+    --node-rank=$(LWS_WORKER_INDEX) \
+    --master-addr=$(LWS_LEADER_ADDRESS) \
+    --master-port=29501 \
+    --distributed-executor-backend=mp \
+    --tensor-parallel-size=16 \
+    --data-parallel-size=1 \
+    --trust-remote-code \
+    --max-model-len=16384 \
+    --max-num-seqs=64 \
+    --max-num-batched-tokens=2048 \
+    --kv-cache-dtype=fp8 \
+    --gpu-memory-utilization=0.85 \
+    --model=deepseek-ai/DeepSeek-R1-0528 \
+    --tokenizer=deepseek-ai/DeepSeek-R1-0528
+"service_type": |-
+  ClusterIP
+"serving_mode": |-
+  colocated
