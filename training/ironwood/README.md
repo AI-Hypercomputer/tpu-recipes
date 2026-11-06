@@ -23,7 +23,10 @@ The training recipes contained in this folder are optimized for Ironwood TPU. He
 | llama3.1-70b    | 256                | 1024         | 8192                     | fp8_full           | 7.95        | 1,851.25     | 4,121.02              |
 | llama3.1-70b    | 256                | 64           | 131072                   | bf16               | 34.02       | 897.94       | 963.03                |
 | llama3.1-70b    | 256                | 64           | 131072                   | fp8_full           | 30.11       | 1,014.45     | 1,087.99              |
+| qwen3-0.6b (GRPO RL)\* | 64          | 2048         | 12288                    | bf16               | 56.94       | N/A          | 2,491.9 (generated)   |
 | qwen3-235b-a22b | 256                | 8192         | 4096                     | bf16               | 30.91       | 629.01       | 4,240.60              |
 | qwen3-235b-a22b | 256                | 8192         | 4096                     | fp8_full           | 27.67       | 702.60       | 4,736.72              |
 | wan2.1-14b      | 64                 | 32           | 75600                    | bf16               | 24.58       | 209.55       | N/A                   |
 | wan2.2-t2v-14b  | 32                 | 16           | 75600                    | bf16               | 12.15       | 805.34       | N/A                   |
+
+\* Reinforcement learning (GRPO) rather than pretraining: one step generates 2,048 completions (256 prompts x 8, mean completion about 4.4K tokens, prompt cap 4,096 + completion cap 8,192 = 12,288), scores them, and trains on them. Tokens/sec/chip counts generated tokens; TFLOPs/sec/chip is not reported for the mixed generate-and-train step. See [rl-grpo-qwen3-0.6b](rl-grpo-qwen3-0.6b/math-bf16-tpu7x-4x4x4/k8s/README.md).

@@ -85,6 +85,7 @@ data:
     export CONTINUE_DECODE_EOS_CHECK_INTERVAL="0"
 
     # --- Env setup ---
+    # The dataset and tokenizer are public; set a Hugging Face token here only for gated repositories.
     export HF_TOKEN=''
     export HF_HUB_ENABLE_HF_TRANSFER=0
     export HF_HUB_DISABLE_XET=1
@@ -101,6 +102,9 @@ data:
       export JAX_PLATFORMS="${JAX_PLATFORMS:-proxy,cpu}"
       export ENABLE_PJRT_COMPATIBILITY='true'
       # XLA flags are passed to the pathways-proxy container, not set here.
+      # The command line is the measured run's, unchanged. debug=True enables the RL trainer's extra
+      # logging; profiler=xplane with skip_first_n_steps_for_profiler=1 / profiler_steps=1 captures one
+      # profile during TensorBoard step 2, which the measurement rule drops.
 
       python3 -m maxtext.trainers.post_train.rl.train_rl "${MAXTEXT_CONFIG_PATH}" \
         model_name='qwen3-0.6b' \
@@ -184,6 +188,9 @@ spec:
   network:
     enableDNSHostnames: true
     publishNotReadyAddresses: true
+  # The JobSet and its pods are garbage-collected 24 hours after the run finishes. Outputs (TensorBoard,
+  # checkpoints) are in ${BASE_OUTPUT_DIR}; save the head pod log before then if you want to keep it.
+  ttlSecondsAfterFinished: 86400
   # maxRestarts 5: rides out preemptions and capacity gaps; affects resilience only, not the measurement.
   failurePolicy:
     maxRestarts: 5
@@ -208,6 +215,9 @@ spec:
               kubectl.kubernetes.io/default-container: jax-tpu
           spec:
             restartPolicy: OnFailure
+            # hostNetwork, hostIPC, the shared /tmp hostPath and the privileged driver container are the
+            # Pathways head settings of the measured run (the resource-manager and proxy sidecars share
+            # the host network and /tmp with the MaxText driver). They are kept unchanged.
             hostNetwork: true
             hostIPC: true
             dnsPolicy: ClusterFirstWithHostNet
@@ -383,6 +393,10 @@ spec:
             nodeSelector:
               cloud.google.com/gke-tpu-topology: "4x4x4"
               cloud.google.com/gke-tpu-accelerator: tpu7x
+            tolerations:
+            - effect: NoSchedule
+              key: google.com/tpu
+              operator: Exists
             containers:
             - name: pathways-worker
               image: "us-docker.pkg.dev/cloud-tpu-v2-images/pathways/server:20260918-jax_0.11.0"

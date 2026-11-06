@@ -255,6 +255,10 @@ check them only if you edited the manifest.
 
 ## Delete resources
 
+The JobSet and its pods are garbage-collected 24 hours after the run finishes
+(`ttlSecondsAfterFinished` in the manifest). Save the head pod log before then if
+you want to keep it. To delete earlier:
+
 ```bash
 kubectl delete jobset -n default ${WORKLOAD_NAME}
 kubectl delete configmap -n default ${WORKLOAD_NAME}-launcher
