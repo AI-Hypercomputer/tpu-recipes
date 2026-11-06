@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gemma4-mtp-bench-prefix
+  namespace: gemma4-mtp
+spec:
+  restartPolicy: Never
+  containers:
+  - name: bench-client
+    image: vllm/vllm-tpu:nightly-20260611-1043491-248e33c
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      echo "Waiting for vLLM server to be ready..." && \
+      while ! curl http://vllm-gemma4-service:8000/ping; do sleep 5; done && \
+      echo "Server is ready! Launching Prefix Repetition (12k context) serving benchmark..." && \
+      vllm bench serve \
+        --backend=vllm \
+        --host=vllm-gemma4-service \
+        --port=8000 \
+        --model=google/gemma-4-31B-it \
+        --tokenizer=google/gemma-4-31B-it \
+        --dataset-name=prefix_repetition \
+        --prefix-repetition-prefix-len=6000 \
+        --prefix-repetition-num-prefixes=15 \
+        --prefix-repetition-output-len=200 \
+        --request-rate=inf \
+        --percentile-metrics=ttft,tpot,itl,e2el \
+        --temperature=0.0 \
+        --ignore-eos \
+        --skip-chat-template \
+        --max-concurrency=320 \
+        --num-prompts=320
+    env:
+    - name: HF_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: hf-secret
+          key: hf_api_token
