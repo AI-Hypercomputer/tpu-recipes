@@ -120,6 +120,7 @@ spec:
             export TPU_SIDE_CHANNEL_PORT=29740
             export TPU_K3_MOE_REDUCE_DTYPE=bfloat16
 
+            # Prefill passes "draft" in --model-loader-extra-config (it does not run --speculative-config) so it computes and transfers DSpark's MLA KV-cache layers over Raiden.
             exec vllm serve /models/Kimi-K3 \
               --served-model-name moonshotai/Kimi-K3 \
               --trust-remote-code \
@@ -324,6 +325,7 @@ spec:
             export TPU_SIDE_CHANNEL_PORT=29740
             export TPU_K3_MOE_REDUCE_DTYPE=bfloat16
 
+            # Prefill passes "draft" in --model-loader-extra-config (it does not run --speculative-config) so it computes and transfers DSpark's MLA KV-cache layers over Raiden.
             exec vllm serve /models/Kimi-K3 \
               --served-model-name moonshotai/Kimi-K3 \
               --trust-remote-code \
@@ -518,6 +520,7 @@ spec:
             export TPU_K3_MOE_REDUCE_DTYPE=float32
             export TPU_RAIDEN_STAGE3_DEFERRED_SUBMIT=0
 
+            # Decode takes the DSpark checkpoint from --speculative-config ("draft" in --model-loader-extra-config is only valid on prefill).
             exec vllm serve /models/Kimi-K3 \
               --served-model-name moonshotai/Kimi-K3 \
               --trust-remote-code \
@@ -723,6 +726,7 @@ spec:
             export TPU_K3_MOE_REDUCE_DTYPE=float32
             export TPU_RAIDEN_STAGE3_DEFERRED_SUBMIT=0
 
+            # Decode takes the DSpark checkpoint from --speculative-config ("draft" in --model-loader-extra-config is only valid on prefill).
             exec vllm serve /models/Kimi-K3 \
               --served-model-name moonshotai/Kimi-K3 \
               --trust-remote-code \
