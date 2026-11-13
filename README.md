@@ -34,6 +34,8 @@ To reproduce a benchmark, follow these steps:
 
 - `./training`: This directory contains recipes with instructions to reproduce the
   training performance of popular models, using PyTorch and JAX on specific TPU versions.
+- `./rl`: This directory contains recipes to reproduce the step time of reinforcement-learning
+  post-training (generate, score, train) of models on specific TPU versions.
 - `./inference`: This directory contains recipes that provide instructions and
   configurations to reproduce inference performance of models running on specific TPU
   versions.

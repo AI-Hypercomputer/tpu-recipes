@@ -1,0 +1,453 @@
+# =============================================================================
+# GRPO reinforcement learning, Qwen3-0.6B on OpenMathInstruct-2
+# One TPU7x (Ironwood) 4x4x4 slice: 16 hosts x 4 chips = 64 chips (128 TensorCores), Pathways orchestration,
+# trainer and sampler colocated on the same chips.
+#
+# Stack: MaxText c28166ca7 + tunix a3e92fba + tpu-inference c2289ee4b + vLLM 51da0ca6 (stock build with the three
+# post-training dependency pins moved to those commits; no source patches), Pathways 20260918-jax_0.11.0.
+#
+# Reference result (20 steps): TensorBoard perf/train/global_step_time, median over steps >= 3 (n = 18): 56.94 s
+# (p10 55.2 s / p90 59.3 s). Step 1 includes compilation (about 160 s). See README.md.
+#
+# Placeholders (substitute with envsubst, see README.md):
+#   ${WORKLOAD_NAME}    unique run name; a reused name resumes the old run's checkpoint and exits immediately
+#   ${WORKLOAD_IMAGE}   the MaxText post-training image you built (README.md, "Build the container image")
+#   ${BASE_OUTPUT_DIR}  gs:// path for TensorBoard, checkpoints and compilation caches
+#   ${CHECKPOINT_PATH}  gs:// path of the converted Qwen3-0.6B MaxText checkpoint, ending in /0/items
+#   ${CPU_NODEPOOL}     name of a CPU node pool for the Pathways head pod (28 vCPU / 130 GiB requested);
+#                       "cpu-np" on a cluster created with the Cluster Toolkit blueprint in README.md
+# =============================================================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "${WORKLOAD_NAME}-launcher"
+data:
+  launch-workload.sh: |-
+
+    #!/bin/bash
+    set -e
+
+    _sigterm() {
+      echo "Caught SIGTERM signal, sending to child process..."
+      kill -SIGTERM "$PID" 2>/dev/null
+    }
+    trap _sigterm SIGTERM
+
+    MAXTEXT_CONFIG_PATH="maxtext/configs/post_train/rl.yml"
+
+    # Fallback check to support different image structures
+    if [ ! -f "${MAXTEXT_CONFIG_PATH}" ] && [ -f "src/${MAXTEXT_CONFIG_PATH}" ]; then
+      echo "MAXTEXT_CONFIG_PATH not found at ${MAXTEXT_CONFIG_PATH}, falling back to src/${MAXTEXT_CONFIG_PATH}"
+      MAXTEXT_CONFIG_PATH="src/${MAXTEXT_CONFIG_PATH}"
+    fi
+
+    # --- Image self-check: the three dependency pins and the merged performance features must be present. ---
+    # An image built from MaxText head WITHOUT moving the pins starts and trains normally, only about twice as slow,
+    # and MaxText silently drops the config keys an old tunix does not know. This check makes that failure loud.
+    python3 - <<'PYCHECK' || { echo 'FATAL: image check failed'; exit 1; }
+    import importlib.metadata as md, importlib.util, json, os, sys
+    def origin(dist):
+      try: return json.loads(md.distribution(dist).read_text('direct_url.json') or '{}').get('url', '?')
+      except Exception as e: return 'unknown (%s)' % e
+    for d in ('google-tunix', 'tpu-inference', 'vllm', 'jax', 'pathwaysutils'):
+      try: print('IMAGE-CHECK', d, md.version(d), origin(d))
+      except Exception as e: print('IMAGE-CHECK', d, 'MISSING', e)
+    def has(pkg, rel, needle):
+      root = importlib.util.find_spec(pkg).submodule_search_locations[0]
+      return needle in open(os.path.join(root, rel), encoding='utf-8').read()
+    need = {
+      'tunix #2086 gc_collect_after_weight_sync': has('tunix', 'rl/rl_cluster.py', 'gc_collect_after_weight_sync'),
+      'tunix #1904 reward_num_workers': has('tunix', 'rl/algorithm_config.py', 'reward_num_workers'),
+      'tunix #2231 free_kv_cache_during_weight_sync': has('tunix', 'generate/vllm_sampler.py', 'free_kv_cache_during_weight_sync'),
+      'tunix #2233 overlap_postprocessing': has('tunix', 'generate/vllm_sampler.py', 'overlap_postprocessing'),
+      'tpu-inference #3587 DP_SCHED_ROUTING': has('tpu_inference', 'envs.py', 'DP_SCHED_ROUTING'),
+      'tpu-inference #3509 fixed-depth CD windows': has('tpu_inference', 'runner/decode_loop.py', 'continue_decode_eos_check_interval <= 0'),
+      'maxtext #5100 max_seq_token_per_tpu': has('maxtext', 'configs/types.py', 'max_seq_token_per_tpu'),
+      'maxtext #5255 reward_num_workers': has('maxtext', 'configs/types.py', 'reward_num_workers'),
+      'maxtext #5289 free_kv_cache_during_weight_sync': has('maxtext', 'configs/types.py', 'free_kv_cache_during_weight_sync'),
+      'maxtext #5289 forwarded into VllmConfig': has('maxtext', 'integration/vllm/maxtext_vllm_rollout.py', 'free_kv_cache_during_weight_sync'),
+      'tunix #2309 packer copy=False REMOVED': not has('tunix', 'rl/utils.py', 'copy=False'),
+    }
+    for k, ok in need.items(): print('IMAGE-CHECK', 'OK ' if ok else 'MISSING', k)
+    sys.exit(0 if all(need.values()) else 1)
+    PYCHECK
+
+    # PHASED_PROFILING_DIR must stay empty: the decode-path profiler conflicts with the trainer profiler at step 1.
+    export DP_SCHED_ROUTING=round_robin   # round-robin DP routing (the default least_loaded is much slower at DP128)
+    export PHASED_PROFILING_DIR=""
+    echo "PHASED_PROFILING_DIR=$PHASED_PROFILING_DIR"
+
+    # ragged-paged-attention tile sizes
+    export RPA_V3_DECODE_BLOCK_SIZES="1,2048,1,2048"
+    export RPA_V3_MIXED_BLOCK_SIZES="512,1024,256,512"
+    export RPA_V3_PREFILL_BLOCK_SIZES="512,1024,256,512"
+    # 0 = fixed-depth continue-decode windows, no per-step EOS check
+    export CONTINUE_DECODE_EOS_CHECK_INTERVAL="0"
+
+    # --- Env setup ---
+    # The dataset and tokenizer are public, so no token is needed. For gated repositories do not paste a
+    # token into this ConfigMap; inject HF_TOKEN from a Kubernetes Secret via the head container's env instead.
+    export HF_TOKEN=''
+    export HF_HUB_ENABLE_HF_TRANSFER=0
+    export HF_HUB_DISABLE_XET=1
+    export NUM_PRECOMPILE_WORKERS=1
+    export NEW_MODEL_DESIGN=1
+    export TPU_MIN_LOG_LEVEL=0
+    export TF_CPP_MIN_LOG_LEVEL=0
+    export TPU_STDERR_LOG_LEVEL=0
+    export JAX_BACKEND_TARGET=grpc://127.0.0.1:29000
+
+    # --- Main Execution ---
+    (
+      export ENABLE_PATHWAYS_PERSISTENCE='1'
+      export JAX_PLATFORMS="${JAX_PLATFORMS:-proxy,cpu}"
+      export ENABLE_PJRT_COMPATIBILITY='true'
+      # XLA flags are passed to the pathways-proxy container, not set here.
+      # The command line is the measured run's, with the dataset pinned to the Hugging Face revision
+      # it used (hf_train_files '@<sha>'). debug=True enables the RL trainer's extra
+      # logging; profiler=xplane with skip_first_n_steps_for_profiler=1 / profiler_steps=1 captures one
+      # profile during TensorBoard step 2, which the measurement rule drops.
+
+      python3 -m maxtext.trainers.post_train.rl.train_rl "${MAXTEXT_CONFIG_PATH}" \
+        model_name='qwen3-0.6b' \
+        tokenizer_path='Qwen/Qwen3-0.6B' \
+        dataset_name='nvidia/OpenMathInstruct-2' \
+        hf_train_files='hf://datasets/nvidia/OpenMathInstruct-2@469216e3f46f4dacf476b382e192485ea51a143e/data/train_1M-*.parquet' \
+        train_split='train_1M' \
+        rl.num_generations=8 \
+        rl.grpo_beta=0.0 \
+        rl.grpo_epsilon=0.2 \
+        rl.epsilon_high=0.28 \
+        checkpoint_storage_use_ocdbt=False \
+        async_scheduling=False \
+        enable_prefix_caching=false \
+        max_seq_token_per_tpu=12288 \
+        vllm_block_size=128 \
+        gc_collect_after_weight_sync=false \
+        reward_num_workers=32 \
+        sa_block_q=1024 \
+        sa_block_q_dkv=1024 \
+        sa_block_q_dq=1024 \
+        sa_block_kv=2048 \
+        sa_block_kv_compute=2048 \
+        sa_block_kv_dkv=2048 \
+        sa_block_kv_dkv_compute=2048 \
+        sa_block_kv_dq=2048 \
+        sa_use_base2_exp=false \
+        free_kv_cache_during_weight_sync=false \
+        math_verify_num_procs=64 \
+        chips_per_vm=8 \
+        num_batches=20 \
+        num_test_batches=0 \
+        debug=True \
+        profiler=xplane \
+        skip_first_n_steps_for_profiler=1 \
+        profiler_steps=1 \
+        gradient_clipping_threshold=1.0 \
+        decode_sampling_temperature=0.8 \
+        decode_sampling_top_k=50 \
+        decode_sampling_nucleus_p=0.95 \
+        max_target_length=12288 \
+        kv_cache_buffer=4352 \
+        max_prefill_predict_length=4096 \
+        learning_rate=1e-6 \
+        batch_size=256 \
+        train_micro_batch_size=32 \
+        rollout_micro_batch_size=256 \
+        trainer_devices_fraction=1.0 \
+        sampler_devices_fraction=1.0 \
+        rollout_data_parallelism=128 \
+        rollout_tensor_parallelism=1 \
+        enable_dp_attention=false \
+        hbm_utilization_vllm=0.3 \
+        max_num_seqs=256 \
+        max_num_batched_tokens=33280 \
+        scan_layers=True \
+        attention='flash' \
+        allow_split_physical_axes=True \
+        enable_tunix_perf_metrics=True \
+        checkpoint_period=100 \
+        max_num_checkpoints_to_keep=1000 \
+        enable_checkpointing=true \
+        load_parameters_path='${CHECKPOINT_PATH}' \
+        skip_jax_distributed_system=True \
+        vllm_additional_config='{"enable_continue_decode": true, "max_decode_steps": 512}' \
+        base_output_directory=${ARTIFACT_DIR} \
+        run_name=${JOB_IDENTIFIER}
+    ) & PID=$!
+
+    wait $PID
+    EXIT_CODE=$?
+
+    echo "MaxText Job Ended at: $(date) with exit code $EXIT_CODE"
+    exit $EXIT_CODE
+---
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: "${WORKLOAD_NAME}"
+spec:
+  network:
+    enableDNSHostnames: true
+    publishNotReadyAddresses: true
+  # The JobSet and its pods are garbage-collected 24 hours after the run finishes. Outputs (TensorBoard,
+  # checkpoints) are in ${BASE_OUTPUT_DIR}; save the head pod log before then if you want to keep it.
+  ttlSecondsAfterFinished: 86400
+  # maxRestarts 5: rides out preemptions and capacity gaps; affects resilience only, not the measurement.
+  failurePolicy:
+    maxRestarts: 5
+  successPolicy:
+    operator: All
+    targetReplicatedJobs:
+    - pathways-head
+  replicatedJobs:
+# ----------------------------------------------------
+# 1. Pathways head: resource manager, proxy, and the MaxText RL driver
+# ----------------------------------------------------
+  - name: pathways-head
+    replicas: 1
+    template:
+      spec:
+        parallelism: 1
+        completions: 1
+        backoffLimit: 0
+        template:
+          metadata:
+            annotations:
+              kubectl.kubernetes.io/default-container: jax-tpu
+          spec:
+            restartPolicy: OnFailure
+            # hostNetwork, hostIPC, the shared /tmp hostPath and the privileged driver container are the
+            # Pathways head settings of the measured run (the resource-manager and proxy sidecars share
+            # the host network and /tmp with the MaxText driver). They are kept unchanged.
+            hostNetwork: true
+            hostIPC: true
+            dnsPolicy: ClusterFirstWithHostNet
+            nodeSelector:
+              cloud.google.com/gke-nodepool: "${CPU_NODEPOOL}"
+            affinity:   # keep Pathways heads of concurrent runs on separate CPU nodes (a shared head node adds noise)
+              podAntiAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    topologyKey: kubernetes.io/hostname
+                    labelSelector:
+                      matchExpressions:
+                      - key: jobset.sigs.k8s.io/replicatedjob-name
+                        operator: In
+                        values: ["pathways-head"]
+            containers:
+            - name: jax-tpu
+              image: "${WORKLOAD_IMAGE}"
+              command:
+              - bash
+              - -c
+              - |
+                echo Pathways Helm Start: $(date);
+                _sigterm() (kill -SIGTERM "$PID" 2>/dev/null;);
+                trap _sigterm SIGTERM;
+
+                echo "Executing payload from /workload/launcher/launch-workload.sh..."
+                ( bash /workload/launcher/launch-workload.sh ) & PID=$!;
+
+                while kill -0 $PID 2>/dev/null;
+                    do sleep 5;
+                done;
+                wait $PID;
+                EXIT_CODE=$?;
+
+                echo Pathways Helm End: $(date);
+                echo EXIT_CODE=$EXIT_CODE;
+                exit $EXIT_CODE
+              env:
+              - name: JAX_PLATFORMS
+                value: "proxy,cpu"
+              - name: PATHWAYS_HEAD
+                value: "${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}"
+              - name: JAX_BACKEND_TARGET
+                value: grpc://${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}:29000
+              - name: JOB_IDENTIFIER
+                value: "${WORKLOAD_NAME}"
+              - name: ARTIFACT_DIR
+                value: "${BASE_OUTPUT_DIR}"
+              - name: JAX_COMPILATION_CACHE_DIR
+                value: "${BASE_OUTPUT_DIR}/compilation_cache/jax"
+              - name: SKIP_JAX_PRECOMPILE
+                value: "1"
+              resources:
+                requests:
+                  cpu: "28"
+                  memory: 130G
+                limits:
+                  cpu: "44"
+                  memory: 170G
+              securityContext:
+                privileged: true
+
+              volumeMounts:
+              - name: workload-launcher
+                mountPath: /workload/launcher
+              - name: shared-tmp
+                mountPath: /tmp
+            initContainers:
+            # Native Sidecar Pattern: restartPolicy Always prevents pod hangs
+            - name: pathways-rm
+              image: "us-docker.pkg.dev/cloud-tpu-v2-images/pathways/server:20260918-jax_0.11.0@sha256:f8ac7b4d4a1c1a65b5e70186398eae99dddd232db36f2d516dbedc31e478a6fb"
+              restartPolicy: Always
+              env:
+              - name: HOST_ADDRESS
+                value: "${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}"
+              args:
+              - --server_port=29001
+              - --node_type=resource_manager
+              - --gcs_scratch_location=${BASE_OUTPUT_DIR}/compilation_cache/pathways
+              - --instance_count=1
+              - --instance_type=tpu7x:4x4x4
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: 8G
+                limits:
+                  cpu: "4"
+                  memory: 16G
+              volumeMounts:
+              - name: shared-tmp
+                mountPath: /tmp
+            - name: pathways-proxy
+              image: "us-docker.pkg.dev/cloud-tpu-v2-images/pathways/proxy_server:20260918-jax_0.11.0@sha256:99b550a2192a2a3fc6d4eb01a47d2d718e6f8bdcf4fd66ce43532dca11c0a331"
+              restartPolicy: Always
+              env:
+              - name: PATHWAYS_HEAD
+                value: "${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}"
+              args:
+              - --server_port=29000
+              - --resource_manager_address=${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}:29001
+              - --gcs_scratch_location=${BASE_OUTPUT_DIR}/compilation_cache/pathways
+              # XLA flags for the proxy server
+              - --xla_tpu_dvfs_p_state=7
+              - --xla_tpu_scoped_vmem_limit_kib=65536
+              - --xla_tpu_num_sparse_cores_for_gather_offloading=1
+              - --xla_tpu_bf16_emission_mode=NATIVE_EMISSION
+              - --xla_tpu_enable_sparse_core_reduce_scatter_v2=true
+              - --xla_tpu_enable_sparse_core_collective_offload_all_gather=true
+              - --xla_tpu_enable_sparse_core_collective_offload_2d_all_gather=true
+              - --xla_tpu_use_tc_device_shape_on_sc=True
+              - --xla_sc_disable_megacore_partitioning=True
+              - --xla_tpu_enable_async_collective_fusion_fuse_all_gather=false
+              - --xla_enable_async_all_gather=true
+              - --xla_tpu_prefer_async_allgather_to_allreduce=true
+              - --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true
+              - --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true
+              - --xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true
+              - --xla_tpu_use_single_sparse_core_for_all_gather_offload=true
+              - --xla_tpu_enable_concurrent_sparse_core_offloading=true
+              - --xla_tpu_enable_offloading_gather_to_sparsecore=true
+              - --xla_tpu_sparse_core_all_gather_latency_multiplier=1
+              - --xla_tpu_sparse_core_reduce_scatter_latency_multiplier=3
+              - --xla_tpu_enable_sparse_core_collective_aggregator=true
+              - --xla_tpu_enable_latency_hiding_layer_scheduler=true
+              - --xla_tpu_scheduler_percent_shared_memory_limit=150
+              - --xla_tpu_enable_layer_scheduler_for_dependent_collectives=true
+              - --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true
+              - --xla_tpu_pcie_bandwidth_multiplier=0.03
+              - --xla_tpu_enable_sparse_core_offload_queuing_in_lhs=true
+              - --xla_tpu_enable_multi_compute_overlap_in_layer_scheduler=false
+              - --xla_tpu_enable_3d_reduce_scatter_decomposer=false
+              resources:
+                requests:
+                  cpu: "8"
+                  memory: 32G
+                limits:
+                  cpu: "16"
+                  memory: 64G
+              volumeMounts:
+              - name: shared-tmp
+                mountPath: /tmp
+            volumes:
+            - name: shared-tmp
+              hostPath:
+                path: /tmp
+                type: DirectoryOrCreate
+            - name: workload-launcher
+              configMap:
+                name: "${WORKLOAD_NAME}-launcher"
+
+# ----------------------------------------------------
+# 2. Pathways workers: 16 hosts of the 4x4x4 slice, 4 chips each
+# ----------------------------------------------------
+  - name: worker
+    replicas: 1
+    template:
+      spec:
+        parallelism: 16
+        completions: 16
+        backoffLimit: 32
+        completionMode: Indexed
+        template:
+          metadata:
+            annotations:
+              alpha.jobset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+          spec:
+            restartPolicy: OnFailure
+            hostNetwork: true
+            hostIPC: true
+            dnsPolicy: ClusterFirstWithHostNet
+            nodeSelector:
+              cloud.google.com/gke-tpu-topology: "4x4x4"
+              cloud.google.com/gke-tpu-accelerator: tpu7x
+            tolerations:
+            - effect: NoSchedule
+              key: google.com/tpu
+              operator: Exists
+            containers:
+            - name: pathways-worker
+              image: "us-docker.pkg.dev/cloud-tpu-v2-images/pathways/server:20260918-jax_0.11.0@sha256:f8ac7b4d4a1c1a65b5e70186398eae99dddd232db36f2d516dbedc31e478a6fb"
+              env:
+              - name: PATHWAYS_HEAD
+                value: "${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}"
+              - name: MEGASCALE_SLICE_ID
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['jobset.sigs.k8s.io/job-index']
+              - name: MEGASCALE_NUM_SLICES
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['jobset.sigs.k8s.io/replicatedjob-replicas']
+              - name: JOBSET_NAME
+                valueFrom:
+                  fieldRef:
+                    fieldPath: metadata.labels['jobset.sigs.k8s.io/jobset-name']
+              - name: MEGASCALE_COORDINATOR_ADDRESS
+                value: "${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}"
+              # TPU_ACCELERATOR_TYPE is supplied by the node's device plugin; do not set it here.
+              - name: TPU_SKIP_MDS_QUERY
+                value: "true"
+              args:
+              - --server_port=29005
+              - --resource_manager_address=${WORKLOAD_NAME}-pathways-head-0-0.${WORKLOAD_NAME}:29001
+              - --gcs_scratch_location=${BASE_OUTPUT_DIR}/compilation_cache/pathways
+              - --enable_metrics_collection=true
+              - --xla_tpu_use_enhanced_launch_barrier=true
+              ports:
+              - containerPort: 29005
+                protocol: TCP
+              - containerPort: 29006
+                protocol: TCP
+              - containerPort: 8471
+                protocol: TCP
+              - containerPort: 8080
+                protocol: TCP
+              resources:
+                limits:
+                  google.com/tpu: "4"
+                requests:
+                  google.com/tpu: "4"
+              volumeMounts:
+              - name: shared-tmp
+                mountPath: /tmp
+            volumes:
+            - name: shared-tmp
+              hostPath:
+                path: /tmp
+                type: DirectoryOrCreate
