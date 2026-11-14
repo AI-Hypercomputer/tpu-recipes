@@ -1,0 +1,889 @@
+# Disaggregated 1P1D Kimi-K3 Pallas Megakernel + DSpark Serving Manifest for Ironwood TPU (2 x 2x2x4 = 32 TPU v7x Chips)
+# Substitute <REGISTRY> and <YOUR_GCS_MODEL_BUCKET> before applying:
+#   sed -e "s|<REGISTRY>|${IMAGE_REGISTRY}|g" \
+#       -e "s|<YOUR_GCS_MODEL_BUCKET>|${GCS_MODEL_BUCKET}|g" \
+#       kimi_k3_megakernel-1p1d.yaml | kubectl apply -f -
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: vllm-kimi-k3-prefill
+  namespace: vllm-kimi-k3-mk
+  annotations:
+    leaderworkerset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: 4
+    restartPolicy: RecreateGroupOnPodRestart
+    leaderTemplate:
+      metadata:
+        labels:
+          app: vllm-kimi-k3-prefill
+          role: leader
+        annotations:
+          gke-gcsfuse/volumes: "true"
+          gke-gcsfuse/cpu-limit: "0"
+          gke-gcsfuse/memory-limit: "0"
+          gke-gcsfuse/ephemeral-storage-limit: "0"
+      spec:
+        enableServiceLinks: false
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x4
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          image: <REGISTRY>/vllm-tpu:k3-megakernel
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -euo pipefail
+            ulimit -c 0 || true
+
+            LWS_WORKER_INDEX="${LWS_WORKER_INDEX:-0}"
+            : "${POD_IP:?POD_IP must be injected via Kubernetes downward API}"
+            PREFILL_HEAD_IP="${POD_IP}"
+            DSPARK_DIR="/models/models--Inferact--Kimi-K3-DSpark/snapshots/cf6b8244620e7ea4b0651d214f28e89eac75bed6"
+
+            for _wait_mount in $(seq 1 24); do
+              if [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]]; then
+                break
+              fi
+              echo "[prefill-leader] Waiting for /models mount (${_wait_mount}/24)..."
+              sleep 5
+            done
+            [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]] || { echo "ERROR: /models mount missing expected Kimi-K3 or presharded files; verify bucket & IAM" >&2; exit 2; }
+
+            # Clear GKE-injected single-process / MegaScale variables so mp manages rank initialization cleanly.
+            export MEGASCALE_COORDINATOR_ADDRESS="" MEGASCALE_NUM_SLICES="" MEGASCALE_PORT="" MEGASCALE_SLICE_ID=""
+            export TPU_PROCESS_ADDRESSES="" TPU_PROCESS_PORT="" TPU_WORKER_HOSTNAMES=""
+
+            export PYTHONNOUSERSITE=1
+            export PYTHONUNBUFFERED=1
+            export TPU_MULTIHOST_BACKEND=mp
+            export TPU_ACCELERATOR_TYPE=tpu7x
+            export TPU_CHIPS_PER_HOST_BOUNDS="2,2,1"
+            export TPU_HOST_BOUNDS="1,1,4"
+            export TPU_NODE_ID="${LWS_WORKER_INDEX}"
+            export TPU_SKIP_MDS_QUERY=1
+            export VLLM_TARGET_DEVICE=tpu
+            export VLLM_NO_USAGE_STATS=1
+            export VLLM_HOST_IP="${POD_IP}"
+            export VLLM_USE_RUST_FRONTEND=1
+            export VLLM_RUST_FRONTEND_PATH=/usr/local/bin/vllm-rs
+            export VLLM_ENGINE_READY_TIMEOUT_S=14400
+            export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=10800
+            export VLLM_HTTP_TIMEOUT_KEEP_ALIVE=120
+            export TCMALLOC_AGGRESSIVE_DECOMMIT=true
+            export XLA_PYTHON_CLIENT_PREALLOCATE=false
+            export LIBTPU_INIT_ARGS="--xla_tpu_enable_diagnostic_coordinator=false --tpu_hbm_report_enable=false --enable_runtime_uptime_telemetry=false --xla_tpu_dvfs_p_state=7"
+            export TMPDIR=/dev/shm
+            export HF_HOME=/dev/shm/hf-home-prefill
+            export HF_MODULES_CACHE=/dev/shm/hf-home-prefill/modules
+            export HF_HUB_OFFLINE=1
+            export TRANSFORMERS_OFFLINE=1
+            export VLLM_XLA_CACHE_PATH=/cache/jax/prefill
+            export VLLM_CACHE_ROOT=/cache/jax/prefill/vllm-runtime
+            export VLLM_CONFIG_ROOT=/cache/jax/prefill/vllm-config
+            export TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT=/cache/jax/prefill/torch_tpu_tier3
+            export TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_LOCAL_BACKUP_TASK=0
+            export TPU_LOG_DIR=/dev/shm/tpu-logs-prefill
+            mkdir -p "${HF_HOME}" "${HF_MODULES_CACHE}" "${VLLM_CACHE_ROOT}" "${VLLM_CONFIG_ROOT}" "${TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT}" "${TPU_LOG_DIR}"
+
+            export TPU_MOE_HIERARCHICAL_EP=1
+            export TPU_LATENT_PROJ_INTRA_CHIP_TP=1
+            export ONEHOT_MOE_PERMUTE_THRESHOLD=32768
+            export TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL=1
+            export TPU_USE_RAIDEN_KV_CACHE_MANAGER=1
+            export TPU_KV_RESHARD_TRANSPORT=raiden
+            export TPU_RAIDEN_RESHARD_IMPL=store
+            export TPU_RAIDEN_KIMIK3_ADMISSION=1
+            export TPU_RAIDEN_TRANSFER_PARALLELISM=32
+            export TPU_RAIDEN_DST_SHARDS=32
+            export TPU_RAIDEN_PREFIX_AWARE_LOAD=1
+            export TPU_RAIDEN_TRANSFER_NUM_SLOTS=1
+            export TPU_RAIDEN_POOL_STAGING_LEASES=16
+            export TPU_P2P_WAIT_PULL_TIMEOUT=900
+            export RAIDEN_EXPECTED_WORKERS_TIMEOUT_S=1800
+            export TPU_KV_TRANSFER_NAMESPACE="k3-mk-0"
+            export TPU_RAIDEN_JOB_NAME=prefill
+            export TPU_RAIDEN_ENGINE_ID=engine-prefill
+            export TPU_RAIDEN_ADVERTISE_HOST="${PREFILL_HEAD_IP}"
+            export TPU_RAIDEN_CONTROLLER_ADDRESS="${PREFILL_HEAD_IP}:27340"
+            export TPU_RAIDEN_RESHARD_PORT_BASE=27340
+            export TPU_RAIDEN_STORE_DISPATCH_PORT_BASE=27440
+            export TPU_KV_TRANSFER_PORT=29340
+            export TPU_SIDE_CHANNEL_PORT=29740
+            export TPU_K3_MOE_REDUCE_DTYPE=bfloat16
+
+            # Prefill passes "draft" in --model-loader-extra-config (it does not run --speculative-config) so it computes and transfers DSpark's MLA KV-cache layers over Raiden.
+            exec vllm serve /models/Kimi-K3 \
+              --served-model-name moonshotai/Kimi-K3 \
+              --trust-remote-code \
+              --language-model-only \
+              --load-format megakernel \
+              --tensor-parallel-size 32 \
+              --enable-expert-parallel \
+              --decode-context-parallel-size 32 \
+              --distributed-timeout-seconds 1800 \
+              --kv-cache-dtype fp8 \
+              --block-size 512 \
+              --cp-kv-cache-interleave-size 512 \
+              --kv-cache-memory-bytes 23622320128 \
+              --enable-prefix-caching \
+              --mamba-cache-mode align \
+              --enable-prompt-tokens-details \
+              --max-model-len 32768 \
+              --max-num-seqs 4 \
+              --max-num-batched-tokens 8192 \
+              --async-scheduling \
+              --model-loader-extra-config "{\"presharded\":\"/models/presharded/kimi-k3-tp32\",\"draft\":\"${DSPARK_DIR}\"}" \
+              --kv-transfer-config '{"kv_connector":"TPURaidenConnector","kv_connector_module_path":"vllm_torchtpu.distributed.kv_transfer.tpu_connector","kv_role":"kv_producer"}' \
+              --nnodes 4 \
+              --node-rank "${LWS_WORKER_INDEX}" \
+              --master-addr "${PREFILL_HEAD_IP}" \
+              --master-port 29500 \
+              --host 0.0.0.0 \
+              --port 8000
+          env:
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          ports:
+          - name: http
+            containerPort: 8000
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          volumeMounts:
+          - name: dshm
+            mountPath: /dev/shm
+          - name: cache-volume
+            mountPath: /cache
+          - name: gcs-models
+            mountPath: /models
+            readOnly: true
+        volumes:
+        # Memory-backed /dev/shm is mandatory so mp + Raiden + TMPDIR=/dev/shm never hit Kubernetes's 64 MiB default cap.
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: cache-volume
+          emptyDir: {}
+        # Alternatively, mount a ReadOnlyMany Hyperdisk ML persistentVolumeClaim at /models instead of GCSFuse CSI.
+        - name: gcs-models
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            readOnly: true
+            volumeAttributes:
+              bucketName: "<YOUR_GCS_MODEL_BUCKET>"
+              mountOptions: "implicit-dirs,file-cache:max-size-mb:0,read_ahead_kb=131072"
+              skipCSIBucketAccessCheck: "true"
+    workerTemplate:
+      metadata:
+        labels:
+          app: vllm-kimi-k3-prefill
+          role: worker
+        annotations:
+          gke-gcsfuse/volumes: "true"
+          gke-gcsfuse/cpu-limit: "0"
+          gke-gcsfuse/memory-limit: "0"
+          gke-gcsfuse/ephemeral-storage-limit: "0"
+      spec:
+        enableServiceLinks: false
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x4
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          image: <REGISTRY>/vllm-tpu:k3-megakernel
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -euo pipefail
+            ulimit -c 0 || true
+
+            : "${LWS_WORKER_INDEX:?LWS_WORKER_INDEX must be set by LeaderWorkerSet}"
+            : "${LWS_LEADER_ADDRESS:?LWS_LEADER_ADDRESS must be set by LeaderWorkerSet}"
+            : "${POD_IP:?POD_IP must be injected via Kubernetes downward API}"
+            DSPARK_DIR="/models/models--Inferact--Kimi-K3-DSpark/snapshots/cf6b8244620e7ea4b0651d214f28e89eac75bed6"
+
+            PREFILL_HEAD_IP="$(python3 - "${LWS_LEADER_ADDRESS}" << 'PYEOF'
+            import re
+            import socket
+            import sys
+            import time
+
+            host = sys.argv[1]
+            deadline = time.monotonic() + 900.0
+            attempt = 0
+            while True:
+              attempt += 1
+              try:
+                ip = socket.gethostbyname(host)
+                if re.match(r"^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$", ip):
+                  print(ip)
+                  sys.exit(0)
+              except OSError:
+                pass
+              now = time.monotonic()
+              if now >= deadline:
+                print(f"ERROR: Failed to resolve {host} within 900s", file=sys.stderr)
+                sys.exit(1)
+              if attempt == 1 or attempt % 6 == 0:
+                print(f"[dns] Waiting for {host} (attempt={attempt})...", file=sys.stderr, flush=True)
+              time.sleep(5)
+            PYEOF
+            )"
+            echo "[prefill-worker-${LWS_WORKER_INDEX}] Resolved ${LWS_LEADER_ADDRESS} -> ${PREFILL_HEAD_IP}"
+
+            for _wait_mount in $(seq 1 24); do
+              if [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]]; then
+                break
+              fi
+              echo "[prefill-worker-${LWS_WORKER_INDEX}] Waiting for /models mount (${_wait_mount}/24)..."
+              sleep 5
+            done
+            [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]] || { echo "ERROR: /models mount missing expected Kimi-K3 or presharded files; verify bucket & IAM" >&2; exit 2; }
+
+            export MEGASCALE_COORDINATOR_ADDRESS="" MEGASCALE_NUM_SLICES="" MEGASCALE_PORT="" MEGASCALE_SLICE_ID=""
+            export TPU_PROCESS_ADDRESSES="" TPU_PROCESS_PORT="" TPU_WORKER_HOSTNAMES=""
+
+            export PYTHONNOUSERSITE=1
+            export PYTHONUNBUFFERED=1
+            export TPU_MULTIHOST_BACKEND=mp
+            export TPU_ACCELERATOR_TYPE=tpu7x
+            export TPU_CHIPS_PER_HOST_BOUNDS="2,2,1"
+            export TPU_HOST_BOUNDS="1,1,4"
+            export TPU_NODE_ID="${LWS_WORKER_INDEX}"
+            export TPU_SKIP_MDS_QUERY=1
+            export VLLM_TARGET_DEVICE=tpu
+            export VLLM_NO_USAGE_STATS=1
+            export VLLM_HOST_IP="${POD_IP}"
+            export VLLM_USE_RUST_FRONTEND=1
+            export VLLM_RUST_FRONTEND_PATH=/usr/local/bin/vllm-rs
+            export VLLM_ENGINE_READY_TIMEOUT_S=14400
+            export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=10800
+            export VLLM_HTTP_TIMEOUT_KEEP_ALIVE=120
+            export TCMALLOC_AGGRESSIVE_DECOMMIT=true
+            export XLA_PYTHON_CLIENT_PREALLOCATE=false
+            export LIBTPU_INIT_ARGS="--xla_tpu_enable_diagnostic_coordinator=false --tpu_hbm_report_enable=false --enable_runtime_uptime_telemetry=false --xla_tpu_dvfs_p_state=7"
+            export TMPDIR=/dev/shm
+            export HF_HOME=/dev/shm/hf-home-prefill
+            export HF_MODULES_CACHE=/dev/shm/hf-home-prefill/modules
+            export HF_HUB_OFFLINE=1
+            export TRANSFORMERS_OFFLINE=1
+            export VLLM_XLA_CACHE_PATH=/cache/jax/prefill
+            export VLLM_CACHE_ROOT=/cache/jax/prefill/vllm-runtime
+            export VLLM_CONFIG_ROOT=/cache/jax/prefill/vllm-config
+            export TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT=/cache/jax/prefill/torch_tpu_tier3
+            export TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_LOCAL_BACKUP_TASK=0
+            export TPU_LOG_DIR=/dev/shm/tpu-logs-prefill
+            mkdir -p "${HF_HOME}" "${HF_MODULES_CACHE}" "${VLLM_CACHE_ROOT}" "${VLLM_CONFIG_ROOT}" "${TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT}" "${TPU_LOG_DIR}"
+
+            export TPU_MOE_HIERARCHICAL_EP=1
+            export TPU_LATENT_PROJ_INTRA_CHIP_TP=1
+            export ONEHOT_MOE_PERMUTE_THRESHOLD=32768
+            export TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL=1
+            export TPU_USE_RAIDEN_KV_CACHE_MANAGER=1
+            export TPU_KV_RESHARD_TRANSPORT=raiden
+            export TPU_RAIDEN_RESHARD_IMPL=store
+            export TPU_RAIDEN_KIMIK3_ADMISSION=1
+            export TPU_RAIDEN_TRANSFER_PARALLELISM=32
+            export TPU_RAIDEN_DST_SHARDS=32
+            export TPU_RAIDEN_PREFIX_AWARE_LOAD=1
+            export TPU_RAIDEN_TRANSFER_NUM_SLOTS=1
+            export TPU_RAIDEN_POOL_STAGING_LEASES=16
+            export TPU_P2P_WAIT_PULL_TIMEOUT=900
+            export RAIDEN_EXPECTED_WORKERS_TIMEOUT_S=1800
+            export TPU_KV_TRANSFER_NAMESPACE="k3-mk-0"
+            export TPU_RAIDEN_JOB_NAME=prefill
+            export TPU_RAIDEN_ENGINE_ID=engine-prefill
+            export TPU_RAIDEN_ADVERTISE_HOST="${PREFILL_HEAD_IP}"
+            export TPU_RAIDEN_CONTROLLER_ADDRESS="${PREFILL_HEAD_IP}:27340"
+            export TPU_RAIDEN_RESHARD_PORT_BASE=27340
+            export TPU_RAIDEN_STORE_DISPATCH_PORT_BASE=27440
+            export TPU_KV_TRANSFER_PORT=29340
+            export TPU_SIDE_CHANNEL_PORT=29740
+            export TPU_K3_MOE_REDUCE_DTYPE=bfloat16
+
+            # Prefill passes "draft" in --model-loader-extra-config (it does not run --speculative-config) so it computes and transfers DSpark's MLA KV-cache layers over Raiden.
+            exec vllm serve /models/Kimi-K3 \
+              --served-model-name moonshotai/Kimi-K3 \
+              --trust-remote-code \
+              --language-model-only \
+              --load-format megakernel \
+              --tensor-parallel-size 32 \
+              --enable-expert-parallel \
+              --decode-context-parallel-size 32 \
+              --distributed-timeout-seconds 1800 \
+              --kv-cache-dtype fp8 \
+              --block-size 512 \
+              --cp-kv-cache-interleave-size 512 \
+              --kv-cache-memory-bytes 23622320128 \
+              --enable-prefix-caching \
+              --mamba-cache-mode align \
+              --enable-prompt-tokens-details \
+              --max-model-len 32768 \
+              --max-num-seqs 4 \
+              --max-num-batched-tokens 8192 \
+              --async-scheduling \
+              --model-loader-extra-config "{\"presharded\":\"/models/presharded/kimi-k3-tp32\",\"draft\":\"${DSPARK_DIR}\"}" \
+              --kv-transfer-config '{"kv_connector":"TPURaidenConnector","kv_connector_module_path":"vllm_torchtpu.distributed.kv_transfer.tpu_connector","kv_role":"kv_producer"}' \
+              --nnodes 4 \
+              --node-rank "${LWS_WORKER_INDEX}" \
+              --master-addr "${PREFILL_HEAD_IP}" \
+              --master-port 29500 \
+              --headless
+          env:
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          volumeMounts:
+          - name: dshm
+            mountPath: /dev/shm
+          - name: cache-volume
+            mountPath: /cache
+          - name: gcs-models
+            mountPath: /models
+            readOnly: true
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: cache-volume
+          emptyDir: {}
+        # Alternatively, mount a ReadOnlyMany Hyperdisk ML persistentVolumeClaim at /models instead of GCSFuse CSI.
+        - name: gcs-models
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            readOnly: true
+            volumeAttributes:
+              bucketName: "<YOUR_GCS_MODEL_BUCKET>"
+              mountOptions: "implicit-dirs,file-cache:max-size-mb:0,read_ahead_kb=131072"
+              skipCSIBucketAccessCheck: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-kimi-k3-prefill-service
+  namespace: vllm-kimi-k3-mk
+spec:
+  selector:
+    app: vllm-kimi-k3-prefill
+    role: leader
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: vllm-kimi-k3-decode
+  namespace: vllm-kimi-k3-mk
+  annotations:
+    leaderworkerset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: 4
+    restartPolicy: RecreateGroupOnPodRestart
+    leaderTemplate:
+      metadata:
+        labels:
+          app: vllm-kimi-k3-decode
+          role: leader
+        annotations:
+          gke-gcsfuse/volumes: "true"
+          gke-gcsfuse/cpu-limit: "0"
+          gke-gcsfuse/memory-limit: "0"
+          gke-gcsfuse/ephemeral-storage-limit: "0"
+      spec:
+        enableServiceLinks: false
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x4
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          image: <REGISTRY>/vllm-tpu:k3-megakernel
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -euo pipefail
+            ulimit -c 0 || true
+
+            LWS_WORKER_INDEX="${LWS_WORKER_INDEX:-0}"
+            : "${POD_IP:?POD_IP must be injected via Kubernetes downward API}"
+            DECODE_HEAD_IP="${POD_IP}"
+            DSPARK_DIR="/models/models--Inferact--Kimi-K3-DSpark/snapshots/cf6b8244620e7ea4b0651d214f28e89eac75bed6"
+
+            for _wait_mount in $(seq 1 24); do
+              if [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]]; then
+                break
+              fi
+              echo "[decode-leader] Waiting for /models mount (${_wait_mount}/24)..."
+              sleep 5
+            done
+            [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]] || { echo "ERROR: /models mount missing expected Kimi-K3 or presharded files; verify bucket & IAM" >&2; exit 2; }
+
+            export MEGASCALE_COORDINATOR_ADDRESS="" MEGASCALE_NUM_SLICES="" MEGASCALE_PORT="" MEGASCALE_SLICE_ID=""
+            export TPU_PROCESS_ADDRESSES="" TPU_PROCESS_PORT="" TPU_WORKER_HOSTNAMES=""
+
+            export PYTHONNOUSERSITE=1
+            export PYTHONUNBUFFERED=1
+            export TPU_MULTIHOST_BACKEND=mp
+            export TPU_ACCELERATOR_TYPE=tpu7x
+            export TPU_CHIPS_PER_HOST_BOUNDS="2,2,1"
+            export TPU_HOST_BOUNDS="1,1,4"
+            export TPU_NODE_ID="${LWS_WORKER_INDEX}"
+            export TPU_SKIP_MDS_QUERY=1
+            export VLLM_TARGET_DEVICE=tpu
+            export VLLM_NO_USAGE_STATS=1
+            export VLLM_HOST_IP="${POD_IP}"
+            export VLLM_USE_RUST_FRONTEND=1
+            export VLLM_RUST_FRONTEND_PATH=/usr/local/bin/vllm-rs
+            export VLLM_ENGINE_READY_TIMEOUT_S=14400
+            export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=10800
+            export VLLM_HTTP_TIMEOUT_KEEP_ALIVE=120
+            export TCMALLOC_AGGRESSIVE_DECOMMIT=true
+            export XLA_PYTHON_CLIENT_PREALLOCATE=false
+            export LIBTPU_INIT_ARGS="--xla_tpu_enable_diagnostic_coordinator=false --tpu_hbm_report_enable=false --enable_runtime_uptime_telemetry=false --xla_tpu_dvfs_p_state=7"
+            export TMPDIR=/dev/shm
+            export HF_HOME=/dev/shm/hf-home-decode
+            export HF_MODULES_CACHE=/dev/shm/hf-home-decode/modules
+            export HF_HUB_OFFLINE=1
+            export TRANSFORMERS_OFFLINE=1
+            export VLLM_XLA_CACHE_PATH=/cache/jax/decode
+            export VLLM_CACHE_ROOT=/cache/jax/decode/vllm-runtime
+            export VLLM_CONFIG_ROOT=/cache/jax/decode/vllm-config
+            export TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT=/cache/jax/decode/torch_tpu_tier3
+            export TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_LOCAL_BACKUP_TASK=0
+            export TPU_LOG_DIR=/dev/shm/tpu-logs-decode
+            mkdir -p "${HF_HOME}" "${HF_MODULES_CACHE}" "${VLLM_CACHE_ROOT}" "${VLLM_CONFIG_ROOT}" "${TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT}" "${TPU_LOG_DIR}"
+
+            export TPU_MOE_HIERARCHICAL_EP=1
+            export TPU_LATENT_PROJ_INTRA_CHIP_TP=1
+            export ONEHOT_MOE_PERMUTE_THRESHOLD=32768
+            export TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL=1
+            export TPU_USE_RAIDEN_KV_CACHE_MANAGER=1
+            export TPU_KV_RESHARD_TRANSPORT=raiden
+            export TPU_RAIDEN_RESHARD_IMPL=store
+            export TPU_RAIDEN_KIMIK3_ADMISSION=1
+            export TPU_RAIDEN_TRANSFER_PARALLELISM=32
+            export TPU_RAIDEN_DST_SHARDS=32
+            export TPU_RAIDEN_PREFIX_AWARE_LOAD=1
+            export TPU_RAIDEN_TRANSFER_NUM_SLOTS=1
+            export TPU_RAIDEN_POOL_STAGING_LEASES=16
+            export TPU_P2P_WAIT_PULL_TIMEOUT=900
+            export RAIDEN_EXPECTED_WORKERS_TIMEOUT_S=1800
+            export TPU_KV_TRANSFER_NAMESPACE="k3-mk-0"
+            export TPU_RAIDEN_JOB_NAME=decode
+            export TPU_RAIDEN_ENGINE_ID=engine-decode
+            export TPU_RAIDEN_ADVERTISE_HOST="${DECODE_HEAD_IP}"
+            export TPU_RAIDEN_CONTROLLER_ADDRESS="${DECODE_HEAD_IP}:28340"
+            export TPU_RAIDEN_RESHARD_PORT_BASE=28340
+            export TPU_RAIDEN_STORE_DISPATCH_PORT_BASE=28440
+            export TPU_KV_TRANSFER_PORT=30340
+            export TPU_SIDE_CHANNEL_PORT=30740
+            export TPU_K3_MOE_REDUCE_DTYPE=float32
+            export TPU_RAIDEN_STAGE3_DEFERRED_SUBMIT=0
+
+            # Decode takes the DSpark checkpoint from --speculative-config ("draft" in --model-loader-extra-config is only valid on prefill).
+            exec vllm serve /models/Kimi-K3 \
+              --served-model-name moonshotai/Kimi-K3 \
+              --trust-remote-code \
+              --language-model-only \
+              --load-format megakernel \
+              --tensor-parallel-size 32 \
+              --enable-expert-parallel \
+              --decode-context-parallel-size 32 \
+              --distributed-timeout-seconds 1800 \
+              --kv-cache-dtype fp8 \
+              --block-size 512 \
+              --cp-kv-cache-interleave-size 512 \
+              --kv-cache-memory-bytes 30064771072 \
+              --enable-prefix-caching \
+              --mamba-cache-mode align \
+              --enable-prompt-tokens-details \
+              --max-model-len 32768 \
+              --max-num-seqs 16 \
+              --max-num-batched-tokens 512 \
+              --async-scheduling \
+              --model-loader-extra-config '{"presharded":"/models/presharded/kimi-k3-tp32"}' \
+              --kv-transfer-config '{"kv_connector":"TPURaidenConnector","kv_connector_module_path":"vllm_torchtpu.distributed.kv_transfer.tpu_connector","kv_role":"kv_consumer"}' \
+              --speculative-config "{\"method\":\"dspark\",\"model\":\"${DSPARK_DIR}\",\"num_speculative_tokens\":7,\"num_speculative_tokens_per_batch_size\":[[1,1,7],[2,16,3]]}" \
+              --nnodes 4 \
+              --node-rank "${LWS_WORKER_INDEX}" \
+              --master-addr "${DECODE_HEAD_IP}" \
+              --master-port 29500 \
+              --host 0.0.0.0 \
+              --port 8000
+          env:
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          ports:
+          - name: http
+            containerPort: 8000
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          volumeMounts:
+          - name: dshm
+            mountPath: /dev/shm
+          - name: cache-volume
+            mountPath: /cache
+          - name: gcs-models
+            mountPath: /models
+            readOnly: true
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: cache-volume
+          emptyDir: {}
+        # Alternatively, mount a ReadOnlyMany Hyperdisk ML persistentVolumeClaim at /models instead of GCSFuse CSI.
+        - name: gcs-models
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            readOnly: true
+            volumeAttributes:
+              bucketName: "<YOUR_GCS_MODEL_BUCKET>"
+              mountOptions: "implicit-dirs,file-cache:max-size-mb:0,read_ahead_kb=131072"
+              skipCSIBucketAccessCheck: "true"
+    workerTemplate:
+      metadata:
+        labels:
+          app: vllm-kimi-k3-decode
+          role: worker
+        annotations:
+          gke-gcsfuse/volumes: "true"
+          gke-gcsfuse/cpu-limit: "0"
+          gke-gcsfuse/memory-limit: "0"
+          gke-gcsfuse/ephemeral-storage-limit: "0"
+      spec:
+        enableServiceLinks: false
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x4
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          image: <REGISTRY>/vllm-tpu:k3-megakernel
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -euo pipefail
+            ulimit -c 0 || true
+
+            : "${LWS_WORKER_INDEX:?LWS_WORKER_INDEX must be set by LeaderWorkerSet}"
+            : "${LWS_LEADER_ADDRESS:?LWS_LEADER_ADDRESS must be set by LeaderWorkerSet}"
+            : "${POD_IP:?POD_IP must be injected via Kubernetes downward API}"
+            DSPARK_DIR="/models/models--Inferact--Kimi-K3-DSpark/snapshots/cf6b8244620e7ea4b0651d214f28e89eac75bed6"
+
+            DECODE_HEAD_IP="$(python3 - "${LWS_LEADER_ADDRESS}" << 'PYEOF'
+            import re
+            import socket
+            import sys
+            import time
+
+            host = sys.argv[1]
+            deadline = time.monotonic() + 900.0
+            attempt = 0
+            while True:
+              attempt += 1
+              try:
+                ip = socket.gethostbyname(host)
+                if re.match(r"^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$", ip):
+                  print(ip)
+                  sys.exit(0)
+              except OSError:
+                pass
+              now = time.monotonic()
+              if now >= deadline:
+                print(f"ERROR: Failed to resolve {host} within 900s", file=sys.stderr)
+                sys.exit(1)
+              if attempt == 1 or attempt % 6 == 0:
+                print(f"[dns] Waiting for {host} (attempt={attempt})...", file=sys.stderr, flush=True)
+              time.sleep(5)
+            PYEOF
+            )"
+            echo "[decode-worker-${LWS_WORKER_INDEX}] Resolved ${LWS_LEADER_ADDRESS} -> ${DECODE_HEAD_IP}"
+
+            for _wait_mount in $(seq 1 24); do
+              if [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]]; then
+                break
+              fi
+              echo "[decode-worker-${LWS_WORKER_INDEX}] Waiting for /models mount (${_wait_mount}/24)..."
+              sleep 5
+            done
+            [[ -f /models/Kimi-K3/config.json && -f /models/presharded/kimi-k3-tp32/layout.json ]] || { echo "ERROR: /models mount missing expected Kimi-K3 or presharded files; verify bucket & IAM" >&2; exit 2; }
+
+            export MEGASCALE_COORDINATOR_ADDRESS="" MEGASCALE_NUM_SLICES="" MEGASCALE_PORT="" MEGASCALE_SLICE_ID=""
+            export TPU_PROCESS_ADDRESSES="" TPU_PROCESS_PORT="" TPU_WORKER_HOSTNAMES=""
+
+            export PYTHONNOUSERSITE=1
+            export PYTHONUNBUFFERED=1
+            export TPU_MULTIHOST_BACKEND=mp
+            export TPU_ACCELERATOR_TYPE=tpu7x
+            export TPU_CHIPS_PER_HOST_BOUNDS="2,2,1"
+            export TPU_HOST_BOUNDS="1,1,4"
+            export TPU_NODE_ID="${LWS_WORKER_INDEX}"
+            export TPU_SKIP_MDS_QUERY=1
+            export VLLM_TARGET_DEVICE=tpu
+            export VLLM_NO_USAGE_STATS=1
+            export VLLM_HOST_IP="${POD_IP}"
+            export VLLM_USE_RUST_FRONTEND=1
+            export VLLM_RUST_FRONTEND_PATH=/usr/local/bin/vllm-rs
+            export VLLM_ENGINE_READY_TIMEOUT_S=14400
+            export VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS=10800
+            export VLLM_HTTP_TIMEOUT_KEEP_ALIVE=120
+            export TCMALLOC_AGGRESSIVE_DECOMMIT=true
+            export XLA_PYTHON_CLIENT_PREALLOCATE=false
+            export LIBTPU_INIT_ARGS="--xla_tpu_enable_diagnostic_coordinator=false --tpu_hbm_report_enable=false --enable_runtime_uptime_telemetry=false --xla_tpu_dvfs_p_state=7"
+            export TMPDIR=/dev/shm
+            export HF_HOME=/dev/shm/hf-home-decode
+            export HF_MODULES_CACHE=/dev/shm/hf-home-decode/modules
+            export HF_HUB_OFFLINE=1
+            export TRANSFORMERS_OFFLINE=1
+            export VLLM_XLA_CACHE_PATH=/cache/jax/decode
+            export VLLM_CACHE_ROOT=/cache/jax/decode/vllm-runtime
+            export VLLM_CONFIG_ROOT=/cache/jax/decode/vllm-config
+            export TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT=/cache/jax/decode/torch_tpu_tier3
+            export TORCH_TPU_INTERNAL_TIER3_COMPILATION_CACHE_LOCAL_BACKUP_TASK=0
+            export TPU_LOG_DIR=/dev/shm/tpu-logs-decode
+            mkdir -p "${HF_HOME}" "${HF_MODULES_CACHE}" "${VLLM_CACHE_ROOT}" "${VLLM_CONFIG_ROOT}" "${TORCH_TPU_TIER3_COMPILATION_CACHE_ROOT}" "${TPU_LOG_DIR}"
+
+            export TPU_MOE_HIERARCHICAL_EP=1
+            export TPU_LATENT_PROJ_INTRA_CHIP_TP=1
+            export ONEHOT_MOE_PERMUTE_THRESHOLD=32768
+            export TPU_VLLM_ENABLE_UNIFIED_BLOCK_POOL=1
+            export TPU_USE_RAIDEN_KV_CACHE_MANAGER=1
+            export TPU_KV_RESHARD_TRANSPORT=raiden
+            export TPU_RAIDEN_RESHARD_IMPL=store
+            export TPU_RAIDEN_KIMIK3_ADMISSION=1
+            export TPU_RAIDEN_TRANSFER_PARALLELISM=32
+            export TPU_RAIDEN_DST_SHARDS=32
+            export TPU_RAIDEN_PREFIX_AWARE_LOAD=1
+            export TPU_RAIDEN_TRANSFER_NUM_SLOTS=1
+            export TPU_RAIDEN_POOL_STAGING_LEASES=16
+            export TPU_P2P_WAIT_PULL_TIMEOUT=900
+            export RAIDEN_EXPECTED_WORKERS_TIMEOUT_S=1800
+            export TPU_KV_TRANSFER_NAMESPACE="k3-mk-0"
+            export TPU_RAIDEN_JOB_NAME=decode
+            export TPU_RAIDEN_ENGINE_ID=engine-decode
+            export TPU_RAIDEN_ADVERTISE_HOST="${DECODE_HEAD_IP}"
+            export TPU_RAIDEN_CONTROLLER_ADDRESS="${DECODE_HEAD_IP}:28340"
+            export TPU_RAIDEN_RESHARD_PORT_BASE=28340
+            export TPU_RAIDEN_STORE_DISPATCH_PORT_BASE=28440
+            export TPU_KV_TRANSFER_PORT=30340
+            export TPU_SIDE_CHANNEL_PORT=30740
+            export TPU_K3_MOE_REDUCE_DTYPE=float32
+            export TPU_RAIDEN_STAGE3_DEFERRED_SUBMIT=0
+
+            # Decode takes the DSpark checkpoint from --speculative-config ("draft" in --model-loader-extra-config is only valid on prefill).
+            exec vllm serve /models/Kimi-K3 \
+              --served-model-name moonshotai/Kimi-K3 \
+              --trust-remote-code \
+              --language-model-only \
+              --load-format megakernel \
+              --tensor-parallel-size 32 \
+              --enable-expert-parallel \
+              --decode-context-parallel-size 32 \
+              --distributed-timeout-seconds 1800 \
+              --kv-cache-dtype fp8 \
+              --block-size 512 \
+              --cp-kv-cache-interleave-size 512 \
+              --kv-cache-memory-bytes 30064771072 \
+              --enable-prefix-caching \
+              --mamba-cache-mode align \
+              --enable-prompt-tokens-details \
+              --max-model-len 32768 \
+              --max-num-seqs 16 \
+              --max-num-batched-tokens 512 \
+              --async-scheduling \
+              --model-loader-extra-config '{"presharded":"/models/presharded/kimi-k3-tp32"}' \
+              --kv-transfer-config '{"kv_connector":"TPURaidenConnector","kv_connector_module_path":"vllm_torchtpu.distributed.kv_transfer.tpu_connector","kv_role":"kv_consumer"}' \
+              --speculative-config "{\"method\":\"dspark\",\"model\":\"${DSPARK_DIR}\",\"num_speculative_tokens\":7,\"num_speculative_tokens_per_batch_size\":[[1,1,7],[2,16,3]]}" \
+              --nnodes 4 \
+              --node-rank "${LWS_WORKER_INDEX}" \
+              --master-addr "${DECODE_HEAD_IP}" \
+              --master-port 29500 \
+              --headless
+          env:
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          volumeMounts:
+          - name: dshm
+            mountPath: /dev/shm
+          - name: cache-volume
+            mountPath: /cache
+          - name: gcs-models
+            mountPath: /models
+            readOnly: true
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: cache-volume
+          emptyDir: {}
+        # Alternatively, mount a ReadOnlyMany Hyperdisk ML persistentVolumeClaim at /models instead of GCSFuse CSI.
+        - name: gcs-models
+          csi:
+            driver: gcsfuse.csi.storage.gke.io
+            readOnly: true
+            volumeAttributes:
+              bucketName: "<YOUR_GCS_MODEL_BUCKET>"
+              mountOptions: "implicit-dirs,file-cache:max-size-mb:0,read_ahead_kb=131072"
+              skipCSIBucketAccessCheck: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-kimi-k3-decode-service
+  namespace: vllm-kimi-k3-mk
+spec:
+  selector:
+    app: vllm-kimi-k3-decode
+    role: leader
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-kimi-k3-router
+  namespace: vllm-kimi-k3-mk
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-kimi-k3-router
+  template:
+    metadata:
+      labels:
+        app: vllm-kimi-k3-router
+    spec:
+      enableServiceLinks: false
+      containers:
+      - name: vllm-router
+        image: <REGISTRY>/vllm-tpu:k3-megakernel
+        imagePullPolicy: Always
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -euo pipefail
+
+          PREFILL_URL="http://vllm-kimi-k3-prefill-service:8000"
+          DECODE_URL="http://vllm-kimi-k3-decode-service:8000"
+
+          echo "[router] Waiting for prefill (${PREFILL_URL}/health) and decode (${DECODE_URL}/health) to return HTTP 200..."
+          while true; do
+            p_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "${PREFILL_URL}/health" || true)"
+            d_code="$(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 10 "${DECODE_URL}/health" || true)"
+            if [[ "${p_code}" == "200" && "${d_code}" == "200" ]]; then
+              echo "[router] Both prefill and decode services are healthy (HTTP 200). Launching vllm-router..."
+              break
+            fi
+            echo "[router] Still waiting: prefill=${p_code} decode=${d_code}"
+            sleep 15
+          done
+
+          exec /usr/local/bin/vllm-router \
+            --host 0.0.0.0 \
+            --port 8000 \
+            --vllm-pd-disaggregation \
+            --prefill "${PREFILL_URL}" \
+            --decode "${DECODE_URL}" \
+            --policy consistent_hash \
+            --request-timeout-secs 5000 \
+            --worker-startup-timeout-secs 300 \
+            --health-check-interval-secs 30 \
+            --disable-retries
+        ports:
+        - name: http
+          containerPort: 8000
+        resources:
+          requests:
+            cpu: "4"
+            memory: "8Gi"
+          limits:
+            cpu: "8"
+            memory: "16Gi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-kimi-k3-router-service
+  namespace: vllm-kimi-k3-mk
+spec:
+  selector:
+    app: vllm-kimi-k3-router
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
