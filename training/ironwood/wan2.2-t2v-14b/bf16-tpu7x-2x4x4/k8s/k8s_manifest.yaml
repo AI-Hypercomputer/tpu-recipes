@@ -1,0 +1,83 @@
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: ${WORKLOAD_NAME}
+spec:
+  ttlSecondsAfterFinished: 3600
+  network:
+    enableDNSHostnames: true
+    publishNotReadyAddresses: true
+  failurePolicy:
+    maxRestarts: 0
+    rules:
+      - action: FailJobSet
+        onJobFailureReasons:
+          - PodFailurePolicy
+  replicatedJobs:
+    - name: main-job
+      replicas: 1
+      template:
+        spec:
+          completionMode: Indexed
+          parallelism: 8
+          completions: 8
+          backoffLimit: 0
+          template:
+            metadata:
+              annotations:
+                cloud.google.com/gke-tpu-slice-topology: 2x4x4
+                kueue.x-k8s.io/podset-required-topology: cloud.google.com/gke-tpu-partition-2x4x4-id
+            spec:
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
+              terminationGracePeriodSeconds: 30
+              restartPolicy: Never
+              containers:
+              - name: workload-container
+                image: ${WORKLOAD_IMAGE}
+                command:
+                - "/bin/bash"
+                - "-c"
+                - "echo \"GCluster Start: $(date 2>/dev/null || true)\" >&2\n\n# Run workload in a separate process group\nset -m\n/bin/bash -c 'trap : TERM; cmd=\"$1\"; shift; eval \"$cmd\"' gcluster \"$1\" &\nchild=$!\n\n# Forward signals to the workload process group\ngot_sigterm=0\n_fwd() {\n  got_sigterm=1\n  echo \"gcluster: SIGTERM received, running cleanup\" >&2\n  kill -TERM -- \"-$child\" 2>/dev/null\n}\ntrap _fwd TERM INT\n\n# Wait for workload to exit\nwhile :; do\n  wait \"$child\"; rc=$?\n  is_job=0\n  for p in $(jobs -p); do\n    [ \"$p\" = \"$child\" ] && is_job=1\n  done\n  [ \"$is_job\" -eq 1 ] || break\ndone\n\n# Interrupted workloads should not exit 0 even if cleanup succeeded\nif [ \"$got_sigterm\" -ne 0 ] && [ \"$rc\" -eq 0 ]; then\n  rc=143\nfi\n\necho \"GCluster End: $(date 2>/dev/null || true)\" >&2\necho \"Exit code: $rc\" >&2\nexit \"$rc\"\n"
+                - "gcluster"
+                - "#!/bin/bash\n# Exit immediately if a command exits with a non-zero status.\nset -e\n\n# --- Graceful Shutdown Logic ---\n_sigterm() {\n  echo \"Caught SIGTERM signal, sending to child process...\"\n  kill -SIGTERM \"$PID\" 2>/dev/null\n}\ntrap _sigterm SIGTERM\n\n# Everything the run needs is rendered into this script, so it depends only on\n# ARTIFACT_DIR, DATASET_DIR and JOB_IDENTIFIER being set by the recipe.\nMAXDIFFUSION_BASE_CONFIG=src/maxdiffusion/configs/base_wan_27b.yml\nMAXDIFFUSION_SCRIPT_PATH=src/maxdiffusion/train_wan.py\nCONFIG_XLA_FLAGS='--xla_tpu_bf16_emission_mode=NATIVE_EMISSION --xla_tpu_enable_sparse_core_reduce_scatter_v2=true --xla_tpu_enable_sparse_core_collective_offload_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_2d_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_3d_all_gather=true --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=true --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_enable_sparse_core_collective_offload_reduce_scatter=true --xla_tpu_use_single_sparse_core_for_all_gather_offload=true --xla_tpu_use_tc_device_shape_on_sc=true --xla_sc_disable_megacore_partitioning=true --xla_enable_async_all_gather=true --xla_max_concurrent_async_all_gathers=4 --xla_tpu_enable_async_collective_fusion=false --xla_tpu_enable_async_collective_fusion_fuse_all_gather=false --xla_enable_async_all_reduce=true --xla_tpu_prefer_async_allgather_to_allreduce=true --xla_tpu_enable_sparse_core_collective_aggregator=true --xla_tpu_sparse_core_reduce_scatter_latency_multiplier=3 --xla_tpu_enable_all_gather_offload_tracing=true --xla_tpu_enable_async_all_to_all=true --xla_tpu_overlap_compute_collective_tc=true --xla_latency_hiding_scheduler_rerun=5 --xla_tpu_enable_latency_hiding_layer_scheduler=true --xla_tpu_enable_layer_scheduler_for_dependent_collectives=true --xla_tpu_scheduler_percent_shared_memory_limit=105 --xla_tpu_rwb_fusion=false --xla_tpu_enable_sublane_major_scaling_bitcast_fusion=false --xla_tpu_impure_enable_packed_bf16_math_ops=false --xla_tpu_scoped_vmem_limit_kib=65472 --xla_tpu_enable_tpu_custom_call_scoped_vmem_adjustments=true --xla_enable_transpose_trace=false'\n\n# MaxDiffusion writes TensorBoard, checkpoints and metrics under\n# ${output_dir}/${run_name}, so output_dir is the parent of ARTIFACT_DIR\n# unless a GCSFuse checkpoint mount path is configured.\nARTIFACT_DIR=\"${ARTIFACT_DIR%/}\"\nOUTPUT_DIR=\"${ARTIFACT_DIR%/*}\"\n\n# --- Log for Debugging ---\necho \"MaxDiffusion base config: ${MAXDIFFUSION_BASE_CONFIG}\"\necho \"MaxDiffusion script: ${MAXDIFFUSION_SCRIPT_PATH}\"\necho \"MaxDiffusion config overrides from command line:\"\ncat <<'CONFIG_OVERRIDES_EOF'\n  attention='ulysses_ring_custom' ulysses_shards=4 ulysses_attention_chunks=2 mask_padding_tokens=False use_base2_exp=True weights_dtype='bfloat16' activations_dtype='bfloat16' guidance_scale_low=3.0 guidance_scale_high=4.0 boundary_ratio=0.875 flow_shift=12.0 fps=16 skip_jax_distributed_system=False train_data_dir=\"${DATASET_DIR}/train\" load_tfrecord_cached=True height=1280 width=720 num_frames=81 num_inference_steps=40 prompt='a japanese pop star young woman with black hair is singing with a smile. She is inside a studio with dim lighting and musical instruments.' opt_enable_grad_global_norm_clipping=False enable_profiler=True dataset_save_location=\"${DATASET_DIR}\" remat_policy='CUSTOM' names_which_can_be_saved='['\\''attn_output'\\'', '\\''self_attn'\\'', '\\''cross_attn'\\'', '\\''hidden_states'\\'']' names_which_can_be_offloaded='[]' flash_block_sizes='{\"block_q\":2816,\"block_kv\":4096,\"block_kv_compute\":4096,\"block_kv_compute_in\":4096,\"block_q_dkv\":2048,\"block_kv_dkv\":4096,\"block_kv_dkv_compute\":4096,\"block_kv_dkv_compute_in\":256,\"dq_reduction_steps\":3,\"use_fused_bwd_kernel\":true}' flash_min_seq_length=0 seed=123456789 skip_first_n_steps_for_profiler=5 profiler_steps=10 per_device_batch_size=0.25 ici_data_parallelism=1 ici_fsdp_parallelism=16 ici_context_parallelism=4 ici_tensor_parallelism=1 vae_spatial=1 replicate_vae=True allow_split_physical_axes=True max_train_steps=30\nCONFIG_OVERRIDES_EOF\n\n# --- Main Execution ---\n# The python process is run in the background (&)\n(\n  # Set up the environment\n  export ENABLE_PATHWAYS_PERSISTENCE='1'\n  export JAX_PLATFORMS='tpu,cpu'\n  export ENABLE_PJRT_COMPATIBILITY='true'\n\n  # libtpu reads XLA flags from LIBTPU_INIT_ARGS and splits it on single\n  # spaces only, so re-join the config's flags followed by the environment's\n  # (the last value of a repeated flag wins) with single spaces, globbing off.\n  # XLA_FLAGS is then cleared because the CPU client rejects TPU-only flags.\n  set -f\n  # shellcheck disable=SC2086\n  set -- ${CONFIG_XLA_FLAGS} ${XLA_FLAGS:-}\n  set +f\n  if [ \"$#\" -gt 0 ]; then\n    export LIBTPU_INIT_ARGS=\"$*\"\n  fi\n  unset XLA_FLAGS\n\n  # Chained with && because set -e does not stop on a failure inside an &&\n  # list, so a failed setup step would otherwise still start the run.\n  pip install . && export HF_HUB_CACHE=/dev/shm && \\\n  python3 \"${MAXDIFFUSION_SCRIPT_PATH}\" \"${MAXDIFFUSION_BASE_CONFIG}\" attention='ulysses_ring_custom' ulysses_shards=4 ulysses_attention_chunks=2 mask_padding_tokens=False use_base2_exp=True weights_dtype='bfloat16' activations_dtype='bfloat16' guidance_scale_low=3.0 guidance_scale_high=4.0 boundary_ratio=0.875 flow_shift=12.0 fps=16 skip_jax_distributed_system=False train_data_dir=\"${DATASET_DIR}/train\" load_tfrecord_cached=True height=1280 width=720 num_frames=81 num_inference_steps=40 prompt='a japanese pop star young woman with black hair is singing with a smile. She is inside a studio with dim lighting and musical instruments.' opt_enable_grad_global_norm_clipping=False enable_profiler=True dataset_save_location=\"${DATASET_DIR}\" remat_policy='CUSTOM' names_which_can_be_saved='['\\''attn_output'\\'', '\\''self_attn'\\'', '\\''cross_attn'\\'', '\\''hidden_states'\\'']' names_which_can_be_offloaded='[]' flash_block_sizes='{\"block_q\":2816,\"block_kv\":4096,\"block_kv_compute\":4096,\"block_kv_compute_in\":4096,\"block_q_dkv\":2048,\"block_kv_dkv\":4096,\"block_kv_dkv_compute\":4096,\"block_kv_dkv_compute_in\":256,\"dq_reduction_steps\":3,\"use_fused_bwd_kernel\":true}' flash_min_seq_length=0 seed=123456789 skip_first_n_steps_for_profiler=5 profiler_steps=10 per_device_batch_size=0.25 ici_data_parallelism=1 ici_fsdp_parallelism=16 ici_context_parallelism=4 ici_tensor_parallelism=1 vae_spatial=1 replicate_vae=True allow_split_physical_axes=True max_train_steps=30 base_output_directory=\"${ARTIFACT_DIR}\" output_dir=\"${OUTPUT_DIR}\" run_name=\"${JOB_IDENTIFIER}\"\n) & PID=$!\n\n# Wait for the python process to finish\nwait $PID\nEXIT_CODE=$?\n\necho \"MaxDiffusion Job Ended at: $(date) with exit code $EXIT_CODE\"\nexit $EXIT_CODE"
+                resources:
+                  limits:
+                    google.com/tpu: "4"
+                env:
+                - name: ARTIFACT_DIR
+                  value: "${ARTIFACT_DIR}"
+                - name: DATASET_DIR
+                  value: "${DATASET_DIR}"
+                - name: HF_TOKEN
+                  value: "${HF_TOKEN}"
+                - name: JAX_COMPILATION_CACHE_DIR
+                  value: "${BASE_OUTPUT_DIR}/JAX_XLA_CACHE/maxdiffusion/wan2_2"
+                - name: JOB_IDENTIFIER
+                  value: "${WORKLOAD_NAME}"
+                - name: MASTER_ADDR
+                  value: "${WORKLOAD_NAME}-main-job-0-0.${WORKLOAD_NAME}"
+                - name: WORKERS_0_HOSTNAME
+                  value: "${WORKLOAD_NAME}-main-job-0-0.${WORKLOAD_NAME}"
+                volumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm
+              volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+              nodeSelector:
+                cloud.google.com/gke-tpu-accelerator: tpu7x
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: cloud.google.com/gke-nodepool
+                        operator: NotIn
+                        values:
+                        - default-pool
+              tolerations:
+                - effect: NoSchedule
+                  key: google.com/tpu
+                  operator: Exists
