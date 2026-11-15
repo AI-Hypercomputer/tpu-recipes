@@ -1,0 +1,79 @@
+apiVersion: jobset.x-k8s.io/v1alpha2
+kind: JobSet
+metadata:
+  name: ${WORKLOAD_NAME}
+spec:
+  ttlSecondsAfterFinished: 3600
+  network:
+    enableDNSHostnames: true
+    publishNotReadyAddresses: true
+  failurePolicy:
+    maxRestarts: 0
+    rules:
+      - action: FailJobSet
+        onJobFailureReasons:
+          - PodFailurePolicy
+  replicatedJobs:
+    - name: main-job
+      replicas: 1
+      template:
+        spec:
+          completionMode: Indexed
+          parallelism: 64
+          completions: 64
+          backoffLimit: 0
+          template:
+            metadata:
+              annotations:
+                cloud.google.com/gke-tpu-slice-topology: 4x8x8
+                kueue.x-k8s.io/podset-required-topology: cloud.google.com/gke-tpu-partition-4x8x8-id
+            spec:
+              hostNetwork: true
+              dnsPolicy: ClusterFirstWithHostNet
+              terminationGracePeriodSeconds: 30
+              restartPolicy: Never
+              containers:
+              - name: workload-container
+                image: ${WORKLOAD_IMAGE}
+                command:
+                - "/bin/bash"
+                - "-c"
+                - "echo \"GCluster Start: $(date 2>/dev/null || true)\" >&2\n\n# Run workload in a separate process group\nset -m\n/bin/bash -c 'trap : TERM; cmd=\"$1\"; shift; eval \"$cmd\"' gcluster \"$1\" &\nchild=$!\n\n# Forward signals to the workload process group\ngot_sigterm=0\n_fwd() {\n  got_sigterm=1\n  echo \"gcluster: SIGTERM received, running cleanup\" >&2\n  kill -TERM -- \"-$child\" 2>/dev/null\n}\ntrap _fwd TERM INT\n\n# Wait for workload to exit\nwhile :; do\n  wait \"$child\"; rc=$?\n  is_job=0\n  for p in $(jobs -p); do\n    [ \"$p\" = \"$child\" ] && is_job=1\n  done\n  [ \"$is_job\" -eq 1 ] || break\ndone\n\n# Interrupted workloads should not exit 0 even if cleanup succeeded\nif [ \"$got_sigterm\" -ne 0 ] && [ \"$rc\" -eq 0 ]; then\n  rc=143\nfi\n\necho \"GCluster End: $(date 2>/dev/null || true)\" >&2\necho \"Exit code: $rc\" >&2\nexit \"$rc\"\n"
+                - "gcluster"
+                - "#!/bin/bash\n# Exit immediately if a command exits with a non-zero status.\nset -e\n\n# --- Graceful Shutdown Logic ---\n_sigterm() {\n  echo \"Caught SIGTERM signal, sending to child process...\"\n  kill -SIGTERM \"$PID\" 2>/dev/null\n}\ntrap _sigterm SIGTERM\n\nMAXTEXT_CONFIG_PATH=\"maxtext/configs/base.yml\"\n# The config's own XLA flags. The workload's arrive in XLA_FLAGS.\nCONFIG_XLA_FLAGS='--xla_tpu_scoped_vmem_limit_kib=61440 --xla_tpu_bf16_emission_mode=NATIVE_EMISSION --xla_tpu_enable_sparse_core_collective_offload_all_reduce=true --xla_tpu_use_single_sparse_core_for_all_gather_offload=true --xla_tpu_enable_offloading_copy_to_sparsecore=false --xla_tpu_enable_sparse_core_collective_offload_nd_reduce_scatter=false'\n\n# Fallback check to support different image structures\nif [ ! -f \"${MAXTEXT_CONFIG_PATH}\" ] && [ -f \"src/${MAXTEXT_CONFIG_PATH}\" ]; then\n  echo \"MAXTEXT_CONFIG_PATH not found at ${MAXTEXT_CONFIG_PATH}, falling back to src/${MAXTEXT_CONFIG_PATH}\"\n  MAXTEXT_CONFIG_PATH=\"src/${MAXTEXT_CONFIG_PATH}\"\nfi\n\n# --- TPU Worker Hostnames & ID ---\nif [ ! -z \"${NNODES}\" ] && [ ! -z \"${JOBSET_NAME}\" ] && [ ! -z \"${SUBDOMAIN}\" ]; then\n  HOSTS=\"\"\n  for i in $(seq 0 $((NNODES - 1))); do\n    # JobSet pod naming: ${JOBSET_NAME}-workload-0-${i}.${SUBDOMAIN}\n    HOSTS=\"${HOSTS}${JOBSET_NAME}-workload-0-${i}.${SUBDOMAIN},\"\n  done\n  export TPU_WORKER_HOSTNAMES=${HOSTS%,}\n  echo \"Computed TPU_WORKER_HOSTNAMES: ${TPU_WORKER_HOSTNAMES}\"\nfi\n\n# --- Log for Debugging ---\necho \"MaxText config overrides from command line:\"\necho \"  model_name='llama3.1-70b' skip_jax_distributed_system=True dtype='bfloat16' per_device_batch_size=2 profile_periodically_period=10000 async_checkpointing=False enable_checkpointing=False use_iota_embed=True remat_policy='custom' decoder_layer_input='device' context='device' query_proj='device' key_proj='device' value_proj='device' qkv_proj='device' ici_fsdp_parallelism=-1 dataset_type='synthetic' opt_type='adamw' mu_dtype='bfloat16' sa_block_q=1024 sa_block_kv=1024 sa_block_kv_compute=512 sa_block_q_dkv=2048 sa_block_kv_dkv=2048 sa_block_kv_dkv_compute=256 tokenizer_type='tiktoken' tokenizer_path='assets/tokenizer_llama3.tiktoken' sa_q_layout='SEQ_MINOR' sa_k_layout='HEAD_DIM_MINOR' sa_v_layout='HEAD_DIM_MINOR' sa_use_fused_bwd_kernel=True use_tokamax_splash=True max_target_length=8192 profiler='xplane' skip_first_n_steps_for_profiler=5 profiler_steps=2 attention='flash' quantization='fp8_full' use_qwix_quantization=True weight_quantization_calibration_method='fixed,-224,224' act_quantization_calibration_method='fixed,-224,224' steps=30 base_output_directory=${ARTIFACT_DIR%/${JOB_IDENTIFIER}}\"\n\n# --- RL Sampler Patches & Env Setup ---\nif [ \"maxtext.trainers.pre_train.train\" = \"maxtext.trainers.post_train.rl.train_rl\" ]; then\n  export HF_HUB_ENABLE_HF_TRANSFER=0\n  export HF_HUB_DISABLE_XET=1\n  export PYTHONPATH=/app/src:$PYTHONPATH\n  export NUM_PRECOMPILE_WORKERS=1\n  export NEW_MODEL_DESIGN=1\n  export JAX_BACKEND_TARGET=grpc://127.0.0.1:29000\nfi\n\n# --- Main Execution ---\n# The python process is run in the background (&)\n(\n  # Set up the environment\n  export ENABLE_PATHWAYS_PERSISTENCE='1'\n  export JAX_PLATFORMS=\"${JAX_PLATFORMS:-tpu,cpu}\"\n  export ENABLE_PJRT_COMPATIBILITY='true'\n\n  # libtpu reads XLA flags from LIBTPU_INIT_ARGS and splits it on single\n  # spaces only, so re-join the config's flags followed by the environment's\n  # (the last value of a repeated flag wins) with single spaces, globbing off.\n  # XLA_FLAGS is then cleared because the CPU client rejects TPU-only flags.\n  # On a Pathways head this runs on CPU, where LIBTPU_INIT_ARGS has no effect.\n  set -f\n  # shellcheck disable=SC2086\n  set -- ${CONFIG_XLA_FLAGS} ${XLA_FLAGS:-}\n  set +f\n  if [ \"$#\" -gt 0 ]; then\n    export LIBTPU_INIT_ARGS=\"$*\"\n  fi\n  echo \"LIBTPU_INIT_ARGS: ${LIBTPU_INIT_ARGS-<unset>}\"\n  unset XLA_FLAGS\n\n  # Execute the training script, passing the config file AND the command-line overrides\n  python3 -m maxtext.trainers.pre_train.train \"${MAXTEXT_CONFIG_PATH}\" model_name='llama3.1-70b' skip_jax_distributed_system=True dtype='bfloat16' per_device_batch_size=2 profile_periodically_period=10000 async_checkpointing=False enable_checkpointing=False use_iota_embed=True remat_policy='custom' decoder_layer_input='device' context='device' query_proj='device' key_proj='device' value_proj='device' qkv_proj='device' ici_fsdp_parallelism=-1 dataset_type='synthetic' opt_type='adamw' mu_dtype='bfloat16' sa_block_q=1024 sa_block_kv=1024 sa_block_kv_compute=512 sa_block_q_dkv=2048 sa_block_kv_dkv=2048 sa_block_kv_dkv_compute=256 tokenizer_type='tiktoken' tokenizer_path='assets/tokenizer_llama3.tiktoken' sa_q_layout='SEQ_MINOR' sa_k_layout='HEAD_DIM_MINOR' sa_v_layout='HEAD_DIM_MINOR' sa_use_fused_bwd_kernel=True use_tokamax_splash=True max_target_length=8192 profiler='xplane' skip_first_n_steps_for_profiler=5 profiler_steps=2 attention='flash' quantization='fp8_full' use_qwix_quantization=True weight_quantization_calibration_method='fixed,-224,224' act_quantization_calibration_method='fixed,-224,224' steps=30 base_output_directory=${ARTIFACT_DIR%/${JOB_IDENTIFIER}} run_name=${JOB_IDENTIFIER}\n) & PID=$!\n\n# Wait for the python process to finish\nwait $PID\nEXIT_CODE=$?\n\necho \"MaxText Job Ended at: $(date) with exit code $EXIT_CODE\"\nexit $EXIT_CODE"
+                resources:
+                  limits:
+                    google.com/tpu: "4"
+                env:
+                - name: ARTIFACT_DIR
+                  value: "${ARTIFACT_DIR}"
+                - name: JAX_COMPILATION_CACHE_DIR
+                  value: "${BASE_OUTPUT_DIR}/JAX_XLA_CACHE/maxtext/llama3-1-70b"
+                - name: JOB_IDENTIFIER
+                  value: "${WORKLOAD_NAME}"
+                - name: MASTER_ADDR
+                  value: "${WORKLOAD_NAME}-main-job-0-0.${WORKLOAD_NAME}"
+                - name: WORKERS_0_HOSTNAME
+                  value: "${WORKLOAD_NAME}-main-job-0-0.${WORKLOAD_NAME}"
+                volumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm
+              volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+              nodeSelector:
+                cloud.google.com/gke-tpu-accelerator: tpu7x
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: cloud.google.com/gke-nodepool
+                        operator: NotIn
+                        values:
+                        - default-pool
+              tolerations:
+                - effect: NoSchedule
+                  key: google.com/tpu
+                  operator: Exists
