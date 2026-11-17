@@ -34,15 +34,6 @@ fi
 echo "MaxText config overrides from command line:"
 echo "  model_name='llama3.1-70b' skip_jax_distributed_system=True dtype='bfloat16' per_device_batch_size=0.125 profile_periodically_period=10000 async_checkpointing=False enable_checkpointing=False use_iota_embed=True remat_policy='custom' decoder_layer_input='device' context='device' query_proj='device' key_proj='device' value_proj='device' mlpwo='device' num_vocab_tiling=4 ici_fsdp_parallelism=-1 ici_context_parallelism=8 dataset_type='synthetic' opt_type='adam_pax' sa_block_q=2048 sa_block_kv=2048 sa_block_kv_compute=512 sa_block_q_dkv=1024 sa_block_kv_dkv=4096 sa_block_kv_dkv_compute=256 sa_q_layout='SEQ_MINOR' sa_k_layout='HEAD_DIM_MINOR' sa_v_layout='SEQ_MINOR' sa_use_fused_bwd_kernel=True dq_reduction_steps=3 use_tokamax_splash=True use_max_logit_estimate=30 max_target_length=131072 profiler='xplane' skip_first_n_steps_for_profiler=5 profiler_steps=2 attention='flash' quantization='fp8_full' use_qwix_quantization=True packing=False steps=30 base_output_directory=${ARTIFACT_DIR%/${JOB_IDENTIFIER}}"
 
-# --- RL Sampler Patches & Env Setup ---
-if [ "maxtext.trainers.pre_train.train" = "maxtext.trainers.post_train.rl.train_rl" ]; then
-  export HF_HUB_ENABLE_HF_TRANSFER=0
-  export HF_HUB_DISABLE_XET=1
-  export PYTHONPATH=/app/src:$PYTHONPATH
-  export NUM_PRECOMPILE_WORKERS=1
-  export NEW_MODEL_DESIGN=1
-  export JAX_BACKEND_TARGET=grpc://127.0.0.1:29000
-fi
 
 # --- Main Execution ---
 # The python process is run in the background (&)

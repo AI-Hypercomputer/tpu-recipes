@@ -68,15 +68,6 @@ fi
 echo "MaxText config overrides from command line:"
 echo "  model_name='"'"'qwen3-235b-a22b'"'"' per_device_batch_size=16.0 max_target_length=4096 skip_jax_distributed_system=True dtype='"'"'bfloat16'"'"' weight_dtype='"'"'float32'"'"' opt_type='"'"'adamw'"'"' profiler='"'"'xplane'"'"' skip_first_n_steps_for_profiler=5 profiler_steps=3 profile_periodically_period=10000 async_checkpointing=False enable_checkpointing=False remat_policy='"'"'custom'"'"' decoder_layer_input='"'"'offload'"'"' use_custom_sort_vjp=True shard_exp_on_fsdp=False shard_embed_moe_on_fsdp=True megablox=False sparse_matmul=True use_tokamax_gmm=True use_gmm_v2=True wi_tile_fwd_batch_seq=512 wi_tile_fwd_embed_dim=4096 wi_tile_fwd_mlp_dim=1536 wi_tile_dlhs_batch_seq=512 wi_tile_dlhs_mlp_dim=1536 wi_tile_dlhs_embed_dim=4096 wi_tile_drhs_batch_seq=256 wi_tile_drhs_embed_dim=4096 wi_tile_drhs_mlp_dim=1536 wo_tile_fwd_batch_seq=512 wo_tile_fwd_mlp_dim=1536 wo_tile_fwd_embed_dim=4096 wo_tile_dlhs_batch_seq=512 wo_tile_dlhs_embed_dim=4096 wo_tile_dlhs_mlp_dim=1536 wo_tile_drhs_batch_seq=512 wo_tile_drhs_mlp_dim=1536 wo_tile_drhs_embed_dim=4096 use_tokamax_splash=True sa_use_fused_bwd_kernel=True attention='"'"'flash'"'"' sa_block_q=1024 sa_block_kv=1024 sa_block_kv_compute=512 sa_block_q_dkv=2048 sa_block_kv_dkv=2048 sa_block_kv_dkv_compute=1024 sa_block_q_dq=1024 sa_block_kv_dq=1024 sa_q_layout='"'"'HEAD_DIM_MINOR'"'"' sa_k_layout='"'"'SEQ_MINOR'"'"' sa_v_layout='"'"'HEAD_DIM_MINOR'"'"' dcn_pipeline_parallelism=1 dcn_data_parallelism=-1 ici_pipeline_parallelism=1 ici_fsdp_transpose_parallelism=1 ici_fsdp_parallelism=-1 use_qwix_quantization=True quantization='"'"'fp8_full'"'"' weight_quantization_calibration_method='"'"'fixed,-224,224'"'"' act_quantization_calibration_method='"'"'fixed,-224,224'"'"' dataset_type='"'"'synthetic'"'"' dataset_path='"'"'gs://max-datasets-rogue'"'"' steps=20 base_output_directory=${ARTIFACT_DIR%/${JOB_IDENTIFIER}}"
 
-# --- RL Sampler Patches & Env Setup ---
-if [ "maxtext.trainers.pre_train.train" = "maxtext.trainers.post_train.rl.train_rl" ]; then
-  export HF_HUB_ENABLE_HF_TRANSFER=0
-  export HF_HUB_DISABLE_XET=1
-  export PYTHONPATH=/app/src:$PYTHONPATH
-  export NUM_PRECOMPILE_WORKERS=1
-  export NEW_MODEL_DESIGN=1
-  export JAX_BACKEND_TARGET=grpc://127.0.0.1:29000
-fi
 
 # --- Main Execution ---
 # The python process is run in the background (&)
