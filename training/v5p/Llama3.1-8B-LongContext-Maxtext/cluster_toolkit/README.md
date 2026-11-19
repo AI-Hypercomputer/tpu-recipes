@@ -85,13 +85,13 @@ Examples:
 
 The configurations below were verified on a 64-chip TPU v5p slice (`v5p-128`, topology `4x4x4`, 64 Megacore devices, `459 TFLOP/s/device` BF16 peak):
 
-| Context Length | Parallelism & Offload Config | UBench Run Name & BigQuery `run_id` | Steady-State Step Time | Throughput (`TFLOP/s` & `Tokens/s/chip`) | Measured MFU (%) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **1M** (`1,048,576`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload` | `chengnuojin-ubench-wm87mo94` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_173709-20730566-a238-463e-918e-1f353c039538`) | **95.73 s** | **297.7 TFLOP/s** (`342.4 tok/s/chip`) | **64.86%** (`68.75%` in `O_h2_1024k_ring_cp64_b2_r2`) |
-| **2M** (`2,097,152`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-w3jvwbkr` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_183624-083a4c98-0783-46af-a0a8-cd91be9efeb5`) | **357.68 s** | **310.4 TFLOP/s** (`183.2 tok/s/chip`) | **67.63%** (`69.88%` in `O_r5_2m_ring_b2_inoff`) |
-| **4M** (`4,194,304`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | `chengnuojin-ubench-asb6kxmv` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_215125-766e1e52-4ecf-4a87-a439-8a0d23bacc1c`) | **1,373.73 s** | **319.0 TFLOP/s** (`95.4 tok/s/chip`) | **69.50%** (`70.29%` in `O_r5_4m_ring_b2_inoff`) |
-| **10M** (`10,485,760`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `remat_policy=full` | `chengnuojin-ubench-uujda4kd` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-06_140929-befcf112-30da-4290-a424-9d9f39be4deb`) | **8,060.20 s** (`8,056.40 s` ref) | **168.5 TFLOP/s** (`20.3 tok/s/chip`) | **36.72% – 36.74%** |
-| **14M** (`14,680,064`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `context=remat`, `decoder_layer_input=offload` | `chengnuojin-ubench-bjzjtsvd` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-06_141408-f2a71578-1159-4612-b1a5-c97197dd1493`) | **15,766.82 s** (`15,623.09 s` ref) | **168.6 TFLOP/s** (`170.2` ref, `14.5 tok/s/chip`) | **36.73% – 37.07%** |
+| Context Length | Parallelism & Offload Config | Steady-State Step Time | Throughput (`TFLOP/s` & `Tokens/s/chip`) | Measured MFU (%) |
+| :--- | :--- | :--- | :--- | :--- |
+| **1M** (`1,048,576`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload` | **95.73 s** | **297.7 TFLOP/s** (`342.4 tok/s/chip`) | **64.86%** (`68.75%` in `O_h2_1024k_ring_cp64_b2_r2`) |
+| **2M** (`2,097,152`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | **357.68 s** | **310.4 TFLOP/s** (`183.2 tok/s/chip`) | **67.63%** (`69.88%` in `O_r5_2m_ring_b2_inoff`) |
+| **4M** (`4,194,304`) | `CP=64, FSDP=1`, `pdbs=0.03125`, `sa_block_*=1024`, `context=offload`, `decoder_layer_input=offload` | **1,373.73 s** | **319.0 TFLOP/s** (`95.4 tok/s/chip`) | **69.50%** (`70.29%` in `O_r5_4m_ring_b2_inoff`) |
+| **10M** (`10,485,760`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `remat_policy=full` | **8,060.20 s** (`8,056.40 s` ref) | **168.5 TFLOP/s** (`20.3 tok/s/chip`) | **36.72% – 36.74%** |
+| **14M** (`14,680,064`) | `CP=64, FSDP=1`, `pdbs=0.015625`, `sa_block_*=1024`, `context=remat`, `decoder_layer_input=offload` | **15,766.82 s** (`15,623.09 s` ref) | **168.6 TFLOP/s** (`170.2` ref, `14.5 tok/s/chip`) | **36.73% – 37.07%** |
 
 ## Cleanup
 

@@ -54,7 +54,7 @@ configuration to your cluster.
 Open a terminal and set the following environment variables to match your setup.
 **Note:** 
 - `k8s_manifest.yaml` is in the same directory as this README.  
-- For WORKLOAD_IMAGE, see [Docker container image](../xpk/README.md#docker-container-image) section.
+- For WORKLOAD_IMAGE, see [Docker container image](../cluster_toolkit/README.md#docker-container-image) section.
 
 ```bash
 # Set variables for your environment
