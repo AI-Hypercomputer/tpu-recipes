@@ -89,13 +89,13 @@ Examples:
 
 The configurations below were verified on a 64-chip TPU Ironwood (`v7x`) slice (`tpu7x-4x4x4`, 128 TensorCore devices, `1,153.5 TFLOP/s/core` / `2,307 TFLOP/s/chip` BF16 peak):
 
-| Context Length | Parallelism & Offload Config | UBench Run Name & BigQuery `run_id` | Steady-State Step Time | Throughput (`TFLOP/s` & `Tokens/s/core`) | Measured MFU (%) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **1M** (`1,048,576`) | `CP=32, FSDP=4`, `pdbs=0.03125`, `sa_block_*=2048`, `context=device`, `dvfs_p_state=7` | `chengnuojin-ubench-iwwssuhp` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_172350-76c5205d-c288-4aed-89e2-375398c92c9a`) | **49.58 s** | **574.8 TFLOP/s** (`1,149.6` /chip, `660.9 tok/s/core`) | **49.98%** (`50.90%` in `B3F_1m_cp32_ideal`) |
-| **2M** (`2,097,152`) | `CP=64, FSDP=2`, `pdbs=0.015625`, `sa_block_*=2048`, `context=device`, `dvfs_p_state=7` | `chengnuojin-ubench-c79shbyc` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_174711-a6caf10a-50e6-423e-a0ad-ef2090917698`) | **94.60 s** | **586.9 TFLOP/s** (`1,173.8` /chip, `346.4 tok/s/core`) | **51.03%** (`50.80%` in `B3F_2m_cp64_IDEALBRACKET`) |
-| **4M** (`4,194,304`) | `CP=128, FSDP=1`, `pdbs=0.0078125`, `sa_block_*=2048`, `context=device` | `chengnuojin-ubench-8vkgzrtc` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_182345-03a74883-8a36-41ae-aace-a7e443e87e43`) | **213.68 s** (`186.48 s` w/ `p7`) | **512.7 TFLOP/s** (`1,025.5` /chip, `153.3 tok/s/core`) | **44.60%** (`50.93%` w/ `p7` in `B3F_4m_cp128_IDEALBRACKET`) |
-| **10M** (`10,485,760`) | `CP=128, FSDP=1`, `pdbs=0.0078125`, `sa_block_*=2048`, `context=device`, `opt_off=true`, `dvfs_p_state=7` | `chengnuojin-ubench-kabnsj6h` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-05_223247-053f00f3-e418-43ce-b1bf-0e567cec4625`) | **1,124.12 s** | **604.2 TFLOP/s** (`1,208.5` /chip, `72.9 tok/s/core`) | **52.54%** (`52.11%` in `B3F_10m_cp128_IDEALBRACKET`) |
-| **14M** (`14,680,064`) | `CP=128, FSDP=1`, `pdbs=0.0078125`, `sa_block_*=2048`, `context=offload`, `decoder_layer_input=offload`, `opt_off=true`, `par_off=true`, `dvfs_p_state=7` | `chengnuojin-ubench-gz6ugsgn` (`maxtext_training_with_xpk-llama3_1_8b-2026-10-06_003849-40f0a6b0-15e9-49c5-a336-e52c036019c4`) | **2,360.00 s** | **563.2 TFLOP/s** (`1,126.5` /chip, `48.6 tok/s/core`) | **48.83%** (`48.71%` in `B3F_14m_cp128_inoff`) |
+| Context Length | Parallelism & Offload Config | Steady-State Step Time | Throughput (`TFLOP/s` & `Tokens/s/core`) | Measured MFU (%) |
+| :--- | :--- | :--- | :--- | :--- |
+| **1M** (`1,048,576`) | `CP=32, FSDP=4`, `pdbs=0.03125`, `sa_block_*=2048`, `context=device`, `dvfs_p_state=7` | **49.58 s** | **574.8 TFLOP/s** (`1,149.6` /chip, `660.9 tok/s/core`) | **49.98%** (`50.90%` in `B3F_1m_cp32_ideal`) |
+| **2M** (`2,097,152`) | `CP=64, FSDP=2`, `pdbs=0.015625`, `sa_block_*=2048`, `context=device`, `dvfs_p_state=7` | **94.60 s** | **586.9 TFLOP/s** (`1,173.8` /chip, `346.4 tok/s/core`) | **51.03%** (`50.80%` in `B3F_2m_cp64_IDEALBRACKET`) |
+| **4M** (`4,194,304`) | `CP=128, FSDP=1`, `pdbs=0.0078125`, `sa_block_*=2048`, `context=device` | **213.68 s** (`186.48 s` w/ `p7`) | **512.7 TFLOP/s** (`1,025.5` /chip, `153.3 tok/s/core`) | **44.60%** (`50.93%` w/ `p7` in `B3F_4m_cp128_IDEALBRACKET`) |
+| **10M** (`10,485,760`) | `CP=128, FSDP=1`, `pdbs=0.0078125`, `sa_block_*=2048`, `context=device`, `opt_off=true`, `dvfs_p_state=7` | **1,124.12 s** | **604.2 TFLOP/s** (`1,208.5` /chip, `72.9 tok/s/core`) | **52.54%** (`52.11%` in `B3F_10m_cp128_IDEALBRACKET`) |
+| **14M** (`14,680,064`) | `CP=128, FSDP=1`, `pdbs=0.0078125`, `sa_block_*=2048`, `context=offload`, `decoder_layer_input=offload`, `opt_off=true`, `par_off=true`, `dvfs_p_state=7` | **2,360.00 s** | **563.2 TFLOP/s** (`1,126.5` /chip, `48.6 tok/s/core`) | **48.83%** (`48.71%` in `B3F_14m_cp128_inoff`) |
 
 ## Cleanup
 
