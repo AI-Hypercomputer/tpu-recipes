@@ -8,6 +8,7 @@ For this reason, we’ve provided a set of stress-tested recipes for deploying a
 - [Qwen2.5-32B](./Qwen2.5-32B/README.md)
 - [Qwen2.5-VL-7B](./Qwen2.5-VL/README.md)
 - [Qwen3-4B/32B](./Qwen3/README.md)
+- [Qwen3.8-27B](./Qwen3.8-27B/README.md)
 
 If you are looking for GKE-based deployment, please refer to this documentation: [Serve an LLM using TPU Trillium on GKE with vLLM](https://cloud.google.com/kubernetes-engine/docs/tutorials/serve-vllm-tpu)
 
