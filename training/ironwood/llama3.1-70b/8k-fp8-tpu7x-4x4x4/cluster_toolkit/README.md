@@ -120,8 +120,7 @@ export RESERVATION_NAME="<your-reservation-name>"
     empty on a cluster created from the blueprint below: it installs a single
     LocalQueue (`user-queue`) in `${NAMESPACE}`, which `gcluster job submit`
     discovers on its own. Set it only when the namespace holds several
-    LocalQueues, for example `multislice-queue` on a cluster provisioned with
-    XPK.
+    LocalQueues, for example on a custom or shared GKE cluster.
 -   `BUCKET_NAME` is the GCS bucket the workload writes to. Storage mounts and
     paths in `run_recipe.sh` that pointed at the original run's
     bucket read it (or `BASE_OUTPUT_DIR`) instead.
