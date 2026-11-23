@@ -1,0 +1,250 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hyperdisk-balanced-tpu
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: hyperdisk-balanced
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: vllm-glm53
+  namespace: vllm-glm53
+  annotations:
+    leaderworkerset.sigs.k8s.io/exclusive-topology: cloud.google.com/gke-nodepool
+spec:
+  replicas: 1
+  leaderWorkerTemplate:
+    size: 2
+    restartPolicy: RecreateGroupOnPodRestart
+    volumeClaimTemplates:
+    - metadata:
+        name: data-volume
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        storageClassName: hyperdisk-balanced-tpu
+        resources:
+          requests:
+            storage: 1500Gi
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Delete
+      whenScaled: Delete
+    workerTemplate:
+      metadata:
+        labels:
+          app: vllm-glm53
+      spec:
+        nodeSelector:
+          cloud.google.com/gke-tpu-accelerator: tpu7x
+          cloud.google.com/gke-tpu-topology: 2x2x2
+        tolerations:
+        - key: "google.com/tpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+        containers:
+        - name: vllm-torchtpu
+          image: vllm/vllm-torchtpu:v0.33.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+          - |
+            set -eo pipefail
+            mkdir -p "${HF_HOME}" "${TMPDIR}" "${VLLM_CACHE_ROOT}" "${TORCHINDUCTOR_CACHE_DIR}"
+
+            # Clear single-worker/Ray TPU webhook env vars so vLLM's native mp
+            # multi-node executor manages PJRT multi-host initialization cleanly.
+            unset TPU_PROCESS_ADDRESSES TPU_PROCESS_PORT CLOUD_TPU_TASK_ID \
+              TPU_WORKER_ID TPU_WORKER_HOSTNAMES TPU_NAME TPU_VISIBLE_CHIPS \
+              TPU_VISIBLE_DEVICES TPU_MULTIHOST_BACKEND RAY_ADDRESS
+            for var in $(python3 -c "import os; print(' '.join(k for k in os.environ if k.startswith('MEGASCALE_')))"); do
+              unset "${var}"
+            done
+
+            # Pre-stage checkpoint onto each host's local Hyperdisk before rendezvous.
+            MODEL_DIR="/data/GLM-5.3"
+            until python3 -c "from huggingface_hub import snapshot_download; snapshot_download('zai-org/GLM-5.3', local_dir='${MODEL_DIR}', max_workers=16)"; do
+              echo "Checkpoint download failed; retrying in 30s..."
+              sleep 30
+            done
+
+            # Synchronize both hosts before entering torch.distributed rendezvous.
+            python3 - <<'PY_SYNC'
+            import os, socket, time
+            rank = os.environ.get("LWS_WORKER_INDEX", "0")
+            leader_dns = os.environ["LWS_LEADER_ADDRESS"]
+            deadline = time.time() + 3600
+            if rank == "0":
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    s.bind(("0.0.0.0", 29509))
+                    s.listen(1)
+                    s.settimeout(30)
+                    while time.time() < deadline:
+                        try:
+                            conn, addr = s.accept()
+                            conn.sendall(b"OK")
+                            conn.close()
+                            print(f"Worker host synchronized from {addr}", flush=True)
+                            break
+                        except socket.timeout:
+                            continue
+                    else:
+                        raise TimeoutError("Timed out waiting for worker host barrier")
+            else:
+                while time.time() < deadline:
+                    try:
+                        head_ip = socket.gethostbyname(leader_dns)
+                        with socket.create_connection((head_ip, 29509), timeout=10) as c:
+                            if c.recv(2) == b"OK":
+                                print(f"Connected to leader {leader_dns} ({head_ip})", flush=True)
+                                break
+                    except OSError:
+                        time.sleep(2)
+                else:
+                    raise TimeoutError("Timed out connecting to leader host barrier")
+            PY_SYNC
+
+            HEAD_IP=$(python3 -c "import os, socket; print(socket.gethostbyname(os.environ['LWS_LEADER_ADDRESS']))")
+            EXTRA_ROLE_ARGS=(--host=0.0.0.0 --port=8000)
+            if [ "${LWS_WORKER_INDEX:-0}" != "0" ]; then
+              EXTRA_ROLE_ARGS=(--headless)
+            fi
+
+            exec vllm serve "${MODEL_DIR}" \
+              --served-model-name=zai-org/GLM-5.3 \
+              --tokenizer="${MODEL_DIR}" \
+              "${EXTRA_ROLE_ARGS[@]}" \
+              --distributed-executor-backend=mp \
+              --nnodes=2 \
+              --node-rank="${LWS_WORKER_INDEX:-0}" \
+              --master-addr="${HEAD_IP}" \
+              --master-port=29500 \
+              --tensor-parallel-size=16 \
+              --data-parallel-size=1 \
+              --decode-context-parallel-size=8 \
+              --cp-kv-cache-interleave-size=4 \
+              --max-model-len=16384 \
+              --max-num-seqs=128 \
+              --max-num-batched-tokens=2048 \
+              --kv-cache-dtype=fp8 \
+              --gpu-memory-utilization=0.9 \
+              --no-enable-prefix-caching \
+              --enable-expert-parallel \
+              --enable-ep-weight-filter \
+              --safetensors-load-strategy=prefetch \
+              --tool-call-parser=glm47 \
+              --reasoning-parser=glm45 \
+              --enable-auto-tool-choice \
+              --async-scheduling
+          env:
+          - name: HF_HOME
+            value: "/data/huggingface_cache"
+          - name: TMPDIR
+            value: "/data/tmp"
+          - name: VLLM_CACHE_ROOT
+            value: "/data/vllm_cache"
+          - name: TORCHINDUCTOR_CACHE_DIR
+            value: "/data/torchinductor_cache"
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: hf-secret
+                key: hf_api_token
+          - name: VLLM_WORKER_MULTIPROC_METHOD
+            value: "spawn"
+          - name: VLLM_ENGINE_READY_TIMEOUT_S
+            value: "7200"
+          - name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS
+            value: "3600"
+          - name: TORCH_DISTRIBUTED_DEFAULT_TIMEOUT
+            value: "1800"
+          - name: VLLM_TARGET_DEVICE
+            value: "tpu"
+          - name: PJRT_DEVICE
+            value: "TPU"
+          - name: TPU_ACCELERATOR_TYPE
+            value: "tpu7x"
+          - name: TPU_PARALLEL_PRECOMPILE
+            value: "1"
+          - name: TPU_SPARSE_MLA_NOPE_LAYOUT
+            value: "sparsecore"
+          - name: TPU_SPARSE_MLA_ROPE_LAYOUT
+            value: "sparsecore"
+          - name: TPU_SPARSE_MLA_CHUNK_TOKENS
+            value: "256"
+          - name: VLLM_DCP_Q_REPLICATE
+            value: "1"
+          - name: TPU_DCP_MLA_TOPK_CAP
+            value: "512"
+          - name: TPU_DCP_MLA_TOPK_CAP_CHUNK
+            value: "256"
+          - name: ONEHOT_MOE_PERMUTE_THRESHOLD
+            value: "1024"
+          - name: TPU_MLA_SPARSE_SPLIT_Q
+            value: "1"
+          - name: TPU_DCP_LSE_MERGE_A2A
+            value: "1"
+          - name: TPU_DCP_LSE_MERGE_A2A_MAX_TOKENS
+            value: "128"
+          - name: TPU_DCP_INDEXER_A2A_MERGE
+            value: "1"
+          - name: TPU_ROPE_CACHE_TRUNCATE
+            value: "1"
+          - name: TPU_ROPE_CACHE_ROW_MAJOR
+            value: "1"
+          - name: VLLM_TPU_FAST_TOKEN_SUBSTITUTION
+            value: "1"
+          - name: TPU_PRECOMPILE_PEER_REPLAY
+            value: "1"
+          - name: TPU_PRECOMPILE_BIGGEST_FIRST
+            value: "1"
+          - name: TPU_PRECOMPILE_TRACE_FIRST
+            value: "1"
+          ports:
+          - containerPort: 8000
+          resources:
+            limits:
+              google.com/tpu: "4"
+            requests:
+              google.com/tpu: "4"
+          # Only worker index 0 serves HTTP; headless worker pods report ready once running.
+          readinessProbe:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - 'if [ "${LWS_WORKER_INDEX:-0}" = "0" ]; then (echo > /dev/tcp/localhost/8000) 2>/dev/null; else exit 0; fi'
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+          - name: data-volume
+            mountPath: /data
+          - name: dshm
+            mountPath: /dev/shm
+        volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+        - name: data-volume
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-glm53-service
+  namespace: vllm-glm53
+spec:
+  selector:
+    app: vllm-glm53
+    leaderworkerset.sigs.k8s.io/worker-index: "0"
+  type: ClusterIP
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8000
+    targetPort: 8000
