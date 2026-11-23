@@ -50,8 +50,6 @@ spec:
         - name: vllm-torchtpu
           image: vllm/vllm-torchtpu:v0.33.0
           imagePullPolicy: IfNotPresent
-          securityContext:
-            privileged: true
           command: ["/bin/bash", "-c"]
           args:
           - |
@@ -119,7 +117,7 @@ spec:
 
             exec vllm serve "${MODEL_DIR}" \
               --served-model-name=zai-org/GLM-5.3 \
-              --tokenizer=zai-org/GLM-5.3 \
+              --tokenizer="${MODEL_DIR}" \
               "${EXTRA_ROLE_ARGS[@]}" \
               --distributed-executor-backend=mp \
               --nnodes=2 \

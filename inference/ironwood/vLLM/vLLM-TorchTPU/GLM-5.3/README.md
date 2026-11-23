@@ -10,7 +10,7 @@ The following GLM 5.3 model is verified for deployment on TPU with the vLLM Torc
 
 | Model | Quantization | Min TPUs (Chips) | Topology | HuggingFace |
 | :--- | :--- | :--- | :--- | :--- |
-| GLM 5.3 | Experts-only FP8 weights, `fp8` KV | 8× (`tpu7x-standard-4t`) | `2x2x2` (2 hosts) | [zai-org/GLM-5.3](https://huggingface.co/zai-org/GLM-5.3) |
+| GLM 5.3 | FP8 (`e4m3`, 128×128 block-wise), `fp8` KV | 8× (`tpu7x-standard-4t`) | `2x2x2` (2 hosts) | [zai-org/GLM-5.3](https://huggingface.co/zai-org/GLM-5.3) |
 
 ## Prerequisites
 
@@ -138,7 +138,7 @@ curl http://localhost:8000/v1/chat/completions \
 
 ## Step 6: Run Serving Benchmarks
 
-We use the `InferenceX` client (`benchmark_serving.py`) to evaluate serving throughput and latency against our running vLLM server for a **6K Input / 2K Output (`6144` / `2048`, `±30%` random range)** workload at concurrency `128` (or `64`).
+We use the `InferenceX` client (`benchmark_serving.py`) to evaluate serving throughput and latency against our running vLLM server for a **6K Input / 2K Output** (`--random-input-len=6144`, `--random-output-len=2048`, `--random-range-ratio=0.8`) workload at concurrency `128` (or `64`).
 
 ### Workload: 6K Input / 2K Output (`6k/2k`)
 
@@ -175,7 +175,7 @@ spec:
         --dataset-name=random \
         --random-input-len=6144 \
         --random-output-len=2048 \
-        --random-range-ratio=0.3 \
+        --random-range-ratio=0.8 \
         --num-prompts=512 \
         --max-concurrency=128 \
         --ignore-eos
