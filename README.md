@@ -23,8 +23,10 @@ To reproduce a benchmark, follow these steps:
 
 1.**Identify your requirements:** determine the model, TPU version, workload, and
   framework (JAX or PyTorch) that you are interested in.
+
 2.**Select a recipe:** navigate to the appropriate directory, such as `./training`
   or `./inference`, to find a recipe that meets your needs.
+
 3.**Follow the procedure:** each recipe guides you through preparing your environment,
   running the benchmark, and analyzing the results (including detailed logs). You can
   automate your infrastructure setup using Cluster Toolkit. For more information, see
